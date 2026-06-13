@@ -38,6 +38,19 @@ pub fn run() {
                 }
             }
 
+            // Periodic reload timers for tabs with `reload_every` (minutes). Only acts on
+            // already-created webviews, so a never-opened lazy tab is harmlessly skipped.
+            for v in views.iter().filter(|v| v.reload_every.is_some()) {
+                let mins = v.reload_every.unwrap();
+                let label = v.label.clone();
+                let url = v.url.clone();
+                let win = window.clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(mins * 60));
+                    let _ = webviews::reload_canonical(&win, &label, &url);
+                });
+            }
+
             app.manage(AppState {
                 config: Mutex::new(cfg),
                 tabs: Mutex::new(tab_state),
@@ -47,7 +60,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_tabs,
-            commands::select_tab
+            commands::select_tab,
+            commands::reset_all
         ])
         .run(tauri::generate_context!())
         .expect("error while running curator");

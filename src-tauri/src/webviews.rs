@@ -102,6 +102,16 @@ pub fn create_content_webview(
     Ok(())
 }
 
+/// Navigate a content webview back to its canonical URL (reset / periodic reload).
+/// No-op if the webview hasn't been created yet (a never-opened lazy tab is skipped).
+pub fn reload_canonical(window: &Window, label: &str, canonical_url: &str) -> tauri::Result<()> {
+    if let Some(wv) = window.get_webview(label) {
+        let url: url::Url = canonical_url.parse().expect("url validated at config load");
+        wv.navigate(url)?;
+    }
+    Ok(())
+}
+
 /// Show `label`'s content webview and hide all others in `all_labels`.
 pub fn show_only(window: &Window, label: &str, all_labels: &[String]) -> tauri::Result<()> {
     for l in all_labels {

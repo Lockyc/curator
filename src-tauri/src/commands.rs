@@ -30,3 +30,16 @@ pub fn select_tab(label: String, app: AppHandle, state: State<AppState>) -> Resu
     webviews::show_only(&main, &label, &all).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn reset_all(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let main = app.get_window("main").ok_or("no main window")?;
+    let views = state.config.lock().unwrap().tab_views();
+    let tabs = state.tabs.lock().unwrap();
+    for v in &views {
+        if tabs.is_created(&v.label) {
+            webviews::reload_canonical(&main, &v.label, &v.url).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
