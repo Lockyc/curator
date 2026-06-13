@@ -1,10 +1,11 @@
 mod commands;
 mod config;
 mod escape;
+mod watcher;
 mod webviews;
 
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub config: Mutex<config::Config>,
@@ -56,6 +57,45 @@ pub fn run() {
                 tabs: Mutex::new(tab_state),
                 win_size,
             });
+
+            // Watch the config file and hot-reload on change, keeping the last-good config
+            // (and surfacing an error banner) if the new contents don't parse/validate.
+            let watch_path = path.clone();
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                use notify::{RecursiveMode, Watcher};
+                let (tx, rx) = std::sync::mpsc::channel();
+                let Ok(mut watcher) = notify::recommended_watcher(tx) else {
+                    return;
+                };
+                // Watch the parent dir, not the file: editors that atomic-save (write temp +
+                // rename) replace the inode, which silently breaks a single-file watch.
+                let dir = watch_path.parent().unwrap_or(&watch_path);
+                if Watcher::watch(&mut watcher, dir, RecursiveMode::NonRecursive).is_err() {
+                    return;
+                }
+                for res in rx {
+                    let Ok(event) = res else { continue };
+                    if !event.paths.iter().any(|p| p == &watch_path) {
+                        continue;
+                    }
+                    let Ok(src) = std::fs::read_to_string(&watch_path) else {
+                        continue;
+                    };
+                    let state = app_handle.state::<AppState>();
+                    let current = state.config.lock().unwrap().clone();
+                    match watcher::reconcile(&current, &src) {
+                        Ok(cfg) => {
+                            *state.config.lock().unwrap() = cfg;
+                            let _ = app_handle.emit("config-reloaded", ());
+                        }
+                        Err(msg) => {
+                            let _ = app_handle.emit("config-error", msg);
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

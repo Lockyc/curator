@@ -1,4 +1,5 @@
 const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 
 async function render() {
   const tabs = await invoke("get_tabs");
@@ -30,5 +31,15 @@ async function select(label, el) {
   for (const b of document.querySelectorAll(".tab")) b.classList.remove("active");
   el.classList.add("active");
 }
+
+listen("config-reloaded", () => {
+  document.getElementById("error-banner").hidden = true;
+  render();
+});
+listen("config-error", (e) => {
+  const b = document.getElementById("error-banner");
+  b.textContent = "Config error (keeping last good): " + e.payload;
+  b.hidden = false;
+});
 
 render();

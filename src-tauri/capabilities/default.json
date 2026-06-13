@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "chrome-events",
+  "description": "Let the local chrome sidebar listen for config-reload events. Scoped to the 'chrome' webview only — remote content webviews get no event access.",
+  "windows": ["main"],
+  "webviews": ["chrome"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}
