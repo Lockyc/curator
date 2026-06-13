@@ -138,7 +138,11 @@ pub fn create_content_webview(window: &Window, tab: &TabView) -> tauri::Result<(
         });
 
     let (w, h) = logical_inner(window);
-    window.add_child(builder, content_position(), content_size(w, h))?;
+    let webview = window.add_child(builder, content_position(), content_size(w, h))?;
+    #[cfg(target_os = "macos")]
+    {
+        let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
+    }
     Ok(())
 }
 

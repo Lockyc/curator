@@ -19,6 +19,14 @@ impl Default for OpenOnLaunch {
 pub struct Config {
     #[serde(default)]
     pub open_on_launch: OpenOnLaunch,
+    /// When true, force the window (and thus content webviews) into dark appearance, so sites
+    /// honouring `prefers-color-scheme` render dark. Omit/false = follow the system.
+    #[serde(default)]
+    pub dark_mode: bool,
+    /// Hosts whose self-signed / invalid TLS certificates curator should accept (e.g.
+    /// `["192.168.1.1"]` for a homelab device). Empty (default) = validate every cert.
+    #[serde(default)]
+    pub allow_insecure: Vec<String>,
     #[serde(default, rename = "group")]
     pub groups: Vec<Group>,
 }

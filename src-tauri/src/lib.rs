@@ -1,11 +1,18 @@
 mod commands;
 mod config;
 mod escape;
+#[cfg(target_os = "macos")]
+mod insecure;
 mod watcher;
 mod webviews;
 
 use std::sync::Mutex;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, Theme};
+
+/// Window theme to apply for a given `dark_mode` setting. `None` = follow the system.
+fn theme_for(dark_mode: bool) -> Option<Theme> {
+    dark_mode.then_some(Theme::Dark)
+}
 
 pub struct AppState {
     pub config: Mutex<config::Config>,
@@ -21,8 +28,12 @@ pub fn run() {
                 eprintln!("config error, starting empty: {e}");
                 config::Config::default()
             });
+            #[cfg(target_os = "macos")]
+            insecure::set_allowlist(cfg.allow_insecure.clone());
+
             let handle = app.handle().clone();
             let window = webviews::build_window(&handle, win_size.0, win_size.1)?;
+            window.set_theme(theme_for(cfg.dark_mode))?;
 
             let views = cfg.tab_views();
             let mut tab_state = webviews::TabState::default();
@@ -97,6 +108,9 @@ pub fn run() {
                     let current = state.config.lock().unwrap().clone();
                     match watcher::reconcile(&current, &src) {
                         Ok(cfg) => {
+                            if let Some(win) = app_handle.get_window("main") {
+                                let _ = win.set_theme(theme_for(cfg.dark_mode));
+                            }
                             *state.config.lock().unwrap() = cfg;
                             let _ = app_handle.emit("config-reloaded", ());
                         }

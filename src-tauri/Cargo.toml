@@ -26,3 +26,9 @@ toml = "0.8"
 url = "2"
 notify = "6"
 dirs = "5"
+
+# For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+block2 = "0.6"
