@@ -3,9 +3,16 @@
 # Usage:  bash install.sh
 #    or:  curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | bash
 #
+# The curl URL and the git clone below require the GitHub repo to be public.
+#
 # Manages a persistent source clone at ~/.curator and (re)builds from it. For
 # guided setup with prerequisite installation, use /curator:install in Claude Code.
 set -euo pipefail
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "curator is a macOS-only app; install.sh only runs on macOS." >&2
+  exit 1
+fi
 
 REPO_URL="https://github.com/Lockyc/curator"
 INSTALL_DIR="$HOME/.curator"

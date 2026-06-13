@@ -66,14 +66,18 @@ will refuse to touch it. They must move it aside before continuing.
 **If IN_REPO:**
 
 ```bash
-bash install.sh
+PATH="$HOME/.cargo/bin:$PATH" bash install.sh
 ```
 
 **If NOT_IN_REPO:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | PATH="$HOME/.cargo/bin:$PATH" bash
 ```
+
+(The `PATH="$HOME/.cargo/bin:$PATH"` prefix ensures a Rust toolchain you may have just
+installed via rustup in step 2 is found — a fresh shell won't have picked up rustup's
+profile changes yet.)
 
 This clones/updates `~/.curator`, runs `npm install` and `npm run tauri build`, installs the
 built app to `/Applications/curator.app`, and seeds `~/.config/curator/tabs.toml` if absent.
