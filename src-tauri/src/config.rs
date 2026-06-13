@@ -90,6 +90,40 @@ pub fn default_config_path() -> std::path::PathBuf {
         .join("tabs.toml")
 }
 
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TabView {
+    pub label: String,
+    pub group: String,
+    pub title: String,
+    pub url: String,
+    pub always_load: bool,
+    pub reload_every: Option<u64>,
+}
+
+impl Config {
+    /// Flatten groups → ordered tabs with stable `tab-<index>` labels.
+    pub fn tab_views(&self) -> Vec<TabView> {
+        let mut views = Vec::new();
+        let mut idx = 0usize;
+        for group in &self.groups {
+            for tab in &group.tabs {
+                views.push(TabView {
+                    label: format!("tab-{idx}"),
+                    group: group.name.clone(),
+                    title: tab.title.clone(),
+                    url: tab.url.clone(),
+                    always_load: tab.always_load,
+                    reload_every: tab.reload_every,
+                });
+                idx += 1;
+            }
+        }
+        views
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +212,19 @@ reload_every = 0
     fn load_missing_file_errors() {
         let err = load_config(std::path::Path::new("/no/such/curator.toml")).unwrap_err();
         assert!(matches!(err, ConfigError::Io(_)));
+    }
+
+    #[test]
+    fn flattens_to_ordered_tabviews_with_stable_labels() {
+        let cfg: Config = toml::from_str(VALID).unwrap();
+        let views = cfg.tab_views();
+        assert_eq!(views.len(), 2);
+        assert_eq!(views[0].label, "tab-0");
+        assert_eq!(views[0].group, "Comms");
+        assert_eq!(views[0].title, "Gmail");
+        assert_eq!(views[1].label, "tab-1");
+        assert_eq!(views[1].title, "Calendar");
+        assert_eq!(views[1].always_load, true);
+        assert_eq!(views[1].reload_every, Some(15));
     }
 }
