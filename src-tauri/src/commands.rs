@@ -15,12 +15,11 @@ pub fn select_tab(label: String, app: AppHandle, state: State<AppState>) -> Resu
         .find(|v| v.label == label)
         .ok_or("unknown tab")?
         .clone();
-    let (w, h) = state.win_size;
 
     {
         let mut tabs = state.tabs.lock().unwrap();
         if !tabs.is_created(&label) {
-            webviews::create_content_webview(&main, &target, w, h).map_err(|e| e.to_string())?;
+            webviews::create_content_webview(&main, &target).map_err(|e| e.to_string())?;
             tabs.mark_created(&label);
         }
         tabs.set_active(&label);
@@ -49,4 +48,14 @@ pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn reset_all(app: AppHandle) -> Result<(), String> {
     reset_all_tabs(&app)
+}
+
+/// Refresh a single tab's current page in place (no-op if it hasn't been opened yet).
+#[tauri::command]
+pub fn reload_tab(label: String, app: AppHandle) -> Result<(), String> {
+    let main = app.get_window("main").ok_or("no main window")?;
+    if let Some(wv) = main.get_webview(&label) {
+        wv.eval("location.reload()").map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

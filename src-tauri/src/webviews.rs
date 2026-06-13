@@ -23,27 +23,12 @@ impl TabState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tracks_created_and_active() {
-        let mut s = TabState::default();
-        assert!(!s.is_created("tab-0"));
-        s.mark_created("tab-0");
-        assert!(s.is_created("tab-0"));
-        assert_eq!(s.active(), None);
-        s.set_active("tab-0");
-        assert_eq!(s.active(), Some("tab-0"));
-    }
-}
-
 use crate::config::TabView;
 use crate::escape;
 use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
-    AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, Window,
+    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalSize, WebviewUrl, Window,
+    WindowEvent,
 };
 
 const CHROME_W: f64 = 240.0;
@@ -52,7 +37,43 @@ const SESSION_STORE: [u8; 16] = *b"curator-session1";
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
 const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
 
-/// Build the main window and the chrome (sidebar) webview. Returns the window.
+/// Current inner size of the window in logical px.
+fn logical_inner(window: &Window) -> (f64, f64) {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let size = window.inner_size().unwrap_or(PhysicalSize::new(1280, 860));
+    (size.width as f64 / scale, size.height as f64 / scale)
+}
+
+/// Position of a content webview within the window (right of the chrome sidebar).
+fn content_position() -> LogicalPosition<f64> {
+    LogicalPosition::new(CHROME_W, 0.0)
+}
+
+/// Size of a content webview for the given window dimensions.
+fn content_size(w: f64, h: f64) -> LogicalSize<f64> {
+    LogicalSize::new((w - CHROME_W).max(0.0), h)
+}
+
+/// Re-lay-out the chrome (fixed-width sidebar) and every content webview (filling the rest)
+/// to the window's current size. Called on every window resize.
+fn layout_webviews(window: &Window) {
+    let (w, h) = logical_inner(window);
+    for wv in window.webviews() {
+        let (pos, size) = if wv.label() == "chrome" {
+            (
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(CHROME_W, h),
+            )
+        } else {
+            (content_position(), content_size(w, h))
+        };
+        let _ = wv.set_position(pos);
+        let _ = wv.set_size(size);
+    }
+}
+
+/// Build the main window and the chrome (sidebar) webview, and wire window-resize relayout.
+/// Returns the window.
 pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Window> {
     let window = tauri::window::WindowBuilder::new(app, "main")
         .title("curator")
@@ -65,18 +86,22 @@ pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Wi
         LogicalPosition::new(0.0, 0.0),
         LogicalSize::new(CHROME_W, win_h),
     )?;
+
+    // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler
+    // queries webviews() live, so content webviews created later are covered too.
+    let win = window.clone();
+    window.on_window_event(move |event| match event {
+        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => layout_webviews(&win),
+        _ => {}
+    });
+
     Ok(window)
 }
 
-/// Lazily create a content webview for `tab`, positioned in the content area. Idempotent
-/// via the caller's TabState. `on_new_window` denies in-app creation and escapes to Velja;
-/// `on_navigation` allows same-tab navigation.
-pub fn create_content_webview(
-    window: &Window,
-    tab: &TabView,
-    win_w: f64,
-    win_h: f64,
-) -> tauri::Result<()> {
+/// Lazily create a content webview for `tab`, sized to the window's current content area.
+/// Idempotent via the caller's TabState. `on_new_window` denies in-app creation and escapes
+/// to Velja; `on_navigation` allows same-tab navigation.
+pub fn create_content_webview(window: &Window, tab: &TabView) -> tauri::Result<()> {
     let url: url::Url = tab.url.parse().expect("url validated at config load");
     let builder = WebviewBuilder::new(&tab.label, WebviewUrl::External(url))
         .data_store_identifier(SESSION_STORE)
@@ -94,11 +119,8 @@ pub fn create_content_webview(
             escape::allow_same_tab_navigation(url.as_str())
         });
 
-    window.add_child(
-        builder,
-        LogicalPosition::new(CHROME_W, 0.0),
-        LogicalSize::new(win_w - CHROME_W, win_h),
-    )?;
+    let (w, h) = logical_inner(window);
+    window.add_child(builder, content_position(), content_size(w, h))?;
     Ok(())
 }
 
@@ -124,4 +146,20 @@ pub fn show_only(window: &Window, label: &str, all_labels: &[String]) -> tauri::
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracks_created_and_active() {
+        let mut s = TabState::default();
+        assert!(!s.is_created("tab-0"));
+        s.mark_created("tab-0");
+        assert!(s.is_created("tab-0"));
+        assert_eq!(s.active(), None);
+        s.set_active("tab-0");
+        assert_eq!(s.active(), Some("tab-0"));
+    }
 }

@@ -2,7 +2,29 @@
 body { margin: 0; font: 13px -apple-system, sans-serif; }
 #sidebar { width: 240px; height: 100vh; overflow-y: auto; background: #1e1e1e; color: #ddd; }
 .group { padding: 10px 12px 4px; font-size: 11px; text-transform: uppercase; color: #888; }
-.tab { display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none; color: #ddd; cursor: pointer; }
+.tab { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; font-size: 14px; color: #ddd; cursor: pointer; }
 .tab:hover { background: #2a2a2a; }
 .tab.active { background: #094771; color: #fff; }
+.tab-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.favicon {
+  flex: none;
+  width: 20px; height: 20px;
+  border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; color: #fff;
+}
+
+/* Plain icon, like a webapp's — no button chrome, just the glyph brightening on hover. */
+.reload {
+  flex: none;
+  background: none; border: none; padding: 0; color: inherit;
+  font-size: 18px; line-height: 1; cursor: pointer;
+  opacity: 0.3;                       /* always visible, faint */
+  transition: opacity 0.12s ease;
+}
+.tab:hover .reload { opacity: 0.7; }  /* brighter on row hover */
+.reload:hover { opacity: 1; }         /* brightest on the icon itself */
+.reload.spin { animation: spin 0.6s linear; }
+@keyframes spin { to { transform: rotate(360deg); } }
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }

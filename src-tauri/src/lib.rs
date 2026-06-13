@@ -10,7 +10,6 @@ use tauri::{Emitter, Manager};
 pub struct AppState {
     pub config: Mutex<config::Config>,
     pub tabs: Mutex<webviews::TabState>,
-    pub win_size: (f64, f64),
 }
 
 pub fn run() {
@@ -29,7 +28,7 @@ pub fn run() {
             let mut tab_state = webviews::TabState::default();
             // Eagerly create always_load tabs; hide them until selected.
             for v in views.iter().filter(|v| v.always_load) {
-                webviews::create_content_webview(&window, v, win_size.0, win_size.1)?;
+                webviews::create_content_webview(&window, v)?;
                 tab_state.mark_created(&v.label);
             }
             let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
@@ -55,7 +54,6 @@ pub fn run() {
             app.manage(AppState {
                 config: Mutex::new(cfg),
                 tabs: Mutex::new(tab_state),
-                win_size,
             });
 
             // Watch the config file and hot-reload on change, keeping the last-good config
@@ -135,7 +133,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_tabs,
             commands::select_tab,
-            commands::reset_all
+            commands::reset_all,
+            commands::reload_tab
         ])
         .run(tauri::generate_context!())
         .expect("error while running curator");
