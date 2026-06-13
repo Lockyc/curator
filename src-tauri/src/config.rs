@@ -23,6 +23,73 @@ pub struct Tab {
     pub reload_every: Option<u64>,
 }
 
+use std::path::Path;
+
+#[derive(Debug)]
+pub enum ConfigError {
+    Io(std::io::Error),
+    Parse(toml::de::Error),
+    EmptyField(&'static str),
+    InvalidUrl { title: String, url: String },
+    ZeroReload(String),
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::Io(e) => write!(f, "cannot read config: {e}"),
+            ConfigError::Parse(e) => write!(f, "invalid TOML: {e}"),
+            ConfigError::EmptyField(field) => write!(f, "empty {field}"),
+            ConfigError::InvalidUrl { title, url } => {
+                write!(f, "tab \"{title}\" has invalid url: {url}")
+            }
+            ConfigError::ZeroReload(title) => {
+                write!(f, "tab \"{title}\" reload_every must be > 0")
+            }
+        }
+    }
+}
+
+pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
+    let cfg: Config = toml::from_str(src).map_err(ConfigError::Parse)?;
+    for group in &cfg.groups {
+        if group.name.trim().is_empty() {
+            return Err(ConfigError::EmptyField("name"));
+        }
+        for tab in &group.tabs {
+            if tab.title.trim().is_empty() {
+                return Err(ConfigError::EmptyField("title"));
+            }
+            if tab.url.trim().is_empty() {
+                return Err(ConfigError::EmptyField("url"));
+            }
+            if url::Url::parse(&tab.url).is_err() {
+                return Err(ConfigError::InvalidUrl {
+                    title: tab.title.clone(),
+                    url: tab.url.clone(),
+                });
+            }
+            if matches!(tab.reload_every, Some(0)) {
+                return Err(ConfigError::ZeroReload(tab.title.clone()));
+            }
+        }
+    }
+    Ok(cfg)
+}
+
+pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
+    let src = std::fs::read_to_string(path).map_err(ConfigError::Io)?;
+    parse_and_validate(&src)
+}
+
+/// Default config location: ~/.config/curator/tabs.toml
+pub fn default_config_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("curator")
+        .join("tabs.toml")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,5 +126,57 @@ reload_every = 15
         let cal = &cfg.groups[0].tabs[1];
         assert_eq!(cal.always_load, true);
         assert_eq!(cal.reload_every, Some(15));
+    }
+
+    #[test]
+    fn rejects_empty_title() {
+        let src = r#"
+[[group]]
+name = "G"
+[[group.tab]]
+title = ""
+url = "https://x.test/"
+"#;
+        let err = parse_and_validate(src).unwrap_err();
+        assert!(matches!(err, ConfigError::EmptyField("title")));
+    }
+
+    #[test]
+    fn rejects_invalid_url() {
+        let src = r#"
+[[group]]
+name = "G"
+[[group.tab]]
+title = "Bad"
+url = "not a url"
+"#;
+        let err = parse_and_validate(src).unwrap_err();
+        assert!(matches!(err, ConfigError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn rejects_zero_reload_every() {
+        let src = r#"
+[[group]]
+name = "G"
+[[group.tab]]
+title = "T"
+url = "https://x.test/"
+reload_every = 0
+"#;
+        let err = parse_and_validate(src).unwrap_err();
+        assert!(matches!(err, ConfigError::ZeroReload(_)));
+    }
+
+    #[test]
+    fn malformed_toml_is_parse_error() {
+        let err = parse_and_validate("this is not toml = =").unwrap_err();
+        assert!(matches!(err, ConfigError::Parse(_)));
+    }
+
+    #[test]
+    fn load_missing_file_errors() {
+        let err = load_config(std::path::Path::new("/no/such/curator.toml")).unwrap_err();
+        assert!(matches!(err, ConfigError::Io(_)));
     }
 }
