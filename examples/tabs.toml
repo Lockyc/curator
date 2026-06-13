@@ -14,9 +14,21 @@ name = "Comms"
   reload_every = 15            # minutes — auto-refresh interval; omit = never
 
 [[group]]
-name = "Homelab"
+name = "Work"
 
   [[group.tab]]
-  title       = "Proxmox"
-  url         = "https://nucleus.lsjc.au:8006/"
+  title       = "GitHub"
+  url         = "https://github.com/"
   always_load = true           # preload + keep warm from launch (default false)
+
+  [[group.tab]]
+  title = "Slack"
+  url   = "https://app.slack.com/"
+
+[[group]]
+name = "Dashboards"
+
+  [[group.tab]]
+  title        = "Grafana Play"
+  url          = "https://play.grafana.org/"
+  reload_every = 5
