@@ -65,3 +65,7 @@ Each `[[group.tab]]` requires `title` and `url`. Optional per tab:
 
 Lazy by default: a tab's webview is created on first activation and kept warm for the
 session. See `examples/tabs.toml` for a starting point.
+
+## License
+
+[MIT](LICENSE)
