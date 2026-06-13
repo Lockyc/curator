@@ -1,5 +1,9 @@
 # curator — task runner
 
+# Recipes run in `sh`, which doesn't inherit cargo from an interactive fish/zsh setup.
+# Guarantee rustup's bin dir is on PATH so the tauri CLI can find `cargo`.
+export PATH := env_var('HOME') + "/.cargo/bin:" + env_var('PATH')
+
 # List available recipes
 default:
     @just --list
