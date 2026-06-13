@@ -75,7 +75,17 @@ Each `[[group.tab]]` requires `title` and `url`. Optional per tab:
 | `reload_every` | positive int    | none    | Auto-refresh the canonical URL every N minutes.  |
 
 Lazy by default: a tab's webview is created on first activation and kept warm for the
-session. See `examples/tabs.toml` for a starting point.
+session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
+that webview's memory); the tab reloads on next click. The ⟳ reloads a tab's current page
+(**⌘R** reloads the active tab).
+
+Top-level option:
+
+| Field            | Type                | Default | Meaning                                              |
+|------------------|---------------------|---------|------------------------------------------------------|
+| `open_on_launch` | bool \| tab title   | `false` | `true` opens the first tab on launch; a string opens the tab with that title; `false`/omit shows the blank screen. |
+
+See `examples/tabs.toml` for a starting point.
 
 ## License
 

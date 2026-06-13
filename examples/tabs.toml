@@ -1,6 +1,10 @@
 # Example curator config. Copy to ~/.config/curator/tabs.toml and edit.
 # Order of groups and tabs is the render order. Required per tab: title, url.
 
+# Open a tab on launch instead of the blank screen.
+#   true → the first tab   |   "Title" → a specific tab   |   false/omit → blank
+open_on_launch = true
+
 [[group]]
 name = "Comms"
 
