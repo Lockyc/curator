@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "curator",
+  "version": "0.1.0",
+  "identifier": "au.lsjc.curator",
+  "build": { "frontendDist": "../src" },
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": { "active": true, "targets": "app" }
+}
