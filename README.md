@@ -94,11 +94,13 @@ session. Each row shows a green dot when its tab is loaded — click it to **unl
 that webview's memory); the tab reloads on next click. The ⟳ reloads a tab's current page
 (**⌘R** reloads the active tab).
 
-Top-level option:
+Top-level options:
 
 | Field            | Type                | Default | Meaning                                              |
 |------------------|---------------------|---------|------------------------------------------------------|
 | `open_on_launch` | bool \| tab title   | `false` | `true` opens the first tab on launch; a string opens the tab with that title; `false`/omit shows the blank screen. |
+| `dark_mode`      | bool                | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark. Omit/false follows the system. |
+| `allow_insecure` | list of hosts       | `[]`    | Accept self-signed/invalid TLS certs for these hosts only, e.g. `["192.168.1.1"]` for homelab devices. Applied at launch (restart to change). |
 
 See `examples/tabs.toml` for a starting point.
 

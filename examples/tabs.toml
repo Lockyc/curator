@@ -5,6 +5,13 @@
 #   true → the first tab   |   "Title" → a specific tab   |   false/omit → blank
 open_on_launch = true
 
+# Force dark appearance (sites honouring prefers-color-scheme render dark). Omit = follow system.
+# dark_mode = true
+
+# Accept self-signed/invalid TLS certs for these hosts only (e.g. homelab devices).
+# Applied at launch — restart to change.
+# allow_insecure = ["192.168.1.1", "192.168.1.24"]
+
 [[group]]
 name = "Comms"
 
