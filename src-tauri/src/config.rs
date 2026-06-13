@@ -178,10 +178,10 @@ reload_every = 15
     fn optional_fields_default() {
         let cfg: Config = toml::from_str(VALID).unwrap();
         let gmail = &cfg.groups[0].tabs[0];
-        assert_eq!(gmail.always_load, false);
+        assert!(!gmail.always_load);
         assert_eq!(gmail.reload_every, None);
         let cal = &cfg.groups[0].tabs[1];
-        assert_eq!(cal.always_load, true);
+        assert!(cal.always_load);
         assert_eq!(cal.reload_every, Some(15));
     }
 
@@ -245,12 +245,15 @@ reload_every = 0
         assert_eq!(views[0].group, "Comms");
         assert_eq!(views[0].title, "Gmail");
         assert_eq!(views[1].title, "Calendar");
-        assert_eq!(views[1].always_load, true);
+        assert!(views[1].always_load);
         assert_eq!(views[1].reload_every, Some(15));
         // Distinct URLs → distinct labels; labels are deterministic across calls.
         assert_ne!(views[0].label, views[1].label);
         assert_eq!(
-            cfg.tab_views().iter().map(|t| t.label.clone()).collect::<Vec<_>>(),
+            cfg.tab_views()
+                .iter()
+                .map(|t| t.label.clone())
+                .collect::<Vec<_>>(),
             views.iter().map(|t| t.label.clone()).collect::<Vec<_>>()
         );
     }

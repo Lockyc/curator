@@ -19,7 +19,8 @@ mod tests {
     #[test]
     fn valid_new_source_replaces() {
         let cur = Config { groups: vec![] };
-        let src = "[[group]]\nname = \"G\"\n[[group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
+        let src =
+            "[[group]]\nname = \"G\"\n[[group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
         let res = reconcile(&cur, src).unwrap();
         assert_eq!(res.groups.len(), 1);
     }

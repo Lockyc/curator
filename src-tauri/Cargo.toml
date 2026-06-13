@@ -2,6 +2,14 @@
 name = "curator"
 version = "0.1.0"
 edition = "2021"
+description = "A dedicated, always-findable home for the handful of browser tabs you can't afford to lose. macOS only."
+authors = ["Lachlan Collins <lachlan@lsjc.com.au>"]
+license = "MIT"
+repository = "https://github.com/Lockyc/curator"
+readme = "../README.md"
+keywords = ["tauri", "macos", "browser", "tabs", "webview"]
+categories = ["gui"]
+publish = false
 
 [lib]
 name = "curator_lib"

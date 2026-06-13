@@ -1,7 +1,15 @@
-# curator
+<p align="center">
+  <img src="src-tauri/icons/icon.png" alt="curator app icon" width="128" height="128">
+</p>
+
+<h1 align="center">curator</h1>
 
 A dedicated, always-findable home for the handful of browser tabs you can't afford to
 lose. macOS only.
+
+<!-- screenshot: drop a real capture here once a demo config is in place, e.g.
+<p align="center"><img src="docs/screenshot.png" alt="curator window" width="720"></p>
+-->
 
 Not a general browser: a minimal, single-window app (Tauri v2) that renders a *curated,
 declarative* set of "keeper" tabs from a `tabs.toml` config, and refuses to let new-tab

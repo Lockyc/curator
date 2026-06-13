@@ -42,7 +42,9 @@ mod tests {
 
     #[test]
     fn same_tab_navigation_is_always_allowed() {
-        assert!(allow_same_tab_navigation("https://mail.google.com/mail/u/0/#inbox"));
+        assert!(allow_same_tab_navigation(
+            "https://mail.google.com/mail/u/0/#inbox"
+        ));
         assert!(allow_same_tab_navigation("https://example.com/whatever"));
     }
 
