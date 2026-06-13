@@ -98,6 +98,13 @@ pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Wi
         LogicalSize::new(CHROME_W, (win_h - TITLEBAR_H).max(0.0)),
     )?;
 
+    // Blank-screen placeholder (muted grey app icon), shown in the content area behind every
+    // content webview. Content webviews are added later, so they stack on top and cover it
+    // when a tab is open; it shows through when nothing is selected.
+    let placeholder =
+        WebviewBuilder::new("placeholder", WebviewUrl::App("placeholder.html".into()));
+    window.add_child(placeholder, content_position(), content_size(win_w, win_h))?;
+
     // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler
     // queries webviews() live, so content webviews created later are covered too.
     let win = window.clone();
@@ -172,5 +179,26 @@ mod tests {
         assert_eq!(s.active(), None);
         s.set_active("tab-0");
         assert_eq!(s.active(), Some("tab-0"));
+    }
+
+    #[test]
+    fn unloading_clears_created_and_active() {
+        let mut s = TabState::default();
+        s.mark_created("tab-0");
+        s.set_active("tab-0");
+        s.mark_unloaded("tab-0");
+        assert!(!s.is_created("tab-0"));
+        assert_eq!(s.active(), None);
+    }
+
+    #[test]
+    fn unloading_a_background_tab_keeps_active() {
+        let mut s = TabState::default();
+        s.mark_created("tab-0");
+        s.mark_created("tab-1");
+        s.set_active("tab-1");
+        s.mark_unloaded("tab-0");
+        assert!(!s.is_created("tab-0"));
+        assert_eq!(s.active(), Some("tab-1"));
     }
 }

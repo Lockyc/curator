@@ -19,7 +19,7 @@ pub fn run() {
             let path = config::default_config_path();
             let cfg = config::load_config(&path).unwrap_or_else(|e| {
                 eprintln!("config error, starting empty: {e}");
-                config::Config { groups: vec![] }
+                config::Config::default()
             });
             let handle = app.handle().clone();
             let window = webviews::build_window(&handle, win_size.0, win_size.1)?;
@@ -35,6 +35,19 @@ pub fn run() {
             for l in &all_labels {
                 if let Some(wv) = window.get_webview(l) {
                     wv.hide()?;
+                }
+            }
+
+            // Open a tab on launch if configured (`open_on_launch`), so we don't land on the
+            // blank placeholder screen.
+            if let Some(label) = cfg.startup_label() {
+                if let Some(v) = views.iter().find(|v| v.label == label) {
+                    if !tab_state.is_created(&label) {
+                        webviews::create_content_webview(&window, v)?;
+                        tab_state.mark_created(&label);
+                    }
+                    tab_state.set_active(&label);
+                    webviews::show_only(&window, &label, &all_labels)?;
                 }
             }
 
@@ -94,25 +107,37 @@ pub fn run() {
                 }
             });
 
-            // App menu: edit/reveal the config file, and reset all tabs to canonical URLs.
+            // App menu: reload/reset tabs (with Cmd+R) and edit/reveal the config file.
             use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+            let reload_tab = MenuItemBuilder::with_id("reload_active", "Reload Tab")
+                .accelerator("CmdOrCtrl+R")
+                .build(app)?;
+            let reset = MenuItemBuilder::with_id("reset_all", "Reset All Tabs").build(app)?;
             let edit_cfg = MenuItemBuilder::with_id("edit_config", "Edit Config").build(app)?;
             let reveal_cfg =
                 MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(app)?;
-            let reset = MenuItemBuilder::with_id("reset_all", "Reset All Tabs").build(app)?;
             let app_menu = SubmenuBuilder::new(app, "curator")
                 .item(&PredefinedMenuItem::quit(app, None)?)
                 .build()?;
+            let tabs_menu = SubmenuBuilder::new(app, "Tabs")
+                .items(&[&reload_tab, &reset])
+                .build()?;
             let config_menu = SubmenuBuilder::new(app, "Config")
-                .items(&[&edit_cfg, &reveal_cfg, &reset])
+                .items(&[&edit_cfg, &reveal_cfg])
                 .build()?;
             let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &config_menu])
+                .items(&[&app_menu, &tabs_menu, &config_menu])
                 .build()?;
             app.set_menu(menu)?;
 
             let cfg_path = path.clone();
             app.on_menu_event(move |app, event| match event.id().as_ref() {
+                "reload_active" => {
+                    commands::reload_active_tab(app);
+                }
+                "reset_all" => {
+                    let _ = commands::reset_all_tabs(app);
+                }
                 "edit_config" => {
                     let _ = std::process::Command::new("open").arg(&cfg_path).spawn();
                 }
@@ -121,9 +146,6 @@ pub fn run() {
                         .arg("-R")
                         .arg(&cfg_path)
                         .spawn();
-                }
-                "reset_all" => {
-                    let _ = commands::reset_all_tabs(app);
                 }
                 _ => {}
             });
@@ -134,7 +156,8 @@ pub fn run() {
             commands::get_tabs,
             commands::select_tab,
             commands::reset_all,
-            commands::reload_tab
+            commands::reload_tab,
+            commands::unload_tab
         ])
         .run(tauri::generate_context!())
         .expect("error while running curator");
