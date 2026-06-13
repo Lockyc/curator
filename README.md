@@ -44,7 +44,10 @@ file-driven, everything else is ephemeral.
    just dev      # or: npm run tauri dev
    ```
 
-   `just build` produces a `.app` bundle. `just test` runs the Rust tests.
+   `just build` produces a `.app` bundle; **`just deploy`** builds and installs/updates it
+   in `/Applications` (quitting the running copy and relaunching). `just test` runs the Rust
+   tests. The app icon source is `src-tauri/icons/icon.svg` — re-run `npx tauri icon
+   src-tauri/icons/icon.svg` after editing it.
 
 3. Edit `~/.config/curator/tabs.toml` and save — the sidebar **hot-reloads**, no restart.
    A malformed file keeps the last-good config running and shows an error banner instead of
