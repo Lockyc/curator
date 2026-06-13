@@ -18,7 +18,7 @@ mod tests {
 
     #[test]
     fn valid_new_source_replaces() {
-        let cur = Config { groups: vec![] };
+        let cur = Config::default();
         let src =
             "[[group]]\nname = \"G\"\n[[group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
         let res = reconcile(&cur, src).unwrap();
@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     fn invalid_new_source_yields_error_message() {
-        let cur = Config { groups: vec![] };
+        let cur = Config::default();
         let err = reconcile(&cur, "= = bad").unwrap_err();
         assert!(err.contains("invalid TOML"));
     }

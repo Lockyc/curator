@@ -1,7 +1,24 @@
 use serde::Deserialize;
 
+/// What to open when the app launches. `false` (default) → blank; `true` → the first tab;
+/// a string → the tab whose `title` matches (falling back to the first tab if none match).
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum OpenOnLaunch {
+    Toggle(bool),
+    Tab(String),
+}
+
+impl Default for OpenOnLaunch {
+    fn default() -> Self {
+        OpenOnLaunch::Toggle(false)
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Config {
+    #[serde(default)]
+    pub open_on_launch: OpenOnLaunch,
     #[serde(default, rename = "group")]
     pub groups: Vec<Group>,
 }
@@ -144,6 +161,20 @@ impl Config {
             }
         }
         views
+    }
+
+    /// Label of the tab to open on launch (per `open_on_launch`). `None` = blank screen.
+    pub fn startup_label(&self) -> Option<String> {
+        let views = self.tab_views();
+        match &self.open_on_launch {
+            OpenOnLaunch::Toggle(false) => None,
+            OpenOnLaunch::Toggle(true) => views.first().map(|v| v.label.clone()),
+            OpenOnLaunch::Tab(title) => views
+                .iter()
+                .find(|v| v.title == *title)
+                .or_else(|| views.first())
+                .map(|v| v.label.clone()),
+        }
     }
 }
 
@@ -293,5 +324,30 @@ url = "https://same.test/"
         let cfg: Config = toml::from_str(src).unwrap();
         let views = cfg.tab_views();
         assert_ne!(views[0].label, views[1].label);
+    }
+
+    #[test]
+    fn open_on_launch_resolves_startup_label() {
+        // absent → blank
+        let cfg: Config = toml::from_str(VALID).unwrap();
+        assert_eq!(cfg.startup_label(), None);
+
+        // true → first tab
+        let cfg: Config = toml::from_str(&format!("open_on_launch = true\n{VALID}")).unwrap();
+        assert_eq!(cfg.startup_label(), Some(cfg.tab_views()[0].label.clone()));
+
+        // named tab → that tab
+        let cfg: Config =
+            toml::from_str(&format!("open_on_launch = \"Calendar\"\n{VALID}")).unwrap();
+        let cal = cfg
+            .tab_views()
+            .into_iter()
+            .find(|v| v.title == "Calendar")
+            .unwrap();
+        assert_eq!(cfg.startup_label(), Some(cal.label));
+
+        // unknown name → falls back to first
+        let cfg: Config = toml::from_str(&format!("open_on_launch = \"Nope\"\n{VALID}")).unwrap();
+        assert_eq!(cfg.startup_label(), Some(cfg.tab_views()[0].label.clone()));
     }
 }
