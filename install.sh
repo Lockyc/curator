@@ -45,7 +45,7 @@ echo "→ building release bundle (this takes a while)"
 npm run tauri build
 
 # 4. Install the built app into /Applications.
-scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
+bash scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
 
 # 5. Seed the user config from the example (never overwrite an existing one).
 mkdir -p "$HOME/.config/curator"

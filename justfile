@@ -20,7 +20,7 @@ build:
 deploy: build
     #!/usr/bin/env bash
     set -euo pipefail
-    scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
+    bash scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
     echo "→ launching"
     open "/Applications/curator.app"
     echo "✓ curator updated in /Applications"
