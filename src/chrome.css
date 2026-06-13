@@ -1,7 +1,19 @@
 * { box-sizing: border-box; }
+html, body { background: #1e1e1e; }   /* dark overscroll/rubber-band, not white */
 body { margin: 0; font: 13px -apple-system, sans-serif; }
 #sidebar { width: 240px; height: 100vh; overflow-y: auto; background: #1e1e1e; color: #ddd; }
-.group { padding: 10px 12px 4px; font-size: 11px; text-transform: uppercase; color: #888; }
+/* Sticky section headers with a separator line above each group (so groups read as
+   distinct sections, and the current section stays visible while scrolling a long list). */
+.group {
+  position: sticky; top: 0; z-index: 1;
+  background: #1e1e1e;
+  margin-top: 6px;
+  padding: 14px 12px 6px;
+  border-top: 1px solid #313640;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #9aa4b2;
+}
+.group:first-child { margin-top: 0; border-top: none; padding-top: 12px; }
 .tab { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; font-size: 14px; color: #ddd; cursor: pointer; }
 .tab:hover { background: #2a2a2a; }
 .tab.active { background: #094771; color: #fff; }
@@ -15,16 +27,32 @@ body { margin: 0; font: 13px -apple-system, sans-serif; }
   font-size: 11px; font-weight: 600; color: #fff;
 }
 
-/* Plain icon, like a webapp's — no button chrome, just the glyph brightening on hover. */
-.reload {
+.actions { flex: none; display: inline-flex; align-items: center; gap: 10px; }
+
+/* Both actions are SVGs in fixed, centered boxes — display:block on the svg removes the
+   inline baseline gap, so the dot and the reload arrow line up exactly across every row. */
+.unload, .reload {
   flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
   background: none; border: none; padding: 0; color: inherit;
-  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.unload svg, .reload svg { display: block; }
+
+/* Loaded indicator that doubles as an unload control: a green dot when the tab is warm,
+   swapping to a red ✕ on hover. The slot is always present so the reload icon never shifts. */
+.unload .dot, .unload .cross { display: none; }
+.unload.loaded { cursor: pointer; }
+.unload.loaded .dot { display: block; opacity: 0.85; }
+.unload.loaded:hover .dot { display: none; }
+.unload.loaded:hover .cross { display: block; }
+
+/* Plain icon, like a webapp's — no button chrome, just brightening and a glow on hover. */
+.reload {
+  cursor: pointer;
   opacity: 0.3;                       /* always visible, faint */
-  transition: opacity 0.12s ease;
+  transition: opacity 0.12s ease, filter 0.12s ease;
 }
 .tab:hover .reload { opacity: 0.7; }  /* brighter on row hover */
-.reload:hover { opacity: 1; }         /* brightest on the icon itself */
-.reload.spin { animation: spin 0.6s linear; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.reload:hover { opacity: 1; filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.85)); } /* glow */
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }

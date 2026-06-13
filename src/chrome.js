@@ -13,6 +13,16 @@ function tileColor(seed) {
   return `hsl(${h % 360}, 48%, 47%)`;
 }
 
+function setLoaded(el, loaded) {
+  el.classList.toggle("loaded", loaded);
+  el.title = loaded ? "Unload tab (frees memory; reloads on next click)" : "";
+}
+
+// SVG icons — geometry is exact, so they align perfectly across rows (unlike text glyphs).
+const RELOAD_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.36"/><path d="M21 3v6h-6"/></svg>`;
+const DOT_SVG = `<svg class="dot" viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="5.5" fill="#3fb950"/></svg>`;
+const CROSS_SVG = `<svg class="cross" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#f85149" stroke-width="2.6" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>`;
+
 async function render() {
   const tabs = await invoke("get_tabs");
   const sidebar = document.getElementById("sidebar");
@@ -31,6 +41,7 @@ async function render() {
       const row = document.createElement("div");
       row.className = "tab";
       row.dataset.label = t.label;
+      if (t.active) row.classList.add("active");
       row.addEventListener("click", () => select(t.label, row));
 
       const fav = document.createElement("span");
@@ -44,19 +55,35 @@ async function render() {
       title.textContent = t.title;
       row.appendChild(title);
 
+      const actions = document.createElement("span");
+      actions.className = "actions";
+
+      // Loaded indicator that doubles as an unload control: a green dot when the tab's
+      // webview is warm, turning into an ✕ on hover to destroy it.
+      const unload = document.createElement("button");
+      unload.className = "unload";
+      unload.innerHTML = DOT_SVG + CROSS_SVG;
+      setLoaded(unload, t.loaded);
+      unload.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!unload.classList.contains("loaded")) return;
+        invoke("unload_tab", { label: t.label });
+        setLoaded(unload, false);
+        row.classList.remove("active");
+      });
+      actions.appendChild(unload);
+
       const reload = document.createElement("button");
       reload.className = "reload";
-      reload.textContent = "⟳";
+      reload.innerHTML = RELOAD_SVG;
       reload.title = "Reload " + t.title;
       reload.addEventListener("click", (e) => {
         e.stopPropagation();
-        reload.classList.remove("spin");
-        void reload.offsetWidth; // restart the animation if clicked repeatedly
-        reload.classList.add("spin");
         invoke("reload_tab", { label: t.label });
       });
-      row.appendChild(reload);
+      actions.appendChild(reload);
 
+      row.appendChild(actions);
       sidebar.appendChild(row);
     }
   }
@@ -66,6 +93,8 @@ async function select(label, el) {
   await invoke("select_tab", { label });
   for (const b of document.querySelectorAll(".tab")) b.classList.remove("active");
   el.classList.add("active");
+  const u = el.querySelector(".unload"); // now warm
+  if (u) setLoaded(u, true);
 }
 
 listen("config-reloaded", () => {
