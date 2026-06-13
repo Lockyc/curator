@@ -121,8 +121,22 @@ pub fn run() {
                 }
             });
 
-            // App menu: reload/reset tabs (with Cmd+R) and edit/reveal the config file.
-            use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+            // App menu: about (version + build stamp), reload/reset tabs (Cmd+R), config.
+            use tauri::menu::{
+                AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
+                SubmenuBuilder,
+            };
+            let about_meta = AboutMetadataBuilder::new()
+                .name(Some("curator"))
+                .version(Some(env!("CARGO_PKG_VERSION")))
+                .short_version(Some(env!("CURATOR_GIT_SHA")))
+                .comments(Some(format!(
+                    "commit {} · built {}",
+                    env!("CURATOR_GIT_SHA"),
+                    env!("CURATOR_BUILD_DATE"),
+                )))
+                .build();
+            let about = PredefinedMenuItem::about(app, Some("About curator"), Some(about_meta))?;
             let reload_tab = MenuItemBuilder::with_id("reload_active", "Reload Tab")
                 .accelerator("CmdOrCtrl+R")
                 .build(app)?;
@@ -131,6 +145,8 @@ pub fn run() {
             let reveal_cfg =
                 MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(app)?;
             let app_menu = SubmenuBuilder::new(app, "curator")
+                .item(&about)
+                .separator()
                 .item(&PredefinedMenuItem::quit(app, None)?)
                 .build()?;
             let tabs_menu = SubmenuBuilder::new(app, "Tabs")
