@@ -49,6 +49,8 @@ use tauri::{
 const CHROME_W: f64 = 240.0;
 /// 16 bytes → one shared persistent session store for all content webviews.
 const SESSION_STORE: [u8; 16] = *b"curator-session1";
+/// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
+const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
 
 /// Build the main window and the chrome (sidebar) webview. Returns the window.
 pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Window> {
@@ -78,11 +80,19 @@ pub fn create_content_webview(
     let url: url::Url = tab.url.parse().expect("url validated at config load");
     let builder = WebviewBuilder::new(&tab.label, WebviewUrl::External(url))
         .data_store_identifier(SESSION_STORE)
+        .initialization_script(ESCAPE_CLICK_JS)
         .on_new_window(|url, _features| {
             escape::escape_to_default_browser(url.as_str());
             NewWindowResponse::Deny
         })
-        .on_navigation(|url| escape::allow_same_tab_navigation(url.as_str()));
+        .on_navigation(|url| {
+            // cmd/middle-click sentinel → escape to Velja, cancel the in-app nav.
+            if let Some(target) = escape::sentinel_target(url) {
+                escape::escape_to_default_browser(&target);
+                return false;
+            }
+            escape::allow_same_tab_navigation(url.as_str())
+        });
 
     window.add_child(
         builder,
