@@ -1,0 +1,136 @@
+You are installing or updating **curator** — a minimal macOS app that renders a
+curated, declarative set of "keeper" browser tabs from `~/.config/curator/tabs.toml`.
+
+GitHub: `https://github.com/Lockyc/curator`
+
+Build it from source and install `curator.app` to `/Applications`. Source lives in a
+persistent clone at `~/.curator`; updates are `git pull` + rebuild.
+
+---
+
+## Steps
+
+### 1. Detect context
+
+Check whether the current working directory is a curator checkout:
+
+```bash
+[ -f install.sh ] && [ -f src-tauri/tauri.conf.json ] && echo "IN_REPO" || echo "NOT_IN_REPO"
+```
+
+**If IN_REPO:** you will run the local `install.sh` in step 4.
+**If NOT_IN_REPO:** you will run the published installer over curl in step 4.
+
+### 2. Check prerequisites and offer to install
+
+Probe each build prerequisite:
+
+```bash
+command -v git   >/dev/null 2>&1 && echo "git: ok"   || echo "git: MISSING"
+command -v cargo >/dev/null 2>&1 && echo "cargo: ok" || echo "cargo: MISSING"
+command -v npm   >/dev/null 2>&1 && echo "npm: ok"   || echo "npm: MISSING"
+xcode-select -p  >/dev/null 2>&1 && echo "clt: ok"   || echo "clt: MISSING"
+command -v brew  >/dev/null 2>&1 && echo "brew: ok"  || echo "brew: MISSING"
+```
+
+For each MISSING prerequisite (other than brew), use AskUserQuestion to offer to install it.
+Only run an install command on confirmation:
+
+- **Xcode Command Line Tools** (also provides `git`): `xcode-select --install`
+  (this opens a GUI installer — tell the user to finish it, then continue).
+- **Rust** (`cargo`): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`,
+  then advise sourcing `~/.cargo/env` or restarting the shell.
+- **Node** (`npm`): if `brew` is present, `brew install node`; otherwise tell the user to
+  install Node from https://nodejs.org and re-run.
+
+If a prerequisite the user declined to install is still missing, warn that `install.sh`
+will refuse to build until it is present, and ask whether to continue anyway.
+
+### 3. Probe current state
+
+For smarter messaging:
+
+```bash
+[ -d /Applications/curator.app ] && echo "app: installed" || echo "app: absent"
+if [ ! -e ~/.curator ]; then echo "src: fresh";
+elif [ -d ~/.curator/.git ]; then echo "src: clone";
+else echo "src: not-a-clone"; fi
+pgrep -f "/Applications/curator.app/" >/dev/null && echo "running: yes" || echo "running: no"
+```
+
+If `src: not-a-clone`, tell the user `~/.curator` exists but is not a git clone; `install.sh`
+will refuse to touch it. They must move it aside before continuing.
+
+### 4. Run the core install
+
+**If IN_REPO:**
+
+```bash
+PATH="$HOME/.cargo/bin:$PATH" bash install.sh
+```
+
+**If NOT_IN_REPO:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | PATH="$HOME/.cargo/bin:$PATH" bash
+```
+
+(The `PATH="$HOME/.cargo/bin:$PATH"` prefix ensures a Rust toolchain you may have just
+installed via rustup in step 2 is found — a fresh shell won't have picked up rustup's
+profile changes yet.)
+
+This clones/updates `~/.curator`, runs `npm install` and `npm run tauri build`, installs the
+built app to `/Applications/curator.app`, and seeds `~/.config/curator/tabs.toml` if absent.
+The build takes a few minutes. **If it fails, show the full output and stop** — do not run
+later steps.
+
+### 5. Configure
+
+`install.sh` has already seeded `~/.config/curator/tabs.toml` from the example if it was
+absent. Use AskUserQuestion to offer to open it for editing now:
+
+- **Open in editor** → `open -e ~/.config/curator/tabs.toml`
+- **Reveal in Finder** → `open -R ~/.config/curator/tabs.toml`
+- **Skip** — leave it for later.
+
+Briefly note the format: each `[[group]]` has a `name` and `[[group.tab]]` entries requiring
+`title` and `url`, with optional `always_load` (preload + keep warm) and `reload_every`
+(auto-refresh minutes). The app also has a **Config** menu (Edit / Reveal / Reset All).
+
+### 6. Offer to launch
+
+Use AskUserQuestion: **"Launch curator now?"**
+
+- **Launch** → `open /Applications/curator.app`
+- **Not now** — skip.
+
+### 7. Self-install this command
+
+So `/curator:install` is available in future Claude Code sessions:
+
+```bash
+mkdir -p ~/.claude/commands/curator
+```
+
+Copy `install.md` verbatim to `~/.claude/commands/curator/install.md`. Source it from the
+cwd checkout if IN_REPO (`.claude/commands/curator/install.md`), otherwise from
+`~/.curator/.claude/commands/curator/install.md` (present after step 4 cloned it).
+
+### 8. Summary
+
+Read the version from `src-tauri/tauri.conf.json` (the `version` field) — use the cwd checkout
+if IN_REPO, else `~/.curator/src-tauri/tauri.conf.json`.
+
+Print:
+
+**Installed**
+- curator vX.Y.Z → `/Applications/curator.app` ✓
+- Source clone → `~/.curator`
+- Config → `~/.config/curator/tabs.toml` (seeded from example / already existed)
+
+**Next steps**
+- Edit `~/.config/curator/tabs.toml` to curate your tabs (hot-reloads on save).
+- New-tab navigation (`target="_blank"`, `window.open`, cmd/middle-click) escapes curator and
+  opens in your system default browser.
+- Update any time by re-running `/curator:install` (or `curl … | bash`) — it git-pulls and
+  rebuilds.

@@ -20,17 +20,7 @@ build:
 deploy: build
     #!/usr/bin/env bash
     set -euo pipefail
-    app="src-tauri/target/release/bundle/macos/curator.app"
-    test -d "$app" || { echo "error: build produced no $app"; exit 1; }
-    echo "→ quitting any running curator"
-    osascript -e 'quit app "curator"' 2>/dev/null || true
-    pkill -f "/Applications/curator.app/" 2>/dev/null || true
-    sleep 1
-    echo "→ installing to /Applications/curator.app"
-    rm -rf "/Applications/curator.app"
-    cp -R "$app" "/Applications/curator.app"
-    # Local build is unsigned; strip any quarantine so Gatekeeper doesn't block it.
-    xattr -dr com.apple.quarantine "/Applications/curator.app" 2>/dev/null || true
+    bash scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
     echo "→ launching"
     open "/Applications/curator.app"
     echo "✓ curator updated in /Applications"

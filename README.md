@@ -37,6 +37,21 @@ file-driven, everything else is ephemeral.
   overlay title bar; the native title bar (with traffic lights, draggable) is exposed only
   as a strip above the sidebar tab list.
 
+## Quick install
+
+In **Claude Code**, run `/curator:install` — it checks prerequisites (offering to install
+any that are missing), builds curator from source into `~/.curator`, installs `curator.app`
+to `/Applications`, and seeds your config.
+
+Or install from a terminal (once this repo is public):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | bash
+```
+
+Re-running either path updates curator (`git pull` + rebuild). The steps below describe the
+manual / contributor flow.
+
 ## Setup
 
 1. Copy the sample config into place:
