@@ -1,0 +1,22 @@
+# Example curator config. Copy to ~/.config/curator/tabs.toml and edit.
+# Order of groups and tabs is the render order. Required per tab: title, url.
+
+[[group]]
+name = "Comms"
+
+  [[group.tab]]
+  title = "Gmail"
+  url   = "https://mail.google.com/"
+
+  [[group.tab]]
+  title        = "Calendar"
+  url          = "https://calendar.google.com/"
+  reload_every = 15            # minutes — auto-refresh interval; omit = never
+
+[[group]]
+name = "Homelab"
+
+  [[group.tab]]
+  title       = "Proxmox"
+  url         = "https://nucleus.lsjc.au:8006/"
+  always_load = true           # preload + keep warm from launch (default false)

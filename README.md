@@ -26,4 +26,39 @@ file-driven, everything else is ephemeral.
   shell out to `open`, routing through Velja instead of opening in curator.
 - **Sessions persist** — log into a site once in-app; it stays.
 
-Status: early — design only. See `docs/` (untracked scratch).
+## Setup
+
+1. Copy the sample config into place:
+
+   ```sh
+   mkdir -p ~/.config/curator
+   cp examples/tabs.toml ~/.config/curator/tabs.toml
+   ```
+
+   It lives under `~/.config/` so it slots into a dotfiles workflow — your curated tab set
+   becomes versioned, portable config.
+
+2. Run it (requires Rust + Node):
+
+   ```sh
+   just dev      # or: npm run tauri dev
+   ```
+
+   `just build` produces a `.app` bundle. `just test` runs the Rust tests.
+
+3. Edit `~/.config/curator/tabs.toml` and save — the sidebar **hot-reloads**, no restart.
+   A malformed file keeps the last-good config running and shows an error banner instead of
+   crashing. The **Config** menu has *Edit Config* / *Reveal Config in Finder* so you needn't
+   memorise the path, plus *Reset All Tabs* to snap every open tab back to its canonical URL.
+
+## Config options
+
+Each `[[group.tab]]` requires `title` and `url`. Optional per tab:
+
+| Field          | Type            | Default | Meaning                                          |
+|----------------|-----------------|---------|--------------------------------------------------|
+| `always_load`  | bool            | `false` | Preload the tab and keep it warm from launch.    |
+| `reload_every` | positive int    | none    | Auto-refresh the canonical URL every N minutes.  |
+
+Lazy by default: a tab's webview is created on first activation and kept warm for the
+session. See `examples/tabs.toml` for a starting point.
