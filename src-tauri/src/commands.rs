@@ -31,8 +31,10 @@ pub fn select_tab(label: String, app: AppHandle, state: State<AppState>) -> Resu
     Ok(())
 }
 
-#[tauri::command]
-pub fn reset_all(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+/// Reload every already-created content webview back to its canonical URL. Shared by the
+/// `reset_all` command and the "Reset All Tabs" menu item.
+pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
     let main = app.get_window("main").ok_or("no main window")?;
     let views = state.config.lock().unwrap().tab_views();
     let tabs = state.tabs.lock().unwrap();
@@ -42,4 +44,9 @@ pub fn reset_all(app: AppHandle, state: State<AppState>) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn reset_all(app: AppHandle) -> Result<(), String> {
+    reset_all_tabs(&app)
 }

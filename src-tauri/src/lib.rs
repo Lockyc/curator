@@ -96,6 +96,40 @@ pub fn run() {
                 }
             });
 
+            // App menu: edit/reveal the config file, and reset all tabs to canonical URLs.
+            use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+            let edit_cfg = MenuItemBuilder::with_id("edit_config", "Edit Config").build(app)?;
+            let reveal_cfg =
+                MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(app)?;
+            let reset = MenuItemBuilder::with_id("reset_all", "Reset All Tabs").build(app)?;
+            let app_menu = SubmenuBuilder::new(app, "curator")
+                .item(&PredefinedMenuItem::quit(app, None)?)
+                .build()?;
+            let config_menu = SubmenuBuilder::new(app, "Config")
+                .items(&[&edit_cfg, &reveal_cfg, &reset])
+                .build()?;
+            let menu = MenuBuilder::new(app)
+                .items(&[&app_menu, &config_menu])
+                .build()?;
+            app.set_menu(menu)?;
+
+            let cfg_path = path.clone();
+            app.on_menu_event(move |app, event| match event.id().as_ref() {
+                "edit_config" => {
+                    let _ = std::process::Command::new("open").arg(&cfg_path).spawn();
+                }
+                "reveal_config" => {
+                    let _ = std::process::Command::new("open")
+                        .arg("-R")
+                        .arg(&cfg_path)
+                        .spawn();
+                }
+                "reset_all" => {
+                    let _ = commands::reset_all_tabs(app);
+                }
+                _ => {}
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
