@@ -1,4 +1,5 @@
 mod config;
+mod escape;
 
 pub fn run() {
     tauri::Builder::default()
