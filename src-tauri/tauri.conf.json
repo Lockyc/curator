@@ -6,6 +6,7 @@
   "build": { "frontendDist": "../src" },
   "app": {
     "windows": [],
+    "withGlobalTauri": true,
     "security": { "csp": null }
   },
   "bundle": { "active": true, "targets": "app" }
