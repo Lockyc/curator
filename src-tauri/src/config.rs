@@ -106,22 +106,41 @@ pub struct TabView {
     pub reload_every: Option<u64>,
 }
 
+/// Stable webview label derived from a tab's URL. Position-independent so that inserting,
+/// removing, or reordering tabs in the config does not remap an already-created content
+/// webview onto a different tab (the bug index-based labels caused). Deterministic across
+/// runs (`DefaultHasher` uses fixed keys).
+fn url_label(url: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut h);
+    format!("tab-{:016x}", h.finish())
+}
+
 impl Config {
-    /// Flatten groups → ordered tabs with stable `tab-<index>` labels.
+    /// Flatten groups → ordered tabs with stable, URL-derived labels. Render order is file
+    /// order. Tabs sharing a URL get a deterministic `-N` suffix so their labels stay unique.
     pub fn tab_views(&self) -> Vec<TabView> {
         let mut views = Vec::new();
-        let mut idx = 0usize;
+        let mut seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         for group in &self.groups {
             for tab in &group.tabs {
+                let base = url_label(&tab.url);
+                let n = seen.entry(base.clone()).or_insert(0);
+                let label = if *n == 0 {
+                    base.clone()
+                } else {
+                    format!("{base}-{n}")
+                };
+                *n += 1;
                 views.push(TabView {
-                    label: format!("tab-{idx}"),
+                    label,
                     group: group.name.clone(),
                     title: tab.title.clone(),
                     url: tab.url.clone(),
                     always_load: tab.always_load,
                     reload_every: tab.reload_every,
                 });
-                idx += 1;
             }
         }
         views
@@ -219,16 +238,57 @@ reload_every = 0
     }
 
     #[test]
-    fn flattens_to_ordered_tabviews_with_stable_labels() {
+    fn flattens_to_ordered_tabviews() {
         let cfg: Config = toml::from_str(VALID).unwrap();
         let views = cfg.tab_views();
         assert_eq!(views.len(), 2);
-        assert_eq!(views[0].label, "tab-0");
         assert_eq!(views[0].group, "Comms");
         assert_eq!(views[0].title, "Gmail");
-        assert_eq!(views[1].label, "tab-1");
         assert_eq!(views[1].title, "Calendar");
         assert_eq!(views[1].always_load, true);
         assert_eq!(views[1].reload_every, Some(15));
+        // Distinct URLs → distinct labels; labels are deterministic across calls.
+        assert_ne!(views[0].label, views[1].label);
+        assert_eq!(
+            cfg.tab_views().iter().map(|t| t.label.clone()).collect::<Vec<_>>(),
+            views.iter().map(|t| t.label.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn label_is_stable_when_a_tab_is_inserted_before_it() {
+        let base: Config = toml::from_str(VALID).unwrap();
+        let gmail_label = base.tab_views()[0].label.clone();
+        // Prepend a whole new group/tab ahead of everything.
+        let inserted: Config = toml::from_str(&format!(
+            "[[group]]\nname = \"New\"\n[[group.tab]]\ntitle = \"X\"\nurl = \"https://x.test/\"\n{VALID}"
+        ))
+        .unwrap();
+        let gmail = inserted
+            .tab_views()
+            .into_iter()
+            .find(|t| t.url == "https://mail.google.com/")
+            .unwrap();
+        assert_eq!(
+            gmail.label, gmail_label,
+            "Gmail's label must not change when a tab is inserted before it"
+        );
+    }
+
+    #[test]
+    fn duplicate_urls_get_distinct_labels() {
+        let src = r#"
+[[group]]
+name = "G"
+[[group.tab]]
+title = "A"
+url = "https://same.test/"
+[[group.tab]]
+title = "B"
+url = "https://same.test/"
+"#;
+        let cfg: Config = toml::from_str(src).unwrap();
+        let views = cfg.tab_views();
+        assert_ne!(views[0].label, views[1].label);
     }
 }
