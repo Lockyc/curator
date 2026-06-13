@@ -21,17 +21,27 @@ impl TabState {
     pub fn set_active(&mut self, label: &str) {
         self.active = Some(label.to_string());
     }
+    pub fn mark_unloaded(&mut self, label: &str) {
+        self.created.remove(label);
+        if self.active.as_deref() == Some(label) {
+            self.active = None;
+        }
+    }
 }
 
 use crate::config::TabView;
 use crate::escape;
 use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
-    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalSize, WebviewUrl, Window,
-    WindowEvent,
+    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalSize, TitleBarStyle, WebviewUrl,
+    Window, WindowEvent,
 };
 
 const CHROME_W: f64 = 240.0;
+/// macOS title-bar height. The title bar is an overlay (transparent, floating traffic
+/// lights); the content webview paints over it full-height while the chrome sidebar is
+/// inset by this much, leaving the native title-bar strip exposed only above the tab list.
+const TITLEBAR_H: f64 = 28.0;
 /// 16 bytes → one shared persistent session store for all content webviews.
 const SESSION_STORE: [u8; 16] = *b"curator-session1";
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
@@ -61,8 +71,8 @@ fn layout_webviews(window: &Window) {
     for wv in window.webviews() {
         let (pos, size) = if wv.label() == "chrome" {
             (
-                LogicalPosition::new(0.0, 0.0),
-                LogicalSize::new(CHROME_W, h),
+                LogicalPosition::new(0.0, TITLEBAR_H),
+                LogicalSize::new(CHROME_W, (h - TITLEBAR_H).max(0.0)),
             )
         } else {
             (content_position(), content_size(w, h))
@@ -78,13 +88,14 @@ pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Wi
     let window = tauri::window::WindowBuilder::new(app, "main")
         .title("curator")
         .inner_size(win_w, win_h)
+        .title_bar_style(TitleBarStyle::Overlay)
         .build()?;
 
     let chrome = WebviewBuilder::new("chrome", WebviewUrl::App("index.html".into()));
     window.add_child(
         chrome,
-        LogicalPosition::new(0.0, 0.0),
-        LogicalSize::new(CHROME_W, win_h),
+        LogicalPosition::new(0.0, TITLEBAR_H),
+        LogicalSize::new(CHROME_W, (win_h - TITLEBAR_H).max(0.0)),
     )?;
 
     // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler

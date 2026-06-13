@@ -33,6 +33,9 @@ file-driven, everything else is ephemeral.
 - **New-tab intents escape** — `target="_blank"`, `window.open`, cmd/middle-click all
   shell out to `open`, routing through Velja instead of opening in curator.
 - **Sessions persist** — log into a site once in-app; it stays.
+- **Page-first chrome** — the active page fills the window edge-to-edge, painting under an
+  overlay title bar; the native title bar (with traffic lights, draggable) is exposed only
+  as a strip above the sidebar tab list.
 
 ## Setup
 
