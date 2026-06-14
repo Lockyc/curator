@@ -187,7 +187,10 @@ pub fn run() {
             commands::select_tab,
             commands::reset_all,
             commands::reload_tab,
-            commands::unload_tab
+            commands::unload_tab,
+            commands::home_tab,
+            commands::nav_back,
+            commands::nav_forward
         ])
         .run(tauri::generate_context!())
         .expect("error while running curator");

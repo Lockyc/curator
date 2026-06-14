@@ -85,6 +85,42 @@ pub fn reload_tab(label: String, app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Return a single tab's content webview to its config-defined start URL. Powers both the
+/// sidebar home button and the click-active-tab-again gesture. No-op if the tab's webview
+/// isn't created yet. Single-tab analog of `reset_all_tabs`, reusing `reload_canonical`.
+#[tauri::command]
+pub fn home_tab(label: String, app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let main = app.get_window("main").ok_or("no main window")?;
+    let views = state.config.lock().unwrap().tab_views();
+    let view = views
+        .iter()
+        .find(|v| v.label == label)
+        .ok_or("unknown tab")?;
+    webviews::reload_canonical(&main, &label, &view.url).map_err(|e| e.to_string())
+}
+
+/// Step the tab's content webview back through its in-page history. No-op if the webview
+/// isn't created or there's nothing to go back to (WKWebView history isn't exposed here).
+#[tauri::command]
+pub fn nav_back(label: String, app: AppHandle) -> Result<(), String> {
+    let main = app.get_window("main").ok_or("no main window")?;
+    if let Some(wv) = main.get_webview(&label) {
+        wv.eval("history.back()").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Step the tab's content webview forward through its in-page history. No-op if the webview
+/// isn't created or there's nothing to go forward to.
+#[tauri::command]
+pub fn nav_forward(label: String, app: AppHandle) -> Result<(), String> {
+    let main = app.get_window("main").ok_or("no main window")?;
+    if let Some(wv) = main.get_webview(&label) {
+        wv.eval("history.forward()").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Destroy a tab's content webview, freeing its memory. The tab stays in the sidebar and
 /// reloads lazily on next selection. No-op if it isn't loaded.
 #[tauri::command]

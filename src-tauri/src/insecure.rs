@@ -66,7 +66,7 @@ unsafe extern "C-unwind" fn did_receive_auth_challenge(
 /// Add the auth-challenge handler to the content webview's navigation-delegate class. Idempotent
 /// (only adds once). No-op when no hosts are allowlisted.
 pub fn ensure_patched(webview_ptr: *mut c_void) {
-    if !ALLOW.get().is_some_and(|v| !v.is_empty()) {
+    if ALLOW.get().is_none_or(|v| v.is_empty()) {
         return;
     }
     static ONCE: Once = Once::new();
