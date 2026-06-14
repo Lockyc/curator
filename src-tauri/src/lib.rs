@@ -20,7 +20,10 @@ pub struct AppState {
 }
 
 pub fn run() {
-    let win_size = (1280.0, 860.0);
+    // Width is chosen so the content area (window width minus the CHROME_W sidebar) clears
+    // Material for MkDocs' 1220px (76.25em) nav breakpoint — 1500 - 240 = 1260 — so docs
+    // sites render their left sidebar by default instead of collapsing to a hamburger.
+    let win_size = (1500.0, 1000.0);
     tauri::Builder::default()
         .setup(move |app| {
             let path = config::default_config_path();
