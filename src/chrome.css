@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 html, body { background: #1e1e1e; }   /* dark overscroll/rubber-band, not white */
-body { margin: 0; font: 13px -apple-system, sans-serif; }
-#sidebar { width: 240px; height: 100vh; overflow-y: auto; background: #1e1e1e; color: #ddd; }
+body { margin: 0; font: 13px -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+#sidebar { flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #ddd; }
 /* Sticky section headers with a separator line above each group (so groups read as
    distinct sections, and the current section stays visible while scrolling a long list). */
 .group {
@@ -56,3 +56,20 @@ body { margin: 0; font: 13px -apple-system, sans-serif; }
 .tab:hover .reload { opacity: 0.7; }  /* brighter on row hover */
 .reload:hover { opacity: 1; filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.85)); } /* glow */
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
+
+/* Navigation pill pinned at the top of the sidebar (below the overlay traffic lights),
+   acting on the active tab. Buttons reuse the inline-SVG + centered-box idiom of the
+   per-row controls so icons align exactly. */
+#navbar { flex: none; padding: 6px 10px; background: #1e1e1e; border-bottom: 1px solid #313640; }
+.nav-pill { display: inline-flex; align-items: center; gap: 2px; background: #2a2a2a; border-radius: 8px; padding: 2px; }
+.nav-btn {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 26px;
+  background: none; border: none; padding: 0; color: #ddd;
+  border-radius: 6px; cursor: pointer; opacity: 0.85;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.nav-btn svg { display: block; }
+.nav-btn:hover:not(:disabled) { background: #353a42; opacity: 1; }
+.nav-btn:disabled { opacity: 0.25; cursor: default; }
