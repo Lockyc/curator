@@ -28,8 +28,9 @@ file-driven, everything else is ephemeral.
 
 - **`tabs.toml` is the source of truth** — keeper tabs, grouped and ordered. No in-app
   pin/unpin; you curate by editing the file (hot-reloaded on save).
-- **Keeper tabs are home bases** — wander within a session; each resets to its canonical
-  URL on restart.
+- **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
+  canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
+  tab also resets on restart.
 - **New-tab intents escape** — `target="_blank"`, `window.open`, cmd/middle-click all
   shell out to `open`, routing through Velja instead of opening in curator.
 - **Sessions persist** — log into a site once in-app; it stays.
@@ -92,7 +93,9 @@ Each `[[group.tab]]` requires `title` and `url`. Optional per tab:
 Lazy by default: a tab's webview is created on first activation and kept warm for the
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
 that webview's memory); the tab reloads on next click. The ⟳ reloads a tab's current page
-(**⌘R** reloads the active tab).
+(**⌘R** reloads the active tab). A navigation pill at the top of the sidebar drives the
+active tab: **◀ back** and **▶ forward** through its in-page history, and **⌂ home** to
+snap back to its canonical URL — re-clicking the already-active tab does the same.
 
 Top-level options:
 
