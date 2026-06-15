@@ -29,32 +29,24 @@ body { margin: 0; font: 13px -apple-system, sans-serif; height: 100vh; display: 
 
 .actions { flex: none; display: inline-flex; align-items: center; gap: 10px; }
 
-/* Both actions are SVGs in fixed, centered boxes — display:block on the svg removes the
-   inline baseline gap, so the dot and the reload arrow line up exactly across every row. */
-.unload, .reload {
+/* The indicator is an SVG in a fixed, centered box — display:block on the svg removes the
+   inline baseline gap, so the dot lines up exactly across every row. */
+.unload {
   flex: none;
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px;
   background: none; border: none; padding: 0; color: inherit;
 }
-.unload svg, .reload svg { display: block; }
+.unload svg { display: block; }
 
 /* Loaded indicator that doubles as an unload control: a green dot when the tab is warm,
-   swapping to a red ✕ on hover. The slot is always present so the reload icon never shifts. */
+   swapping to a red ✕ on hover. */
 .unload .dot, .unload .cross { display: none; }
 .unload.loaded { cursor: pointer; }
 .unload.loaded .dot { display: block; opacity: 0.85; }
 .unload.loaded:hover .dot { display: none; }
 .unload.loaded:hover .cross { display: block; }
 
-/* Plain icon, like a webapp's — no button chrome, just brightening and a glow on hover. */
-.reload {
-  cursor: pointer;
-  opacity: 0.3;                       /* always visible, faint */
-  transition: opacity 0.12s ease, filter 0.12s ease;
-}
-.tab:hover .reload { opacity: 0.7; }  /* brighter on row hover */
-.reload:hover { opacity: 1; filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.85)); } /* glow */
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
 
 /* Navigation pill pinned at the top of the sidebar (below the overlay traffic lights),

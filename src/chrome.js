@@ -28,7 +28,7 @@ function activeLabel() {
 // Nav buttons act on the active tab, so they're inert when nothing is selected.
 function updateNav() {
   const has = !!activeLabel();
-  for (const id of ["nav-back", "nav-forward", "nav-home"]) {
+  for (const id of ["nav-back", "nav-forward", "nav-reload", "nav-home"]) {
     document.getElementById(id).disabled = !has;
   }
 }
@@ -45,6 +45,7 @@ function initNav() {
   };
   wire("nav-back", BACK_SVG, "nav_back");
   wire("nav-forward", FWD_SVG, "nav_forward");
+  wire("nav-reload", RELOAD_SVG, "reload_tab");
   wire("nav-home", HOME_SVG, "home_tab");
 }
 
@@ -112,16 +113,6 @@ async function render() {
         updateNav();
       });
       actions.appendChild(unload);
-
-      const reload = document.createElement("button");
-      reload.className = "reload";
-      reload.innerHTML = RELOAD_SVG;
-      reload.title = "Reload " + t.title;
-      reload.addEventListener("click", (e) => {
-        e.stopPropagation();
-        invoke("reload_tab", { label: t.label });
-      });
-      actions.appendChild(reload);
 
       row.appendChild(actions);
       sidebar.appendChild(row);
