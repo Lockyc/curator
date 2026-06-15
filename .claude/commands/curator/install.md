@@ -1,5 +1,5 @@
 You are installing or updating **curator** — a minimal macOS app that renders a
-curated, declarative set of "keeper" browser tabs from `~/.config/curator/tabs.toml`.
+curated, declarative set of "keeper" browser tabs from `~/.config/curator/config.toml`.
 
 GitHub: `https://github.com/Lockyc/curator`
 
@@ -80,22 +80,23 @@ installed via rustup in step 2 is found — a fresh shell won't have picked up r
 profile changes yet.)
 
 This clones/updates `~/.curator`, runs `npm install` and `npm run tauri build`, installs the
-built app to `/Applications/curator.app`, and seeds `~/.config/curator/tabs.toml` if absent.
+built app to `/Applications/curator.app`, and seeds `~/.config/curator/config.toml` if absent.
 The build takes a few minutes. **If it fails, show the full output and stop** — do not run
 later steps.
 
 ### 5. Configure
 
-`install.sh` has already seeded `~/.config/curator/tabs.toml` from the example if it was
+`install.sh` has already seeded `~/.config/curator/config.toml` from the example if it was
 absent. Use AskUserQuestion to offer to open it for editing now:
 
-- **Open in editor** → `open -e ~/.config/curator/tabs.toml`
-- **Reveal in Finder** → `open -R ~/.config/curator/tabs.toml`
+- **Open in editor** → `open -e ~/.config/curator/config.toml`
+- **Reveal in Finder** → `open -R ~/.config/curator/config.toml`
 - **Skip** — leave it for later.
 
 Briefly note the format: each `[[group]]` has a `name` and `[[group.tab]]` entries requiring
 `title` and `url`, with optional `always_load` (preload + keep warm) and `reload_every`
-(auto-refresh minutes). The app also has a **Config** menu (Edit / Reveal / Reset All).
+(auto-refresh minutes). The app also has a **Tabs** menu (Reload Tab, Reset All Tabs) and a
+**Config** menu (Edit Config, Reveal Config in Finder).
 
 ### 6. Offer to launch
 
@@ -126,10 +127,10 @@ Print:
 **Installed**
 - curator vX.Y.Z → `/Applications/curator.app` ✓
 - Source clone → `~/.curator`
-- Config → `~/.config/curator/tabs.toml` (seeded from example / already existed)
+- Config → `~/.config/curator/config.toml` (seeded from example / already existed)
 
 **Next steps**
-- Edit `~/.config/curator/tabs.toml` to curate your tabs (hot-reloads on save).
+- Edit `~/.config/curator/config.toml` to curate your tabs (hot-reloads on save).
 - New-tab navigation (`target="_blank"`, `window.open`, cmd/middle-click) escapes curator and
   opens in your system default browser.
 - Update any time by re-running `/curator:install` (or `curl … | bash`) — it git-pulls and

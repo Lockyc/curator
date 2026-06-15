@@ -149,7 +149,7 @@ pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
     parse_and_validate(&src)
 }
 
-/// Default config location: `~/.config/curator/tabs.toml`.
+/// Default config location: `~/.config/curator/config.toml`.
 ///
 /// Deliberately `~/.config` (not `dirs::config_dir()`, which on macOS is
 /// `~/Library/Application Support`) so the config slots into the dotfiles bare-repo workflow.
@@ -158,7 +158,7 @@ pub fn default_config_path() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join(".config")
         .join("curator")
-        .join("tabs.toml")
+        .join("config.toml")
 }
 
 use serde::Serialize;

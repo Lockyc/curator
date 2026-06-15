@@ -1,4 +1,4 @@
-# Example curator config. Copy to ~/.config/curator/tabs.toml and edit.
+# Example curator config. Copy to ~/.config/curator/config.toml and edit.
 # Order of groups and tabs is the render order. Required per tab: title, url.
 
 # Open a tab on launch instead of the blank screen.

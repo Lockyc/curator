@@ -56,14 +56,14 @@ bash scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
 
 # 5. Seed the user config from the example (never overwrite an existing one).
 mkdir -p "$HOME/.config/curator"
-if [ ! -f "$HOME/.config/curator/tabs.toml" ]; then
-  cp examples/tabs.toml "$HOME/.config/curator/tabs.toml"
-  echo "→ seeded ~/.config/curator/tabs.toml from the example"
+if [ ! -f "$HOME/.config/curator/config.toml" ]; then
+  cp examples/config.toml "$HOME/.config/curator/config.toml"
+  echo "→ seeded ~/.config/curator/config.toml from the example"
 else
-  echo "→ ~/.config/curator/tabs.toml already exists — left untouched"
+  echo "→ ~/.config/curator/config.toml already exists — left untouched"
 fi
 
 echo ""
 echo "✓ curator installed to /Applications/curator.app"
-echo "  Edit ~/.config/curator/tabs.toml to curate your tabs, then launch curator."
+echo "  Edit ~/.config/curator/config.toml to curate your tabs, then launch curator."
 echo "  Update any time by re-running this installer (it git-pulls + rebuilds)."

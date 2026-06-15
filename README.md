@@ -12,7 +12,7 @@ lose. macOS only.
 -->
 
 Not a general browser: a minimal, single-window app (Tauri v2) that renders a *curated,
-declarative* set of "keeper" tabs from a `tabs.toml` config, and refuses to let new-tab
+declarative* set of "keeper" tabs from a `config.toml` config, and refuses to let new-tab
 navigation pollute that set — handing every such intent off to the system default handler
 (Velja) instead.
 
@@ -26,7 +26,7 @@ file-driven, everything else is ephemeral.
 
 ## Model
 
-- **`tabs.toml` is the source of truth** — keeper tabs, grouped and ordered. No in-app
+- **`config.toml` is the source of truth** — keeper tabs, grouped and ordered. No in-app
   pin/unpin; you curate by editing the file (hot-reloaded on save).
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
@@ -59,7 +59,7 @@ manual / contributor flow.
 
    ```sh
    mkdir -p ~/.config/curator
-   cp examples/tabs.toml ~/.config/curator/tabs.toml
+   cp examples/config.toml ~/.config/curator/config.toml
    ```
 
    It lives under `~/.config/` so it slots into a dotfiles workflow — your curated tab set
@@ -76,7 +76,7 @@ manual / contributor flow.
    tests. The app icon source is `src-tauri/icons/icon.svg` — re-run `npx tauri icon
    src-tauri/icons/icon.svg` after editing it.
 
-3. Edit `~/.config/curator/tabs.toml` and save — the sidebar **hot-reloads**, no restart.
+3. Edit `~/.config/curator/config.toml` and save — the sidebar **hot-reloads**, no restart.
    A malformed file keeps the last-good config running and shows an error banner instead of
    crashing. The **Config** menu has *Edit Config* / *Reveal Config in Finder* so you needn't
    memorise the path, plus *Reset All Tabs* to snap every open tab back to its canonical URL.
@@ -106,7 +106,7 @@ Top-level options:
 | `allow_insecure` | list of hosts       | `[]`    | Accept self-signed/invalid TLS certs for these hosts only, e.g. `["192.168.1.1"]` for homelab devices. Applied at launch (restart to change). |
 | `[window]`       | table `{ width, height }` | `1500 × 1000` | Initial window size in logical pixels. Set either key alone (the other keeps its default). Applied at launch (restart to change). |
 
-See `examples/tabs.toml` for a starting point.
+See `examples/config.toml` for a starting point.
 
 ## License
 
