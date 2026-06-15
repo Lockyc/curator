@@ -2,7 +2,8 @@
 // target="_blank" / window.open through the native on_new_window handler, but cmd-click and
 // middle-click arrive only as ordinary main-frame navigations. This catches those two
 // gestures and reroutes them through a sentinel URL that the native on_navigation handler
-// recognises and escapes to Velja — so no command is ever exposed to remote pages.
+// recognises and escapes to Velja — so no command is ever exposed to remote pages. It also
+// maps the mouse side-buttons to history back/forward, which WKWebView ignores by default.
 (function () {
   var SENTINEL = "https://curator.escape.invalid/?u=";
 
@@ -58,6 +59,25 @@
       if (!a || !isHttp(a.href)) return;
       e.preventDefault();
       e.stopPropagation();
+    },
+    true
+  );
+
+  // Mouse side-buttons → history navigation. WKWebView delivers these as ordinary mouse
+  // events (button 3 = back, button 4 = forward) but, unlike Safari, never acts on them, so
+  // we drive the page's own history. mouseup is the reliable hook for the side buttons.
+  document.addEventListener(
+    "mouseup",
+    function (e) {
+      if (e.button === 3) {
+        e.preventDefault();
+        e.stopPropagation();
+        history.back();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        e.stopPropagation();
+        history.forward();
+      }
     },
     true
   );
