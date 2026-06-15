@@ -22,7 +22,7 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .setup(move |app| {
-            let path = config::default_config_path();
+            let path = config::resolve_config_path();
             let cfg = config::load_config(&path).unwrap_or_else(|e| {
                 eprintln!("config error, starting empty: {e}");
                 config::Config::default()
@@ -121,11 +121,10 @@ pub fn run() {
                 }
             });
 
-            // App menu: about (version + build stamp), reload/reset tabs (Cmd+R), config.
-            use tauri::menu::{
-                AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
-                SubmenuBuilder,
-            };
+            // We replace Tauri's default menu, so we must re-add the standard macOS menus it
+            // would otherwise provide. The Edit menu in particular owns the clipboard
+            // accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z) — without it, webview text fields can't paste.
+            use tauri::menu::{AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
             let about_meta = AboutMetadataBuilder::new()
                 .name(Some("curator"))
                 .version(Some(env!("CARGO_PKG_VERSION")))
@@ -136,7 +135,6 @@ pub fn run() {
                     env!("CURATOR_BUILD_DATE"),
                 )))
                 .build();
-            let about = PredefinedMenuItem::about(app, Some("About curator"), Some(about_meta))?;
             let reload_tab = MenuItemBuilder::with_id("reload_active", "Reload Tab")
                 .accelerator("CmdOrCtrl+R")
                 .build(app)?;
@@ -145,9 +143,26 @@ pub fn run() {
             let reveal_cfg =
                 MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(app)?;
             let app_menu = SubmenuBuilder::new(app, "curator")
-                .item(&about)
+                .about(Some(about_meta))
                 .separator()
-                .item(&PredefinedMenuItem::quit(app, None)?)
+                .services()
+                .separator()
+                .hide()
+                .hide_others()
+                .show_all()
+                .separator()
+                .quit()
+                .build()?;
+            // Standard Edit menu — this is what makes clipboard shortcuts work in content
+            // webviews (logging into sites, typing anywhere). Don't drop it.
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
                 .build()?;
             let tabs_menu = SubmenuBuilder::new(app, "Tabs")
                 .items(&[&reload_tab, &reset])
@@ -155,8 +170,21 @@ pub fn run() {
             let config_menu = SubmenuBuilder::new(app, "Config")
                 .items(&[&edit_cfg, &reveal_cfg])
                 .build()?;
+            // Window menu — minimize / zoom / full screen. No Close Window (⌘W): curator is
+            // single-window with no reopen path, so closing the only window strands the app.
+            let window_menu = SubmenuBuilder::new(app, "Window")
+                .minimize()
+                .maximize()
+                .fullscreen()
+                .build()?;
             let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &tabs_menu, &config_menu])
+                .items(&[
+                    &app_menu,
+                    &edit_menu,
+                    &tabs_menu,
+                    &config_menu,
+                    &window_menu,
+                ])
                 .build()?;
             app.set_menu(menu)?;
 
