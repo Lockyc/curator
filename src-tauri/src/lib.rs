@@ -108,8 +108,20 @@ pub fn run() {
                     let current = state.config.lock().unwrap().clone();
                     match watcher::reconcile(&current, &src) {
                         Ok(cfg) => {
+                            let keep: std::collections::HashSet<String> =
+                                cfg.tab_views().into_iter().map(|v| v.label).collect();
                             if let Some(win) = app_handle.get_window("main") {
                                 let _ = win.set_theme(theme_for(cfg.dark_mode));
+                                // Close webviews orphaned by this reload (a tab whose URL
+                                // changed gets a new label; a removed tab drops out entirely).
+                                // Left alone they linger visible and surface on unload.
+                                let mut tabs = state.tabs.lock().unwrap();
+                                for label in tabs.orphans(&keep) {
+                                    if let Some(wv) = win.get_webview(&label) {
+                                        let _ = wv.close();
+                                    }
+                                    tabs.mark_unloaded(&label);
+                                }
                             }
                             *state.config.lock().unwrap() = cfg;
                             let _ = app_handle.emit("config-reloaded", ());

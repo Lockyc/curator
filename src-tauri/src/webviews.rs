@@ -27,6 +27,18 @@ impl TabState {
             self.active = None;
         }
     }
+    /// Created-webview labels absent from `keep` (the new config's labels) — orphaned by a
+    /// reload that changed a tab's URL (its hash-derived label moves) or removed the tab.
+    /// Pure: the caller closes each webview and calls `mark_unloaded`. Without this, an
+    /// orphan lingers visible (show_only only hides labels in the live config) and surfaces
+    /// when the covering tab is unloaded.
+    pub fn orphans(&self, keep: &HashSet<String>) -> Vec<String> {
+        self.created
+            .iter()
+            .filter(|l| !keep.contains(*l))
+            .cloned()
+            .collect()
+    }
 }
 
 use crate::config::TabView;
@@ -204,5 +216,31 @@ mod tests {
         s.mark_unloaded("tab-0");
         assert!(!s.is_created("tab-0"));
         assert_eq!(s.active(), Some("tab-1"));
+    }
+
+    #[test]
+    fn orphans_are_created_labels_missing_from_new_config() {
+        // A tab's URL was edited: its label moved from nextdns-old to nextdns-new while a
+        // webview is still live under the old label. Another tab is unchanged.
+        let mut s = TabState::default();
+        s.mark_created("nextdns-old");
+        s.mark_created("grafana");
+        s.set_active("nextdns-old");
+
+        let keep: HashSet<String> = ["nextdns-new", "grafana"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let orphans = s.orphans(&keep);
+        assert_eq!(orphans, vec!["nextdns-old".to_string()]);
+
+        // Reload teardown the watcher performs for each orphan.
+        for l in &orphans {
+            s.mark_unloaded(l);
+        }
+        assert!(!s.is_created("nextdns-old")); // orphan closed
+        assert_eq!(s.active(), None); // was active → cleared, so content falls back to blank
+        assert!(s.is_created("grafana")); // surviving tab untouched
+        assert!(s.orphans(&keep).is_empty()); // nothing left to prune
     }
 }
