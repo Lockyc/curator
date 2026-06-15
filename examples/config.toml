@@ -1,9 +1,14 @@
 # Example curator config. Copy to ~/.config/curator/config.toml and edit.
 # Order of groups and tabs is the render order. Required per tab: title, url.
+#
+# This sample leans on the kind of always-on pages curator is built for — dashboards,
+# status pages, monitoring panels, and docs — rather than personal mail/chat.
+# `just dev` loads this file (via CURATOR_CONFIG) so you can try it without touching
+# your real ~/.config/curator/config.toml.
 
 # Open a tab on launch instead of the blank screen.
 #   true → the first tab   |   "Title" → a specific tab   |   false/omit → blank
-open_on_launch = true
+open_on_launch = "Material for MkDocs"
 
 # Force dark appearance (sites honouring prefers-color-scheme render dark). Omit = follow system.
 # dark_mode = true
@@ -19,33 +24,40 @@ open_on_launch = true
 # height = 1000
 
 [[group]]
-name = "Comms"
-
-  [[group.tab]]
-  title = "Gmail"
-  url   = "https://mail.google.com/"
-
-  [[group.tab]]
-  title        = "Calendar"
-  url          = "https://calendar.google.com/"
-  reload_every = 15            # minutes — auto-refresh interval; omit = never
-
-[[group]]
-name = "Work"
-
-  [[group.tab]]
-  title       = "GitHub"
-  url         = "https://github.com/"
-  always_load = true           # preload + keep warm from launch (default false)
-
-  [[group.tab]]
-  title = "Slack"
-  url   = "https://app.slack.com/"
-
-[[group]]
 name = "Dashboards"
 
   [[group.tab]]
-  title        = "Grafana Play"
-  url          = "https://play.grafana.org/"
-  reload_every = 5
+  title       = "Grafana Play"
+  url         = "https://play.grafana.org/"
+  always_load = true           # preload + keep warm from launch (default false)
+  reload_every = 5             # minutes — auto-refresh interval; omit = never
+
+[[group]]
+name = "Status"
+
+  [[group.tab]]
+  title = "GitHub Status"
+  url   = "https://www.githubstatus.com/"
+
+  [[group.tab]]
+  title = "Cloudflare Status"
+  url   = "https://www.cloudflarestatus.com/"
+
+[[group]]
+name = "Monitoring"
+
+  [[group.tab]]
+  title        = "Uptime Kuma"
+  url          = "https://demo.uptime.kuma.pet/"
+  reload_every = 1
+
+[[group]]
+name = "Docs"
+
+  [[group.tab]]
+  title = "Material for MkDocs"
+  url   = "https://squidfunk.github.io/mkdocs-material/"
+
+  [[group.tab]]
+  title = "Tauri"
+  url   = "https://tauri.app/"

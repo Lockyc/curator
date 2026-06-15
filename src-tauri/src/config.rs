@@ -149,6 +149,16 @@ pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
     parse_and_validate(&src)
 }
 
+/// Config path to load at launch: `$CURATOR_CONFIG` if set, else [`default_config_path`].
+///
+/// The env override lets `just dev` point at the repo's `examples/config.toml` so iterating
+/// on curator never touches the developer's real `~/.config/curator/config.toml`.
+pub fn resolve_config_path() -> std::path::PathBuf {
+    std::env::var_os("CURATOR_CONFIG")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(default_config_path)
+}
+
 /// Default config location: `~/.config/curator/config.toml`.
 ///
 /// Deliberately `~/.config` (not `dirs::config_dir()`, which on macOS is
@@ -408,6 +418,21 @@ url = "https://same.test/"
         let err =
             parse_and_validate(&format!("[window]\nwidth = 0\nheight = 800\n{VALID}")).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidWindowSize { .. }));
+    }
+
+    #[test]
+    fn resolve_config_path_honours_env_override() {
+        // Unset → the default ~/.config/curator/config.toml.
+        std::env::remove_var("CURATOR_CONFIG");
+        assert_eq!(resolve_config_path(), default_config_path());
+
+        // Set → exactly that path.
+        std::env::set_var("CURATOR_CONFIG", "/tmp/curator-dev.toml");
+        assert_eq!(
+            resolve_config_path(),
+            std::path::PathBuf::from("/tmp/curator-dev.toml")
+        );
+        std::env::remove_var("CURATOR_CONFIG");
     }
 
     #[test]

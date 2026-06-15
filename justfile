@@ -8,9 +8,10 @@ export PATH := env_var('HOME') + "/.cargo/bin:" + env_var('PATH')
 default:
     @just --list
 
-# Run the app in dev mode (hot-reload)
+# Run the app in dev mode (hot-reload), loading the repo's demo config via CURATOR_CONFIG
+# so iterating never touches your real ~/.config/curator/config.toml.
 dev:
-    npm run tauri dev
+    CURATOR_CONFIG="{{justfile_directory()}}/examples/config.toml" npm run tauri dev
 
 # Build the release .app bundle
 build:
