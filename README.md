@@ -104,6 +104,7 @@ Top-level options:
 | `open_on_launch` | bool \| tab title   | `false` | `true` opens the first tab on launch; a string opens the tab with that title; `false`/omit shows the blank screen. |
 | `dark_mode`      | bool                | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark. Omit/false follows the system. |
 | `allow_insecure` | list of hosts       | `[]`    | Accept self-signed/invalid TLS certs for these hosts only, e.g. `["192.168.1.1"]` for homelab devices. Applied at launch (restart to change). |
+| `[window]`       | table `{ width, height }` | `1500 × 1000` | Initial window size in logical pixels. Set either key alone (the other keeps its default). Applied at launch (restart to change). |
 
 See `examples/tabs.toml` for a starting point.
 

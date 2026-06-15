@@ -27,8 +27,40 @@ pub struct Config {
     /// `["192.168.1.1"]` for a homelab device). Empty (default) = validate every cert.
     #[serde(default)]
     pub allow_insecure: Vec<String>,
+    /// Initial window size in logical pixels (the `[window]` table). Applied at launch
+    /// (restart to change).
+    #[serde(default)]
+    pub window: WindowConfig,
     #[serde(default, rename = "group")]
     pub groups: Vec<Group>,
+}
+
+/// Initial window size in logical pixels. The default width keeps the content area (window
+/// width minus the `CHROME_W` sidebar) clear of Material for MkDocs' 1220px (76.25em) nav
+/// breakpoint, so docs sites show their left sidebar instead of collapsing to a hamburger.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct WindowConfig {
+    #[serde(default = "default_window_width")]
+    pub width: u32,
+    #[serde(default = "default_window_height")]
+    pub height: u32,
+}
+
+fn default_window_width() -> u32 {
+    1500
+}
+
+fn default_window_height() -> u32 {
+    1000
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            width: default_window_width(),
+            height: default_window_height(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -57,6 +89,7 @@ pub enum ConfigError {
     EmptyField(&'static str),
     InvalidUrl { title: String, url: String },
     ZeroReload(String),
+    InvalidWindowSize { width: u32, height: u32 },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -70,6 +103,9 @@ impl std::fmt::Display for ConfigError {
             }
             ConfigError::ZeroReload(title) => {
                 write!(f, "tab \"{title}\" reload_every must be > 0")
+            }
+            ConfigError::InvalidWindowSize { width, height } => {
+                write!(f, "window size must be positive, got {width}×{height}")
             }
         }
     }
@@ -98,6 +134,12 @@ pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
                 return Err(ConfigError::ZeroReload(tab.title.clone()));
             }
         }
+    }
+    if cfg.window.width == 0 || cfg.window.height == 0 {
+        return Err(ConfigError::InvalidWindowSize {
+            width: cfg.window.width,
+            height: cfg.window.height,
+        });
     }
     Ok(cfg)
 }
@@ -332,6 +374,40 @@ url = "https://same.test/"
         let cfg: Config = toml::from_str(src).unwrap();
         let views = cfg.tab_views();
         assert_ne!(views[0].label, views[1].label);
+    }
+
+    #[test]
+    fn window_size_defaults_when_absent() {
+        let cfg = parse_and_validate(VALID).unwrap();
+        assert_eq!(
+            cfg.window,
+            WindowConfig {
+                width: 1500,
+                height: 1000
+            }
+        );
+    }
+
+    #[test]
+    fn parses_explicit_window_size() {
+        let cfg =
+            parse_and_validate(&format!("[window]\nwidth = 1680\nheight = 1120\n{VALID}")).unwrap();
+        assert_eq!(cfg.window.width, 1680);
+        assert_eq!(cfg.window.height, 1120);
+    }
+
+    #[test]
+    fn window_partial_override_keeps_other_default() {
+        let cfg = parse_and_validate(&format!("[window]\nwidth = 1680\n{VALID}")).unwrap();
+        assert_eq!(cfg.window.width, 1680);
+        assert_eq!(cfg.window.height, 1000);
+    }
+
+    #[test]
+    fn rejects_zero_window_dimension() {
+        let err =
+            parse_and_validate(&format!("[window]\nwidth = 0\nheight = 800\n{VALID}")).unwrap_err();
+        assert!(matches!(err, ConfigError::InvalidWindowSize { .. }));
     }
 
     #[test]

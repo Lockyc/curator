@@ -12,6 +12,12 @@ open_on_launch = true
 # Applied at launch — restart to change.
 # allow_insecure = ["192.168.1.1", "192.168.1.24"]
 
+# Initial window size in logical pixels (default 1500 × 1000). Set either key alone; the
+# other keeps its default. Applied at launch — restart to change.
+# [window]
+# width  = 1500
+# height = 1000
+
 [[group]]
 name = "Comms"
 
