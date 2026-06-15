@@ -7,9 +7,7 @@
 A dedicated, always-findable home for the handful of browser tabs you can't afford to
 lose. macOS only.
 
-<!-- screenshot: drop a real capture here once a demo config is in place, e.g.
-<p align="center"><img src="docs/screenshot.png" alt="curator window" width="720"></p>
--->
+<p align="center"><img src="docs/screenshot.png" alt="curator window showing grouped keeper tabs in the sidebar" width="840"></p>
 
 Not a general browser: a minimal, single-window app (Tauri v2) that renders a *curated,
 declarative* set of "keeper" tabs from a `config.toml` config, and refuses to let new-tab
@@ -71,6 +69,10 @@ manual / contributor flow.
    just dev      # or: npm run tauri dev
    ```
 
+   `just dev` loads the repo's `examples/config.toml` (via the `CURATOR_CONFIG` env var) so
+   iterating never touches your real `~/.config/curator/config.toml`. Point `CURATOR_CONFIG`
+   at any file to test another config.
+
    `just build` produces a `.app` bundle; **`just deploy`** builds and installs/updates it
    in `/Applications` (quitting the running copy and relaunching). `just test` runs the Rust
    tests. The app icon source is `src-tauri/icons/icon.svg` — re-run `npx tauri icon
@@ -79,7 +81,8 @@ manual / contributor flow.
 3. Edit `~/.config/curator/config.toml` and save — the sidebar **hot-reloads**, no restart.
    A malformed file keeps the last-good config running and shows an error banner instead of
    crashing. The **Config** menu has *Edit Config* / *Reveal Config in Finder* so you needn't
-   memorise the path, plus *Reset All Tabs* to snap every open tab back to its canonical URL.
+   memorise the path; the **Tabs** menu has *Reload Tab* (⌘R) and *Reset All Tabs* to snap
+   every open tab back to its canonical URL.
 
 ## Config options
 
