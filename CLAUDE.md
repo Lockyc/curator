@@ -2,10 +2,22 @@
 
 macOS-only Tauri v2 app (Rust + a static web frontend in `src/`, driven via npm).
 
+Homelab tie-ins (it's the operator-side console for the LSJC homelab): see
+<https://docs.lsjc.au/projects/curator/>.
+
 Dev: `just dev`. Build a release `.app`: `just build`. Install/replace it in
 `/Applications` and relaunch: `just deploy`. Tests: `just test` (or `cd src-tauri &&
 cargo test`). There is no CI — the release gate is running `just fmt`, `just clippy`,
 and `just test` locally and confirming all are green before tagging a release.
+
+The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/config.toml`
+(`config::resolve_config_path`). `just dev` sets `CURATOR_CONFIG` to the repo's
+`examples/config.toml` so dev runs never touch a real user config.
+
+The app menu (`lib.rs`) fully replaces Tauri's default menu, so the standard macOS menus
+must be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the
+clipboard accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content
+webviews. Keep Edit (and Window/Hide) when touching the menu.
 
 ## Installer & the public-repo requirement
 
