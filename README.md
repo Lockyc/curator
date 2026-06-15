@@ -11,8 +11,8 @@ lose. macOS only.
 
 Not a general browser: a minimal, single-window app (Tauri v2) that renders a *curated,
 declarative* set of "keeper" tabs from a `config.toml` config, and refuses to let new-tab
-navigation pollute that set — handing every such intent off to the system default handler
-(Velja) instead.
+navigation pollute that set — handing every such intent off to your macOS default browser
+instead.
 
 ## Why
 
@@ -30,7 +30,7 @@ file-driven, everything else is ephemeral.
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.
 - **New-tab intents escape** — `target="_blank"`, `window.open`, cmd/middle-click all
-  shell out to `open`, routing through Velja instead of opening in curator.
+  shell out to `open`, routing to your macOS default browser instead of opening in curator.
 - **Sessions persist** — log into a site once in-app; it stays.
 - **Page-first chrome** — the active page fills the window edge-to-edge, painting under an
   overlay title bar; the native title bar (with traffic lights, draggable) is exposed only

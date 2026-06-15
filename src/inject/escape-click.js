@@ -2,7 +2,8 @@
 // target="_blank" / window.open through the native on_new_window handler, but cmd-click and
 // middle-click arrive only as ordinary main-frame navigations. This catches those two
 // gestures and reroutes them through a sentinel URL that the native on_navigation handler
-// recognises and escapes to Velja — so no command is ever exposed to remote pages. It also
+// recognises and escapes to the default browser — so no command is ever exposed to remote
+// pages. It also
 // maps the mouse side-buttons to history back/forward, which WKWebView ignores by default.
 (function () {
   var SENTINEL = "https://curator.escape.invalid/?u=";

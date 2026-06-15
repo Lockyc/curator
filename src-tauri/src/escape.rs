@@ -3,12 +3,12 @@ pub fn allow_same_tab_navigation(_url: &str) -> bool {
     true
 }
 
-/// Build the argv for handing a URL to the macOS default handler (→ Velja).
+/// Build the argv for handing a URL to the macOS default handler (the user's default browser).
 pub fn open_command(url: &str) -> (&'static str, Vec<String>) {
     ("open", vec![url.to_string()])
 }
 
-/// Hand a URL to the macOS default handler (→ Velja). Side-effecting; not unit-tested.
+/// Hand a URL to the macOS default handler (the user's default browser). Side-effecting; not unit-tested.
 pub fn escape_to_default_browser(url: &str) {
     let (cmd, args) = open_command(url);
     let _ = std::process::Command::new(cmd).args(args).spawn();

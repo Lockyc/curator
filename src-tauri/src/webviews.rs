@@ -130,7 +130,7 @@ pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Wi
 
 /// Lazily create a content webview for `tab`, sized to the window's current content area.
 /// Idempotent via the caller's TabState. `on_new_window` denies in-app creation and escapes
-/// to Velja; `on_navigation` allows same-tab navigation.
+/// to the default browser; `on_navigation` allows same-tab navigation.
 pub fn create_content_webview(window: &Window, tab: &TabView) -> tauri::Result<()> {
     let url: url::Url = tab.url.parse().expect("url validated at config load");
     let builder = WebviewBuilder::new(&tab.label, WebviewUrl::External(url))
@@ -141,7 +141,7 @@ pub fn create_content_webview(window: &Window, tab: &TabView) -> tauri::Result<(
             NewWindowResponse::Deny
         })
         .on_navigation(|url| {
-            // cmd/middle-click sentinel → escape to Velja, cancel the in-app nav.
+            // cmd/middle-click sentinel → escape to the default browser, cancel the in-app nav.
             if let Some(target) = escape::sentinel_target(url) {
                 escape::escape_to_default_browser(&target);
                 return false;
