@@ -2,8 +2,7 @@
 
 macOS-only Tauri v2 app (Rust + a static web frontend in `src/`, driven via npm).
 
-Homelab tie-ins (it's the operator-side console for the LSJC homelab): see
-<https://docs.lsjc.au/projects/curator/>.
+Built as the operator-side console for a self-hosted homelab.
 
 Dev: `just dev`. Build a release `.app`: `just build`. Install/replace it in
 `/Applications` and relaunch: `just deploy`. Tests: `just test` (or `cd src-tauri &&
