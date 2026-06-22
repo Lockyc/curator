@@ -1,3 +1,4 @@
+mod awareness;
 mod commands;
 mod config;
 mod escape;
