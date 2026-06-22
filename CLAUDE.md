@@ -13,8 +13,35 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 (`config::resolve_config_path`). `just dev` sets `CURATOR_CONFIG` to the repo's
 `examples/config.toml` so dev runs never touch a real user config.
 
-The app menu (`lib.rs`) fully replaces Tauri's default menu, so the standard macOS menus
-must be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the
+## Architecture
+
+**Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
+Each window has a `window_id` (derived from `title` via `identity::window_id`) that namespaces
+its webview labels (`{window_id}:{tab_hash}`) so they're collision-free across windows. The
+window id is purely a label key — run-ephemeral, nothing persistent tied to it — so renaming a
+window's `title` is harmless.
+
+**Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
+resolved `session` string via the chain `tab.session → window.session → DEFAULT_SESSION`
+(`config.rs` builds `TabView::session`; `session::data_store_id` hashes it). Tabs sharing a
+session string share a login (even across windows); distinct strings are isolated accounts.
+With no `session` set anywhere, all tabs share one app-wide store, so SSO across related
+services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not the window or
+URL — renaming a window or editing a tab's URL never logs you out.
+
+**Live vs plain.** A window that sets `notifications = true` or `unread = true` is "live":
+it eager-loads all its tabs from launch, never hides, and has the notify/badge shims
+injected. A plain window keeps the lazy/hide model (webview created on first click, hidden
+when the window isn't active). `WindowConfig::is_live()` in `config.rs` captures this.
+
+**Dock badge** aggregates the unread count across all windows that have `unread = true`.
+
+**Window menu** — a real **Window** submenu lets the user close a non-last window (⌘W)
+and reopen any closed window from the list. All configured windows open at launch; closed
+windows can be reopened from the Window menu.
+
+**App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must
+be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the
 clipboard accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content
 webviews. Keep Edit (and Window/Hide) when touching the menu.
 

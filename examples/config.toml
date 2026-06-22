@@ -1,63 +1,101 @@
 # Example curator config. Copy to ~/.config/curator/config.toml and edit.
 # Order of groups and tabs is the render order. Required per tab: title, url.
 #
-# This sample leans on the kind of always-on pages curator is built for — dashboards,
-# status pages, monitoring panels, and docs — rather than personal mail/chat.
+# curator opens one window per [[window]] block.
+#
+# Logins: by default every tab shares one app-wide store, so signing into a provider covers
+# its related services (Gmail + Calendar share your Google login). To give a tab its own
+# account, set `session = "name"` on the tab; reuse the same name on other tabs (in any
+# window) to share that login. A window-level `session` is the default for its tabs. Resolution
+# is tab.session → window.session → shared default. Logins follow the session name, so renaming
+# a window or editing a URL never signs you out.
+#
 # `just dev` loads this file (via CURATOR_CONFIG) so you can try it without touching
 # your real ~/.config/curator/config.toml.
-
-# Open a tab on launch instead of the blank screen.
-#   true → the first tab   |   "Title" → a specific tab   |   false/omit → blank
-open_on_launch = "Material for MkDocs"
 
 # Force dark appearance (sites honouring prefers-color-scheme render dark). Omit = follow system.
 # dark_mode = true
 
 # Accept self-signed/invalid TLS certs for these hosts only (e.g. homelab devices).
 # Applied at launch — restart to change.
-# allow_insecure = ["192.168.1.1", "192.168.1.24"]
+# allow_insecure = ["192.168.1.1"]
 
-# Initial window size in logical pixels (default 1500 × 1000). Set either key alone; the
-# other keeps its default. Applied at launch — restart to change.
-# [window]
-# width  = 1500
-# height = 1000
+# ─── Window 1: Keepers ────────────────────────────────────────────────────────
+# A plain, quiet window for dashboards and docs. No notifications or unread tracking.
+# Tabs are lazy by default — each webview is created on first click and kept warm.
 
-[[group]]
-name = "Dashboards"
+[[window]]
+title           = "Keepers"
+# notifications = false   # default — no native banner popups
+# unread        = false   # default — no unread pill or dock-badge contribution
+open_on_launch  = "Grafana"   # open this tab on launch instead of the blank screen
 
-  [[group.tab]]
-  title       = "Grafana Play"
-  url         = "https://play.grafana.org/"
-  always_load = true           # preload + keep warm from launch (default false)
-  reload_every = 5             # minutes — auto-refresh interval; omit = never
+  [[window.group]]
+  name = "Dashboards"
 
-[[group]]
-name = "Status"
+    [[window.group.tab]]
+    title        = "Grafana"
+    url          = "https://play.grafana.org/"
+    always_load  = true   # preload + keep warm from launch (default false)
+    reload_every = 5      # auto-refresh every 5 minutes
 
-  [[group.tab]]
-  title = "GitHub Status"
-  url   = "https://www.githubstatus.com/"
+    [[window.group.tab]]
+    title = "Uptime Kuma"
+    url   = "https://demo.uptime.kuma.pet/"
 
-  [[group.tab]]
-  title = "Cloudflare Status"
-  url   = "https://www.cloudflarestatus.com/"
+  [[window.group]]
+  name = "Status"
 
-[[group]]
-name = "Monitoring"
+    [[window.group.tab]]
+    title = "GitHub Status"
+    url   = "https://www.githubstatus.com/"
 
-  [[group.tab]]
-  title        = "Uptime Kuma"
-  url          = "https://demo.uptime.kuma.pet/"
-  reload_every = 1
+    [[window.group.tab]]
+    title = "Cloudflare Status"
+    url   = "https://www.cloudflarestatus.com/"
 
-[[group]]
-name = "Docs"
+  [[window.group]]
+  name = "Docs"
 
-  [[group.tab]]
-  title = "Material for MkDocs"
-  url   = "https://squidfunk.github.io/mkdocs-material/"
+    [[window.group.tab]]
+    title = "Material for MkDocs"
+    url   = "https://squidfunk.github.io/mkdocs-material/"
 
-  [[group.tab]]
-  title = "Tauri"
-  url   = "https://tauri.app/"
+    [[window.group.tab]]
+    title = "Tauri"
+    url   = "https://tauri.app/"
+
+# ─── Window 2: Comms ──────────────────────────────────────────────────────────
+# A "live" window opted into notifications and unread tracking.
+# notifications = true  → web Notification calls pop native banners.
+# unread        = true  → pages can badge their tab; unread count rolls up to the dock badge.
+# This window stays open and eager-loads its tabs — curator injects the sync/notify shims
+# needed for live features.
+
+[[window]]
+title         = "Comms"
+notifications = true   # allow web Notification API to pop native banners
+unread        = true   # track unread counts → dock badge
+
+  [[window.group]]
+  name = "Chat"
+
+    [[window.group.tab]]
+    title       = "Mattermost"
+    url         = "https://community.mattermost.com/"
+    always_load = true   # keep warm so notifications fire even when the tab isn't active
+
+    [[window.group.tab]]
+    title = "Slack"
+    url   = "https://app.slack.com/"
+    # session = "work"   # give this tab its own login store (e.g. a separate account)
+
+  [[window.group]]
+  name = "Notifications"
+
+    [[window.group.tab]]
+    # ntfy.sh is an open-source push-notification service. Replace with your self-hosted
+    # instance URL (e.g. https://ntfy.example.com/) — the tab renders the ntfy web UI.
+    title       = "ntfy"
+    url         = "https://ntfy.sh/app"
+    always_load = true

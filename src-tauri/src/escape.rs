@@ -14,6 +14,75 @@ pub fn escape_to_default_browser(url: &str) {
     let _ = std::process::Command::new(cmd).args(args).spawn();
 }
 
+/// Schemes curator will hand to the macOS opener for an in-app `window.open` / new-window
+/// intent. http/https are normal links; mailto/tel are the everyday "open in my mail/phone
+/// app" hand-offs. Everything else (file://, custom app schemes, smb://, …) is refused so a
+/// page can't drive `open` into launching an arbitrary handler.
+pub fn is_escapable_scheme(url: &url::Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "mailto" | "tel")
+}
+
+/// Sentinel host the injected Notification override navigates to so the native
+/// `on_navigation` handler can fire a real banner. Distinct from the cmd-click escape host.
+pub const NOTIFY_SENTINEL_HOST: &str = "curator.notify.invalid";
+
+/// Title + body parsed out of a notify-sentinel navigation.
+pub struct NotifyPayload {
+    pub title: String,
+    pub body: String,
+}
+
+/// If `nav_url` is a notify sentinel, return its `t` (title) and `b` (body) query params
+/// (each defaulting to empty). Any other URL → `None`.
+pub fn notify_sentinel(nav_url: &url::Url) -> Option<NotifyPayload> {
+    if nav_url.host_str() != Some(NOTIFY_SENTINEL_HOST) {
+        return None;
+    }
+    let get = |key: &str| {
+        nav_url
+            .query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.into_owned())
+            .unwrap_or_default()
+    };
+    Some(NotifyPayload {
+        title: get("t"),
+        body: get("b"),
+    })
+}
+
+/// Sentinel host the injected Badging-API shim navigates to so the native `on_navigation`
+/// handler can update a service's unread badge. Distinct from the notify and escape hosts.
+pub const BADGE_SENTINEL_HOST: &str = "curator.badge.invalid";
+
+/// An unread signal decoded from a badge sentinel: an explicit count (0 = clear) or a
+/// countless dot (`setAppBadge()` called with no argument).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BadgeSignal {
+    Count(u32),
+    Dot,
+}
+
+/// If `nav_url` is a badge sentinel, decode its signal: a `dot` param → `Dot`; otherwise the
+/// `n` param parsed as a count. A malformed/missing `n` is treated as `Count(0)` (clear) so
+/// the dead sentinel host is always consumed rather than navigated to. Any other host → None.
+pub fn badge_sentinel(nav_url: &url::Url) -> Option<BadgeSignal> {
+    if nav_url.host_str() != Some(BADGE_SENTINEL_HOST) {
+        return None;
+    }
+    let get = |key: &str| {
+        nav_url
+            .query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.into_owned())
+    };
+    if get("dot").is_some() {
+        return Some(BadgeSignal::Dot);
+    }
+    let n = get("n").and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+    Some(BadgeSignal::Count(n))
+}
+
 /// Sentinel host the injected click-interceptor navigates to so the native
 /// `on_navigation` handler can escape cmd/middle-clicks (which WKWebView does not route
 /// through `on_new_window`). Must be a host no real keeper site will ever use.
@@ -84,5 +153,92 @@ mod tests {
     fn sentinel_with_non_http_target_is_none() {
         let u = url("https://curator.escape.invalid/?u=file%3A%2F%2F%2Fetc%2Fpasswd");
         assert_eq!(sentinel_target(&u), None);
+    }
+
+    #[test]
+    fn notify_sentinel_extracts_title_and_body() {
+        let u = url("https://curator.notify.invalid/?t=New%20message&b=hello%20there");
+        let p = notify_sentinel(&u).unwrap();
+        assert_eq!(p.title, "New message");
+        assert_eq!(p.body, "hello there");
+    }
+
+    #[test]
+    fn notify_sentinel_defaults_missing_parts_to_empty() {
+        let u = url("https://curator.notify.invalid/?t=Title");
+        let p = notify_sentinel(&u).unwrap();
+        assert_eq!(p.title, "Title");
+        assert_eq!(p.body, "");
+    }
+
+    #[test]
+    fn non_notify_host_is_none() {
+        let u = url("https://curator.escape.invalid/?u=https%3A%2F%2Fx.test%2F");
+        assert!(notify_sentinel(&u).is_none());
+    }
+
+    #[test]
+    fn escapable_schemes_are_web_and_contact() {
+        for s in [
+            "https://x.test/",
+            "http://x.test/",
+            "mailto:a@b.test",
+            "tel:+15551234",
+        ] {
+            assert!(is_escapable_scheme(&url(s)), "{s} should escape");
+        }
+    }
+
+    #[test]
+    fn non_escapable_schemes_are_refused() {
+        for s in [
+            "file:///etc/passwd",
+            "smb://server/share",
+            "ftp://x.test/f",
+            "customapp://do-something",
+        ] {
+            assert!(!is_escapable_scheme(&url(s)), "{s} should be refused");
+        }
+    }
+
+    #[test]
+    fn badge_sentinel_reads_count() {
+        let u = url("https://curator.badge.invalid/?n=5");
+        assert_eq!(badge_sentinel(&u), Some(BadgeSignal::Count(5)));
+    }
+
+    #[test]
+    fn badge_sentinel_zero_is_count_zero() {
+        let u = url("https://curator.badge.invalid/?n=0");
+        assert_eq!(badge_sentinel(&u), Some(BadgeSignal::Count(0)));
+    }
+
+    #[test]
+    fn badge_sentinel_dot_is_dot() {
+        let u = url("https://curator.badge.invalid/?dot=1");
+        assert_eq!(badge_sentinel(&u), Some(BadgeSignal::Dot));
+    }
+
+    #[test]
+    fn badge_sentinel_malformed_or_missing_count_clears() {
+        // Garbage or absent params still consume the dead sentinel host (treated as clear),
+        // so the page never actually navigates to it.
+        assert_eq!(
+            badge_sentinel(&url("https://curator.badge.invalid/?n=abc")),
+            Some(BadgeSignal::Count(0))
+        );
+        assert_eq!(
+            badge_sentinel(&url("https://curator.badge.invalid/")),
+            Some(BadgeSignal::Count(0))
+        );
+    }
+
+    #[test]
+    fn badge_sentinel_other_host_is_none() {
+        assert_eq!(
+            badge_sentinel(&url("https://curator.notify.invalid/?t=x")),
+            None
+        );
+        assert_eq!(badge_sentinel(&url("https://mail.google.com/")), None);
     }
 }

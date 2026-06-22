@@ -1,12 +1,21 @@
+mod awareness;
 mod commands;
 mod config;
 mod escape;
+mod hash;
+mod identity;
 #[cfg(target_os = "macos")]
 mod insecure;
+mod notification;
+mod session;
 mod watcher;
 mod webviews;
+#[cfg(target_os = "macos")]
+mod zorder;
 
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, Theme};
 
 /// Window theme to apply for a given `dark_mode` setting. `None` = follow the system.
@@ -14,74 +23,445 @@ fn theme_for(dark_mode: bool) -> Option<Theme> {
     dark_mode.then_some(Theme::Dark)
 }
 
+/// Per-window runtime state: its config, lazy/active tab bookkeeping, and the awareness state
+/// (per-tab unread + which tabs have gone Badging-authoritative) feeding the dock badge.
+pub struct WindowRuntime {
+    pub cfg: config::WindowConfig,
+    pub tabs: webviews::TabState,
+    pub unread: HashMap<String, awareness::Unread>,
+    pub badge_authoritative: HashSet<String>,
+    /// Set true to stop this window's `reload_every` timer threads — on window close, removal,
+    /// or when its tab set changes (a fresh generation is spawned with a new flag).
+    pub reload_cancel: Arc<AtomicBool>,
+}
+
+/// Spawn one background thread per `reload_every` tab that reloads it on schedule until
+/// `cancel` is set. Sleeps in 1s chunks so a cancelled timer exits promptly rather than after
+/// a full interval, and never reloads after cancellation — so closed/removed windows don't
+/// leak threads that keep poking dead webviews.
+fn spawn_reload_timers(window: &tauri::Window, views: &[config::TabView], cancel: Arc<AtomicBool>) {
+    for v in views.iter().filter(|v| v.reload_every.is_some()) {
+        let interval = std::time::Duration::from_secs(v.reload_every.unwrap() * 60);
+        let label = v.label.clone();
+        let url = v.url.clone();
+        let win = window.clone();
+        let cancel = cancel.clone();
+        std::thread::spawn(move || {
+            let tick = std::time::Duration::from_secs(1);
+            loop {
+                let mut waited = std::time::Duration::ZERO;
+                while waited < interval {
+                    if cancel.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    let chunk = tick.min(interval - waited);
+                    std::thread::sleep(chunk);
+                    waited += chunk;
+                }
+                if cancel.load(Ordering::Relaxed) {
+                    return;
+                }
+                let _ = webviews::reload_canonical(&win, &label, &url);
+            }
+        });
+    }
+}
+
+/// The whole app's window registry, keyed by window id (== window label == chrome prefix).
 pub struct AppState {
-    pub config: Mutex<config::Config>,
-    pub tabs: Mutex<webviews::TabState>,
+    pub windows: Mutex<HashMap<String, WindowRuntime>>,
+}
+
+impl AppState {
+    /// Every window's unread states flattened — input to the single aggregate dock badge.
+    pub fn all_unread(&self) -> Vec<awareness::Unread> {
+        self.windows
+            .lock()
+            .unwrap()
+            .values()
+            .flat_map(|w| w.unread.values().copied())
+            .collect()
+    }
+}
+
+/// Build one window from its config, populate its content webviews per its lifecycle model
+/// (live: eager-load all + raise first, never hide; plain: lazy-load, hide all, open the
+/// startup tab via show_only), and start its per-tab reload timers. Returns the window id and
+/// its fresh `WindowRuntime` for the caller to register. Shared by setup and hot-reload.
+fn open_window(
+    handle: &tauri::AppHandle,
+    dark_mode: bool,
+    win_cfg: &config::WindowConfig,
+) -> tauri::Result<(String, WindowRuntime)> {
+    let wid = identity::window_id(&win_cfg.title);
+    let window = webviews::build_window(
+        handle,
+        &wid,
+        &win_cfg.title,
+        win_cfg.width as f64,
+        win_cfg.height as f64,
+    )?;
+    window.set_theme(theme_for(dark_mode))?;
+
+    let views = win_cfg.tab_views();
+    let mut tabs = webviews::TabState::default();
+
+    if win_cfg.is_live() {
+        // Live window: eager-load every tab, raise the first, never hide.
+        for v in &views {
+            webviews::create_content_webview(&window, win_cfg, v)?;
+            tabs.mark_created(&v.label);
+        }
+        if let Some(first) = views.first() {
+            tabs.set_active(&first.label);
+            webviews::raise(&window, &first.label)?;
+        }
+    } else {
+        // Plain window: lazy-load; eager-create only always_load tabs, hide all, then open
+        // the startup tab if configured.
+        for v in views.iter().filter(|v| v.always_load) {
+            webviews::create_content_webview(&window, win_cfg, v)?;
+            tabs.mark_created(&v.label);
+        }
+        let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
+        for l in &all_labels {
+            if let Some(wv) = window.get_webview(l) {
+                wv.hide()?;
+            }
+        }
+        if let Some(label) = win_cfg.startup_label() {
+            if let Some(v) = views.iter().find(|v| v.label == label) {
+                if !tabs.is_created(&label) {
+                    webviews::create_content_webview(&window, win_cfg, v)?;
+                    tabs.mark_created(&label);
+                }
+                tabs.set_active(&label);
+                webviews::show_only(&window, &label, &all_labels)?;
+            }
+        }
+    }
+
+    // Periodic reload timers for tabs with `reload_every` (minutes). Only acts on
+    // already-created webviews, so a never-opened lazy tab is harmlessly skipped. The cancel
+    // flag lets us stop them when the window goes away.
+    let reload_cancel = Arc::new(AtomicBool::new(false));
+    spawn_reload_timers(&window, &views, reload_cancel.clone());
+
+    Ok((
+        wid,
+        WindowRuntime {
+            cfg: win_cfg.clone(),
+            tabs,
+            unread: HashMap::new(),
+            badge_authoritative: HashSet::new(),
+            reload_cancel,
+        },
+    ))
+}
+
+/// Emit an event to every open window's chrome sidebar. Used for `config-error` (which all
+/// windows surface) and per-window `config-reloaded` fan-out.
+fn emit_to_all_chrome<S: serde::Serialize + Clone>(
+    app: &tauri::AppHandle,
+    event: &str,
+    payload: S,
+) {
+    let state = app.state::<AppState>();
+    let ids: Vec<String> = state.windows.lock().unwrap().keys().cloned().collect();
+    for id in ids {
+        let _ = app.emit_to(identity::namespaced(&id, "chrome"), event, payload.clone());
+    }
+}
+
+/// Apply a successful config reload: close windows that disappeared (dropping their runtime),
+/// open windows that appeared, and reconcile tabs for windows that stayed. Emits
+/// `config-reloaded` to each kept/added window's chrome.
+fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &config::Config) {
+    let diff = watcher::diff_windows(old_cfg, new_cfg);
+    let state = app.state::<AppState>();
+
+    // Closed windows: drop the window and its runtime, and stop its reload timers.
+    for id in &diff.removed {
+        if let Some(win) = app.get_window(id) {
+            let _ = win.close();
+        }
+        if let Some(rt) = state.windows.lock().unwrap().remove(id) {
+            rt.reload_cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    // New windows: build and register.
+    for id in &diff.added {
+        if let Some(win_cfg) = new_cfg
+            .windows
+            .iter()
+            .find(|w| &identity::window_id(&w.title) == id)
+        {
+            if let Ok((wid, rt)) = open_window(app, new_cfg.dark_mode, win_cfg) {
+                state.windows.lock().unwrap().insert(wid, rt);
+            }
+        }
+    }
+
+    // Kept windows: reconcile tabs against the new config.
+    for id in &diff.kept {
+        let Some(win_cfg) = new_cfg
+            .windows
+            .iter()
+            .find(|w| &identity::window_id(&w.title) == id)
+        else {
+            continue;
+        };
+        let Some(window) = app.get_window(id) else {
+            continue;
+        };
+        let _ = window.set_theme(theme_for(new_cfg.dark_mode));
+        reconcile_window_tabs(&state, &window, id, win_cfg);
+    }
+
+    // Keep the fallback error window in sync with whether any real window exists: close it once
+    // windows return, or show it if this reload left none (a valid but window-less config) so the
+    // app is never stranded invisible.
+    let has_windows = !state.windows.lock().unwrap().is_empty();
+    match (has_windows, app.get_window(webviews::WINDOW_ERROR)) {
+        (true, Some(err_win)) => {
+            let _ = err_win.close();
+        }
+        (false, None) => {
+            let _ = webviews::build_error_window(app, "Your config defines no [[window]] blocks.");
+        }
+        _ => {}
+    }
+
+    // Rebuild the menu so the Window submenu's per-window reopen items match the new config
+    // (added windows gain an item; removed ones lose theirs).
+    let titles: Vec<(String, String)> = new_cfg
+        .windows
+        .iter()
+        .map(|w| (identity::window_id(&w.title), w.title.clone()))
+        .collect();
+    if let Ok(menu) = build_app_menu(app, &titles) {
+        let _ = app.set_menu(menu);
+    }
+
+    // Surface the reload on every window that's still open.
+    emit_to_all_chrome(app, "config-reloaded", ());
+}
+
+/// Reconcile one kept window's content webviews to its new config: create newly-added tabs
+/// (live windows eager-load them; plain windows leave them lazy), close orphaned webviews and
+/// drop their unread/authoritative state, recompute the dock badge, then re-show the active
+/// tab. Mirrors the single-window watcher's teardown, per window.
+fn reconcile_window_tabs(
+    state: &AppState,
+    window: &tauri::Window,
+    window_id: &str,
+    win_cfg: &config::WindowConfig,
+) {
+    let views = win_cfg.tab_views();
+    let keep: HashSet<String> = views.iter().map(|v| v.label.clone()).collect();
+    let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
+
+    // Decide everything under the lock, but perform the webview ops AFTER releasing it.
+    // reconcile runs on the watcher thread; Tauri marshals webview ops (add_child / close) to
+    // the main thread, which may itself be waiting on this same lock (e.g. in on_title_changed)
+    // — holding the lock across them would deadlock. So we compute the orphan/create lists,
+    // active tab, dock total, and a fresh reload-timer generation under the lock, then act.
+    let (orphans, to_create, active, dock_total, reload_cancel) = {
+        let mut windows = state.windows.lock().unwrap();
+        let Some(rt) = windows.get_mut(window_id) else {
+            return;
+        };
+        rt.cfg = win_cfg.clone();
+
+        // Orphans: created tabs no longer in the config (removed, or URL/label changed). Forget
+        // all their state; the webviews are closed after the lock is dropped.
+        let orphans = rt.tabs.orphans(&keep);
+        for label in &orphans {
+            rt.tabs.mark_unloaded(label);
+            rt.unread.remove(label);
+            rt.badge_authoritative.remove(label);
+        }
+
+        // Live windows eager-load every (including newly-added) tab. Mark created here; build
+        // after the lock is dropped.
+        let mut to_create: Vec<config::TabView> = Vec::new();
+        if win_cfg.is_live() {
+            for v in &views {
+                if !rt.tabs.is_created(&v.label) {
+                    rt.tabs.mark_created(&v.label);
+                    to_create.push(v.clone());
+                }
+            }
+        }
+
+        // Stop the old reload timers and start a fresh generation for the new tab set (this is
+        // also what gives newly-added tabs their reload timers).
+        rt.reload_cancel.store(true, Ordering::Relaxed);
+        let reload_cancel = Arc::new(AtomicBool::new(false));
+        rt.reload_cancel = reload_cancel.clone();
+
+        let active = rt.tabs.active().map(str::to_string);
+        // Recompute the single dock badge now that this window's unread set may have shrunk.
+        let dock_total = awareness::dock_count(
+            &windows
+                .values()
+                .flat_map(|w| w.unread.values().copied())
+                .collect::<Vec<_>>(),
+        );
+        (orphans, to_create, active, dock_total, reload_cancel)
+    };
+
+    // Webview side-effects, lock released.
+    for label in &orphans {
+        if let Some(wv) = window.get_webview(label) {
+            let _ = wv.close();
+        }
+    }
+    for v in &to_create {
+        let _ = webviews::create_content_webview(window, win_cfg, v);
+    }
+    spawn_reload_timers(window, &views, reload_cancel);
+    if let Some(win) = window.app_handle().get_window(window_id) {
+        let _ = win.set_badge_count(dock_total);
+    }
+
+    // Re-show/raise the active tab so the content area isn't left on a closed orphan.
+    if let Some(active) = active {
+        if win_cfg.is_live() {
+            let _ = webviews::raise(window, &active);
+        } else {
+            let _ = webviews::show_only(window, &active, &all_labels);
+        }
+    }
+}
+
+/// Build the full app menu. Re-added because we replace Tauri's default menu; the Edit submenu
+/// is load-bearing (clipboard accelerators for content webviews). The Window submenu carries
+/// one reopen item per configured window, so it's rebuilt on hot-reload as windows change.
+fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
+    manager: &M,
+    window_titles: &[(String, String)],
+) -> tauri::Result<tauri::menu::Menu<R>> {
+    use tauri::menu::{AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+    let about_meta = AboutMetadataBuilder::new()
+        .name(Some("curator"))
+        .version(Some(env!("CARGO_PKG_VERSION")))
+        .short_version(Some(env!("CURATOR_GIT_SHA")))
+        .comments(Some(format!(
+            "commit {} · built {}",
+            env!("CURATOR_GIT_SHA"),
+            env!("CURATOR_BUILD_DATE"),
+        )))
+        .build();
+    let reload_tab = MenuItemBuilder::with_id("reload_active", "Reload Tab")
+        .accelerator("CmdOrCtrl+R")
+        .build(manager)?;
+    let reset = MenuItemBuilder::with_id("reset_all", "Reset All Tabs").build(manager)?;
+    let edit_cfg = MenuItemBuilder::with_id("edit_config", "Edit Config").build(manager)?;
+    let reveal_cfg =
+        MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(manager)?;
+    let app_menu = SubmenuBuilder::new(manager, "curator")
+        .about(Some(about_meta))
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+    // Standard Edit menu — makes clipboard shortcuts work in content webviews. Don't drop it.
+    let edit_menu = SubmenuBuilder::new(manager, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let tabs_menu = SubmenuBuilder::new(manager, "Tabs")
+        .items(&[&reload_tab, &reset])
+        .build()?;
+    let config_menu = SubmenuBuilder::new(manager, "Config")
+        .items(&[&edit_cfg, &reveal_cfg])
+        .build()?;
+    // Window menu — minimize / zoom / full screen; Close Window (⌘W) with a >1 guard so the
+    // last window can never be closed (prevents stranding the app); and one item per configured
+    // window so any closed window can be reopened.
+    let close_window = MenuItemBuilder::with_id("close_window", "Close Window")
+        .accelerator("CmdOrCtrl+W")
+        .build(manager)?;
+    let mut window_menu = SubmenuBuilder::new(manager, "Window")
+        .minimize()
+        .maximize()
+        .fullscreen()
+        .separator()
+        .item(&close_window)
+        .separator();
+    for (wid, title) in window_titles {
+        let item = MenuItemBuilder::with_id(format!("open_window:{wid}"), title).build(manager)?;
+        window_menu = window_menu.item(&item);
+    }
+    let window_menu = window_menu.build()?;
+    MenuBuilder::new(manager)
+        .items(&[
+            &app_menu,
+            &edit_menu,
+            &tabs_menu,
+            &config_menu,
+            &window_menu,
+        ])
+        .build()
 }
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let path = config::resolve_config_path();
-            let cfg = config::load_config(&path).unwrap_or_else(|e| {
-                eprintln!("config error, starting empty: {e}");
-                config::Config::default()
-            });
+            let (mut cfg, load_err) = match config::load_config(&path) {
+                Ok(c) => (c, None),
+                Err(e) => {
+                    eprintln!("config error: {e}");
+                    (config::Config::default(), Some(e.to_string()))
+                }
+            };
             #[cfg(target_os = "macos")]
             insecure::set_allowlist(cfg.allow_insecure.clone());
 
             let handle = app.handle().clone();
-            let window =
-                webviews::build_window(&handle, cfg.window.width as f64, cfg.window.height as f64)?;
-            window.set_theme(theme_for(cfg.dark_mode))?;
-
-            let views = cfg.tab_views();
-            let mut tab_state = webviews::TabState::default();
-            // Eagerly create always_load tabs; hide them until selected.
-            for v in views.iter().filter(|v| v.always_load) {
-                webviews::create_content_webview(&window, v)?;
-                tab_state.mark_created(&v.label);
+            let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
+            for win_cfg in &cfg.windows {
+                let (wid, rt) = open_window(&handle, cfg.dark_mode, win_cfg)?;
+                runtimes.insert(wid, rt);
             }
-            let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
-            for l in &all_labels {
-                if let Some(wv) = window.get_webview(l) {
-                    wv.hide()?;
-                }
-            }
-
-            // Open a tab on launch if configured (`open_on_launch`), so we don't land on the
-            // blank placeholder screen.
-            if let Some(label) = cfg.startup_label() {
-                if let Some(v) = views.iter().find(|v| v.label == label) {
-                    if !tab_state.is_created(&label) {
-                        webviews::create_content_webview(&window, v)?;
-                        tab_state.mark_created(&label);
-                    }
-                    tab_state.set_active(&label);
-                    webviews::show_only(&window, &label, &all_labels)?;
-                }
-            }
-
-            // Periodic reload timers for tabs with `reload_every` (minutes). Only acts on
-            // already-created webviews, so a never-opened lazy tab is harmlessly skipped.
-            for v in views.iter().filter(|v| v.reload_every.is_some()) {
-                let mins = v.reload_every.unwrap();
-                let label = v.label.clone();
-                let url = v.url.clone();
-                let win = window.clone();
-                std::thread::spawn(move || loop {
-                    std::thread::sleep(std::time::Duration::from_secs(mins * 60));
-                    let _ = webviews::reload_canonical(&win, &label, &url);
-                });
-            }
-
             app.manage(AppState {
-                config: Mutex::new(cfg),
-                tabs: Mutex::new(tab_state),
+                windows: Mutex::new(runtimes),
             });
 
+            // No windows opened — either the config failed to parse or it defines no
+            // `[[window]]` blocks. Show a visible error window instead of launching invisibly;
+            // editing + saving the config hot-reloads the real windows (and closes this one).
+            if cfg.windows.is_empty() {
+                let msg = load_err
+                    .unwrap_or_else(|| "Your config defines no [[window]] blocks.".to_string());
+                webviews::build_error_window(&handle, &msg)?;
+            }
+
+            // Extract what we need from cfg before the watcher thread takes ownership of it.
+            let dark_mode = cfg.dark_mode;
+            let window_titles: Vec<(String, String)> = cfg
+                .windows
+                .iter()
+                .map(|w| (identity::window_id(&w.title), w.title.clone()))
+                .collect();
+
             // Watch the config file and hot-reload on change, keeping the last-good config
-            // (and surfacing an error banner) if the new contents don't parse/validate.
+            // (and surfacing an error banner on each open window) if the new contents don't
+            // parse/validate.
             let watch_path = path.clone();
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -104,100 +484,25 @@ pub fn run() {
                     let Ok(src) = std::fs::read_to_string(&watch_path) else {
                         continue;
                     };
-                    let state = app_handle.state::<AppState>();
-                    let current = state.config.lock().unwrap().clone();
-                    match watcher::reconcile(&current, &src) {
-                        Ok(cfg) => {
-                            let keep: std::collections::HashSet<String> =
-                                cfg.tab_views().into_iter().map(|v| v.label).collect();
-                            if let Some(win) = app_handle.get_window("main") {
-                                let _ = win.set_theme(theme_for(cfg.dark_mode));
-                                // Close webviews orphaned by this reload (a tab whose URL
-                                // changed gets a new label; a removed tab drops out entirely).
-                                // Left alone they linger visible and surface on unload.
-                                let mut tabs = state.tabs.lock().unwrap();
-                                for label in tabs.orphans(&keep) {
-                                    if let Some(wv) = win.get_webview(&label) {
-                                        let _ = wv.close();
-                                    }
-                                    tabs.mark_unloaded(&label);
-                                }
-                            }
-                            *state.config.lock().unwrap() = cfg;
-                            let _ = app_handle.emit("config-reloaded", ());
+                    match watcher::reconcile(&src) {
+                        Ok(new_cfg) => {
+                            reload_windows(&app_handle, &cfg, &new_cfg);
+                            cfg = new_cfg;
                         }
                         Err(msg) => {
-                            let _ = app_handle.emit("config-error", msg);
+                            // Surface in each window's sidebar, and refresh the standalone error
+                            // window if we're in the window-less error state.
+                            webviews::refresh_error_window(&app_handle, &msg);
+                            emit_to_all_chrome(&app_handle, "config-error", msg);
                         }
                     }
                 }
             });
 
-            // We replace Tauri's default menu, so we must re-add the standard macOS menus it
-            // would otherwise provide. The Edit menu in particular owns the clipboard
-            // accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z) — without it, webview text fields can't paste.
-            use tauri::menu::{AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-            let about_meta = AboutMetadataBuilder::new()
-                .name(Some("curator"))
-                .version(Some(env!("CARGO_PKG_VERSION")))
-                .short_version(Some(env!("CURATOR_GIT_SHA")))
-                .comments(Some(format!(
-                    "commit {} · built {}",
-                    env!("CURATOR_GIT_SHA"),
-                    env!("CURATOR_BUILD_DATE"),
-                )))
-                .build();
-            let reload_tab = MenuItemBuilder::with_id("reload_active", "Reload Tab")
-                .accelerator("CmdOrCtrl+R")
-                .build(app)?;
-            let reset = MenuItemBuilder::with_id("reset_all", "Reset All Tabs").build(app)?;
-            let edit_cfg = MenuItemBuilder::with_id("edit_config", "Edit Config").build(app)?;
-            let reveal_cfg =
-                MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(app)?;
-            let app_menu = SubmenuBuilder::new(app, "curator")
-                .about(Some(about_meta))
-                .separator()
-                .services()
-                .separator()
-                .hide()
-                .hide_others()
-                .show_all()
-                .separator()
-                .quit()
-                .build()?;
-            // Standard Edit menu — this is what makes clipboard shortcuts work in content
-            // webviews (logging into sites, typing anywhere). Don't drop it.
-            let edit_menu = SubmenuBuilder::new(app, "Edit")
-                .undo()
-                .redo()
-                .separator()
-                .cut()
-                .copy()
-                .paste()
-                .select_all()
-                .build()?;
-            let tabs_menu = SubmenuBuilder::new(app, "Tabs")
-                .items(&[&reload_tab, &reset])
-                .build()?;
-            let config_menu = SubmenuBuilder::new(app, "Config")
-                .items(&[&edit_cfg, &reveal_cfg])
-                .build()?;
-            // Window menu — minimize / zoom / full screen. No Close Window (⌘W): curator is
-            // single-window with no reopen path, so closing the only window strands the app.
-            let window_menu = SubmenuBuilder::new(app, "Window")
-                .minimize()
-                .maximize()
-                .fullscreen()
-                .build()?;
-            let menu = MenuBuilder::new(app)
-                .items(&[
-                    &app_menu,
-                    &edit_menu,
-                    &tabs_menu,
-                    &config_menu,
-                    &window_menu,
-                ])
-                .build()?;
+            // We replace Tauri's default menu, so we re-add the standard macOS menus (the Edit
+            // submenu owns the clipboard accelerators ⌘C/⌘V/⌘X/⌘A/⌘Z that content webviews
+            // need). Built here and rebuilt on hot-reload so the Window submenu tracks windows.
+            let menu = build_app_menu(app, &window_titles)?;
             app.set_menu(menu)?;
 
             let cfg_path = path.clone();
@@ -216,6 +521,64 @@ pub fn run() {
                         .arg("-R")
                         .arg(&cfg_path)
                         .spawn();
+                }
+                "close_window" => {
+                    // Never close the last window — that would strand the app with no reopen
+                    // path. We keep the WindowRuntime in the registry so its cfg survives for
+                    // reopen via the per-window menu items below.
+                    let windows = app.windows();
+                    if windows.len() > 1 {
+                        if let Some(win) =
+                            windows.values().find(|w| w.is_focused().unwrap_or(false))
+                        {
+                            let closed_label = win.label().to_string();
+                            let _ = win.close();
+
+                            // Clear the closed window's unread contribution so its stale counts
+                            // don't persist on the dock badge. The runtime stays in the registry
+                            // (cfg survives for reopen); only the awareness state is wiped.
+                            {
+                                let state = app.state::<AppState>();
+                                let mut wmap = state.windows.lock().unwrap();
+                                if let Some(rt) = wmap.get_mut(&closed_label) {
+                                    rt.unread.clear();
+                                    rt.badge_authoritative.clear();
+                                    // Stop its reload timers; reopen spawns a fresh generation.
+                                    rt.reload_cancel.store(true, Ordering::Relaxed);
+                                }
+                            } // lock released here
+
+                            // Recompute and apply the aggregate dock badge. Lock is not held
+                            // across all_unread() — it re-acquires internally — or across
+                            // set_badge_count (which dispatches to the macOS API).
+                            let state = app.state::<AppState>();
+                            let total = awareness::dock_count(&state.all_unread());
+                            if let Some(remaining) = app.windows().values().next() {
+                                let _ = remaining.set_badge_count(total);
+                            }
+                        }
+                    }
+                }
+                id if id.starts_with("open_window:") => {
+                    let wid = &id["open_window:".len()..];
+                    if let Some(win) = app.get_window(wid) {
+                        // Window is already open — just focus it.
+                        let _ = win.set_focus();
+                    } else {
+                        // Window was closed; reopen it from the retained cfg in the registry.
+                        // Clone the cfg and drop the lock before calling open_window to avoid
+                        // holding the registry lock across webview construction.
+                        let state = app.state::<AppState>();
+                        let win_cfg = {
+                            let windows = state.windows.lock().unwrap();
+                            windows.get(wid).map(|rt| rt.cfg.clone())
+                        };
+                        if let Some(cfg) = win_cfg {
+                            if let Ok((new_wid, rt)) = open_window(app, dark_mode, &cfg) {
+                                state.windows.lock().unwrap().insert(new_wid, rt);
+                            }
+                        }
+                    }
                 }
                 _ => {}
             });
