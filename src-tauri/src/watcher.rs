@@ -2,15 +2,13 @@ use crate::config::{parse_and_validate, WindowConfig};
 
 /// Given the current (last-good) first-window config and new file contents, return either the
 /// new first-window config or an error message, without ever discarding the last-good on failure.
-pub fn reconcile(current: &WindowConfig, new_src: &str) -> Result<WindowConfig, String> {
+pub fn reconcile(_current: &WindowConfig, new_src: &str) -> Result<WindowConfig, String> {
     match parse_and_validate(new_src) {
-        Ok(cfg) => {
-            let _ = current; // last-good retained by caller; we only surface the error
-            cfg.windows
-                .into_iter()
-                .next()
-                .ok_or_else(|| "no windows in new config".to_string())
-        }
+        Ok(cfg) => cfg
+            .windows
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no windows in new config".to_string()),
         Err(e) => Err(e.to_string()),
     }
 }

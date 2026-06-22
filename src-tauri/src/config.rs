@@ -284,6 +284,7 @@ reload_every = 15
         let cfg = parse_and_validate(VALID).unwrap();
         assert!(!cfg.windows[0].notifications);
         assert!(!cfg.windows[0].unread);
+        assert!(!cfg.windows[0].is_live());
         let cfg = parse_and_validate(&with_window_keys(
             "Comms",
             "notifications = true\nunread = true",
@@ -291,6 +292,7 @@ reload_every = 15
         .unwrap();
         assert!(cfg.windows[0].notifications);
         assert!(cfg.windows[0].unread);
+        assert!(cfg.windows[0].is_live());
     }
 
     #[test]
@@ -363,6 +365,24 @@ reload_every = 15
             cfg.windows[0].startup_label(),
             Some(cfg.windows[0].tab_views()[0].label.clone())
         );
+
+        // named tab → that tab
+        let named = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = \"Calendar\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\n";
+        let cfg = parse_and_validate(named).unwrap();
+        let cal = cfg.windows[0]
+            .tab_views()
+            .into_iter()
+            .find(|v| v.title == "Calendar")
+            .unwrap();
+        assert_eq!(cfg.windows[0].startup_label(), Some(cal.label));
+
+        // unknown name → falls back to first
+        let unknown = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = \"Nope\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\n";
+        let cfg = parse_and_validate(unknown).unwrap();
+        assert_eq!(
+            cfg.windows[0].startup_label(),
+            Some(cfg.windows[0].tab_views()[0].label.clone())
+        );
     }
 
     #[test]
@@ -390,6 +410,37 @@ reload_every = 15
     fn malformed_toml_is_parse_error() {
         let err = parse_and_validate("this is not toml = =").unwrap_err();
         assert!(matches!(err, ConfigError::Parse(_)));
+    }
+
+    #[test]
+    fn label_is_stable_when_a_tab_is_inserted_before_it() {
+        let base = parse_and_validate(VALID).unwrap();
+        let gmail_label = base.windows[0]
+            .tab_views()
+            .into_iter()
+            .find(|t| t.url == "https://mail.google.com/")
+            .unwrap()
+            .label;
+        // Insert a new tab ahead of Gmail in the same window; Gmail's label must not move.
+        let src = "[[window]]\ntitle = \"Comms\"\n[[window.group]]\nname = \"New\"\n[[window.group.tab]]\ntitle = \"X\"\nurl = \"https://x.test/\"\n[[window.group]]\nname = \"Chat\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n";
+        let inserted = parse_and_validate(src).unwrap();
+        let gmail = inserted.windows[0]
+            .tab_views()
+            .into_iter()
+            .find(|t| t.url == "https://mail.google.com/")
+            .unwrap();
+        assert_eq!(
+            gmail.label, gmail_label,
+            "Gmail's label must not change when a tab is inserted before it"
+        );
+    }
+
+    #[test]
+    fn duplicate_urls_get_distinct_labels() {
+        let src = "[[window]]\ntitle = \"W\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"A\"\nurl = \"https://same.test/\"\n[[window.group.tab]]\ntitle = \"B\"\nurl = \"https://same.test/\"\n";
+        let cfg = parse_and_validate(src).unwrap();
+        let views = cfg.windows[0].tab_views();
+        assert_ne!(views[0].label, views[1].label);
     }
 
     // Test helpers: build a one-window config with the given extra window-level keys.
