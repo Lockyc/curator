@@ -15,7 +15,7 @@ fn theme_for(dark_mode: bool) -> Option<Theme> {
 }
 
 pub struct AppState {
-    pub config: Mutex<config::Config>,
+    pub config: Mutex<config::WindowConfig>,
     pub tabs: Mutex<webviews::TabState>,
 }
 
@@ -27,15 +27,17 @@ pub fn run() {
                 eprintln!("config error, starting empty: {e}");
                 config::Config::default()
             });
+            let Some(win_cfg) = cfg.windows.first().cloned() else {
+                return Ok(());
+            };
             #[cfg(target_os = "macos")]
             insecure::set_allowlist(cfg.allow_insecure.clone());
-
             let handle = app.handle().clone();
             let window =
-                webviews::build_window(&handle, cfg.window.width as f64, cfg.window.height as f64)?;
+                webviews::build_window(&handle, win_cfg.width as f64, win_cfg.height as f64)?;
             window.set_theme(theme_for(cfg.dark_mode))?;
 
-            let views = cfg.tab_views();
+            let views = win_cfg.tab_views();
             let mut tab_state = webviews::TabState::default();
             // Eagerly create always_load tabs; hide them until selected.
             for v in views.iter().filter(|v| v.always_load) {
@@ -51,7 +53,7 @@ pub fn run() {
 
             // Open a tab on launch if configured (`open_on_launch`), so we don't land on the
             // blank placeholder screen.
-            if let Some(label) = cfg.startup_label() {
+            if let Some(label) = win_cfg.startup_label() {
                 if let Some(v) = views.iter().find(|v| v.label == label) {
                     if !tab_state.is_created(&label) {
                         webviews::create_content_webview(&window, v)?;
@@ -76,7 +78,7 @@ pub fn run() {
             }
 
             app.manage(AppState {
-                config: Mutex::new(cfg),
+                config: Mutex::new(win_cfg),
                 tabs: Mutex::new(tab_state),
             });
 
@@ -84,6 +86,7 @@ pub fn run() {
             // (and surfacing an error banner) if the new contents don't parse/validate.
             let watch_path = path.clone();
             let app_handle = app.handle().clone();
+            let dark_mode = cfg.dark_mode;
             std::thread::spawn(move || {
                 use notify::{RecursiveMode, Watcher};
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -107,11 +110,11 @@ pub fn run() {
                     let state = app_handle.state::<AppState>();
                     let current = state.config.lock().unwrap().clone();
                     match watcher::reconcile(&current, &src) {
-                        Ok(cfg) => {
+                        Ok(win_cfg) => {
                             let keep: std::collections::HashSet<String> =
-                                cfg.tab_views().into_iter().map(|v| v.label).collect();
+                                win_cfg.tab_views().into_iter().map(|v| v.label).collect();
                             if let Some(win) = app_handle.get_window("main") {
-                                let _ = win.set_theme(theme_for(cfg.dark_mode));
+                                let _ = win.set_theme(theme_for(dark_mode));
                                 // Close webviews orphaned by this reload (a tab whose URL
                                 // changed gets a new label; a removed tab drops out entirely).
                                 // Left alone they linger visible and surface on unload.
@@ -123,7 +126,7 @@ pub fn run() {
                                     tabs.mark_unloaded(&label);
                                 }
                             }
-                            *state.config.lock().unwrap() = cfg;
+                            *state.config.lock().unwrap() = win_cfg;
                             let _ = app_handle.emit("config-reloaded", ());
                         }
                         Err(msg) => {
