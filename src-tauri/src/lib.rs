@@ -219,11 +219,18 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
         reconcile_window_tabs(&state, &window, id, win_cfg);
     }
 
-    // If the app was showing the fallback error window and real windows now exist, close it.
-    if !diff.added.is_empty() {
-        if let Some(err_win) = app.get_window(webviews::WINDOW_ERROR) {
+    // Keep the fallback error window in sync with whether any real window exists: close it once
+    // windows return, or show it if this reload left none (a valid but window-less config) so the
+    // app is never stranded invisible.
+    let has_windows = !state.windows.lock().unwrap().is_empty();
+    match (has_windows, app.get_window(webviews::WINDOW_ERROR)) {
+        (true, Some(err_win)) => {
             let _ = err_win.close();
         }
+        (false, None) => {
+            let _ = webviews::build_error_window(app, "Your config defines no [[window]] blocks.");
+        }
+        _ => {}
     }
 
     // Rebuild the menu so the Window submenu's per-window reopen items match the new config
@@ -477,12 +484,17 @@ pub fn run() {
                     let Ok(src) = std::fs::read_to_string(&watch_path) else {
                         continue;
                     };
-                    match watcher::reconcile(&cfg, &src) {
+                    match watcher::reconcile(&src) {
                         Ok(new_cfg) => {
                             reload_windows(&app_handle, &cfg, &new_cfg);
                             cfg = new_cfg;
                         }
-                        Err(msg) => emit_to_all_chrome(&app_handle, "config-error", msg),
+                        Err(msg) => {
+                            // Surface in each window's sidebar, and refresh the standalone error
+                            // window if we're in the window-less error state.
+                            webviews::refresh_error_window(&app_handle, &msg);
+                            emit_to_all_chrome(&app_handle, "config-error", msg);
+                        }
                     }
                 }
             });

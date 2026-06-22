@@ -173,7 +173,8 @@ listen("config-error", (e) => {
 });
 listen("service-badge", (e) => {
   const { label, text } = e.payload;
-  badges.set(label, text);
+  if (text) badges.set(label, text);
+  else badges.delete(label);
   applyBadge(label, text);
 });
 

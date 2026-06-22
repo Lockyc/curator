@@ -52,6 +52,8 @@ use tauri::{
 /// Window label for the fallback error window (config failed to load / no windows defined).
 /// Not a real window id, so it never collides with a `w<hex>` window.
 pub const WINDOW_ERROR: &str = "curator-error";
+/// Webview label inside the error window (so we can refresh its message on a later failure).
+const ERROR_VIEW: &str = "curator-error-view";
 
 pub const CHROME_W: f64 = 240.0;
 /// macOS title-bar height. The title bar is an overlay (transparent, floating traffic
@@ -252,7 +254,7 @@ pub fn build_error_window(app: &AppHandle, message: &str) -> tauri::Result<Windo
         .title_bar_style(TitleBarStyle::Overlay)
         .build()?;
 
-    let view = WebviewBuilder::new("curator-error-view", WebviewUrl::App("error.html".into()))
+    let view = WebviewBuilder::new(ERROR_VIEW, WebviewUrl::App("error.html".into()))
         .initialization_script(format!(
             "window.__CURATOR_ERROR__ = \"{}\";",
             js_string_escape(message)
@@ -260,6 +262,20 @@ pub fn build_error_window(app: &AppHandle, message: &str) -> tauri::Result<Windo
     let (w, h) = logical_inner(&window);
     window.add_child(view, LogicalPosition::new(0.0, 0.0), LogicalSize::new(w, h))?;
     Ok(window)
+}
+
+/// Update the open error window's message in place (a later config save that still fails). Eval
+/// is a Rust→webview push, so it needs no capability. No-op if the error window isn't open.
+pub fn refresh_error_window(app: &AppHandle, message: &str) {
+    if let Some(view) = app
+        .get_window(WINDOW_ERROR)
+        .and_then(|w| w.get_webview(ERROR_VIEW))
+    {
+        let _ = view.eval(format!(
+            "var m=document.getElementById('msg'); if (m) m.textContent = \"{}\";",
+            js_string_escape(message)
+        ));
+    }
 }
 
 /// Navigate a content webview back to its canonical URL (reset / periodic reload).

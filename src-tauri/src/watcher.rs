@@ -3,7 +3,7 @@ use crate::identity::window_id;
 
 /// Parse `src`; on success return the new whole config, on failure return a message. The
 /// caller keeps its last-good `Config` on error (the last-good-on-failure contract).
-pub fn reconcile(_current: &Config, new_src: &str) -> Result<Config, String> {
+pub fn reconcile(new_src: &str) -> Result<Config, String> {
     parse_and_validate(new_src).map_err(|e| e.to_string())
 }
 
@@ -53,17 +53,15 @@ mod tests {
 
     #[test]
     fn valid_new_source_replaces() {
-        let cur = cfg(&["W"]);
         let src = "[[window]]\ntitle = \"W2\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
-        let res = reconcile(&cur, src).unwrap();
+        let res = reconcile(src).unwrap();
         assert_eq!(res.windows.len(), 1);
         assert_eq!(res.windows[0].title, "W2");
     }
 
     #[test]
     fn invalid_new_source_yields_error_message() {
-        let cur = cfg(&["W"]);
-        let err = reconcile(&cur, "= = bad").unwrap_err();
+        let err = reconcile("= = bad").unwrap_err();
         assert!(err.contains("invalid TOML"));
     }
 }

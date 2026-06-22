@@ -215,6 +215,15 @@ fn url_label(url: &str) -> String {
     format!("tab-{:016x}", h.finish())
 }
 
+/// A configured `session` value, treating blank/whitespace-only as unset so an empty
+/// `session = ""` falls through the chain rather than keying a store on "".
+fn normalized_session(s: &Option<String>) -> Option<String> {
+    s.as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+}
+
 impl WindowConfig {
     /// Flatten this window's groups → ordered tabs with stable labels (file order).
     pub fn tab_views(&self) -> Vec<TabView> {
@@ -231,11 +240,10 @@ impl WindowConfig {
                     format!("{base}-{n}")
                 };
                 *n += 1;
-                // Session chain: the tab's own store, else the window's, else the shared default.
-                let session = tab
-                    .session
-                    .clone()
-                    .or_else(|| self.session.clone())
+                // Session chain: the tab's own store, else the window's, else the shared default
+                // (blank values are treated as unset and fall through).
+                let session = normalized_session(&tab.session)
+                    .or_else(|| normalized_session(&self.session))
                     .unwrap_or_else(|| DEFAULT_SESSION.to_string());
                 views.push(TabView {
                     label: crate::identity::namespaced(&wid, &within),
@@ -504,6 +512,13 @@ reload_every = 15
         let bare = "[[window]]\ntitle = \"X\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
         assert_eq!(
             parse_and_validate(bare).unwrap().windows[0].tab_views()[0].session,
+            DEFAULT_SESSION
+        );
+
+        // A blank session is treated as unset and falls through to the default.
+        let blank = "[[window]]\ntitle = \"Y\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\nsession = \"  \"\n";
+        assert_eq!(
+            parse_and_validate(blank).unwrap().windows[0].tab_views()[0].session,
             DEFAULT_SESSION
         );
     }

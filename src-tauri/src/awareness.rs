@@ -97,9 +97,15 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
     };
     {
         let mut windows = state.windows.lock().unwrap();
-        if let Some(rt) = windows.get_mut(window_id) {
-            rt.unread.insert(label.clone(), unread);
+        let Some(rt) = windows.get_mut(window_id) else {
+            return;
+        };
+        // Ignore a late event for a tab that's been unloaded or orphaned (its webview is on
+        // its way out) — otherwise a stale unread could re-appear and linger on the dock badge.
+        if !rt.tabs.is_created(&label) {
+            return;
         }
+        rt.unread.insert(label.clone(), unread);
     }
     // Per-window sidebar update → that window's chrome only.
     let chrome = identity::namespaced(window_id, "chrome");
