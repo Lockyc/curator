@@ -205,8 +205,12 @@ fn reconcile_window_tabs(
     let keep: HashSet<String> = views.iter().map(|v| v.label.clone()).collect();
     let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
 
-    // Mutate this window's runtime under a single lock; collect what we need for the
-    // side-effecting webview ops afterwards (lock dropped first to avoid re-entrancy).
+    // Mutate this window's runtime under the lock, including the webview create/close calls.
+    // This is safe to hold across webview ops: Tauri's add_child builds the webview
+    // synchronously, and any on_navigation / on_title_changed callbacks fire on later
+    // event-loop turns — not re-entrantly during construction — so the lock is never
+    // re-entered here. We collect the dock total and active label while still under the
+    // lock, then apply side-effects (set_badge_count, show_only/raise) after releasing.
     let (active, dock_total) = {
         let mut windows = state.windows.lock().unwrap();
         let Some(rt) = windows.get_mut(window_id) else {
@@ -430,7 +434,29 @@ pub fn run() {
                         if let Some(win) =
                             windows.values().find(|w| w.is_focused().unwrap_or(false))
                         {
+                            let closed_label = win.label().to_string();
                             let _ = win.close();
+
+                            // Clear the closed window's unread contribution so its stale counts
+                            // don't persist on the dock badge. The runtime stays in the registry
+                            // (cfg survives for reopen); only the awareness state is wiped.
+                            {
+                                let state = app.state::<AppState>();
+                                let mut wmap = state.windows.lock().unwrap();
+                                if let Some(rt) = wmap.get_mut(&closed_label) {
+                                    rt.unread.clear();
+                                    rt.badge_authoritative.clear();
+                                }
+                            } // lock released here
+
+                            // Recompute and apply the aggregate dock badge. Lock is not held
+                            // across all_unread() — it re-acquires internally — or across
+                            // set_badge_count (which dispatches to the macOS API).
+                            let state = app.state::<AppState>();
+                            let total = awareness::dock_count(&state.all_unread());
+                            if let Some(remaining) = app.windows().values().next() {
+                                let _ = remaining.set_badge_count(total);
+                            }
                         }
                     }
                 }
