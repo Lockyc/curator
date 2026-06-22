@@ -1,6 +1,30 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// Per-tab unread badge text, pushed from Rust via `service-badge`. Cached so a re-render
+// (config reload) keeps badges, and patched live without a full re-render.
+const badges = new Map();
+
+function applyBadge(label, text) {
+  const sidebar = document.getElementById("sidebar");
+  const row = sidebar.querySelector(`.tab[data-label="${CSS.escape(label)}"]`);
+  if (!row) return;
+  let pill = row.querySelector(".badge");
+  if (!text) {
+    if (pill) pill.remove();
+    return;
+  }
+  if (!pill) {
+    pill = document.createElement("span");
+    pill.className = "badge";
+    // Insert before the actions span so the badge sits between the title and the
+    // loaded/unload control.
+    const actions = row.querySelector(".actions");
+    row.insertBefore(pill, actions);
+  }
+  pill.textContent = text;
+}
+
 // Mock favicon: a colored letter-tile derived from the tab. Works for internal IPs /
 // homelab hosts with no network fetch.
 function tileInitial(s) {
@@ -95,6 +119,14 @@ async function render() {
       title.textContent = t.title;
       row.appendChild(title);
 
+      const cached = badges.get(t.label);
+      if (cached) {
+        const pill = document.createElement("span");
+        pill.className = "badge";
+        pill.textContent = cached;
+        row.appendChild(pill);
+      }
+
       const actions = document.createElement("span");
       actions.className = "actions";
 
@@ -138,6 +170,11 @@ listen("config-error", (e) => {
   const b = document.getElementById("error-banner");
   b.textContent = "Config error (keeping last good): " + e.payload;
   b.hidden = false;
+});
+listen("service-badge", (e) => {
+  const { label, text } = e.payload;
+  badges.set(label, text);
+  applyBadge(label, text);
 });
 
 initNav();

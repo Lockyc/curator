@@ -49,6 +49,21 @@ body { margin: 0; font: 13px -apple-system, sans-serif; height: 100vh; display: 
 
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
 
+.badge {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #d13438;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Navigation pill pinned at the top of the sidebar (below the overlay traffic lights),
    acting on the active tab. Buttons reuse the inline-SVG + centered-box idiom of the
    per-row controls so icons align exactly. */
