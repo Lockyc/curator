@@ -49,11 +49,11 @@ use tauri::{
     Window, WindowEvent,
 };
 
-const CHROME_W: f64 = 240.0;
+pub const CHROME_W: f64 = 240.0;
 /// macOS title-bar height. The title bar is an overlay (transparent, floating traffic
 /// lights); the content webview paints over it full-height while the chrome sidebar is
 /// inset by this much, leaving the native title-bar strip exposed only above the tab list.
-const TITLEBAR_H: f64 = 28.0;
+pub const TITLEBAR_H: f64 = 28.0;
 /// 16 bytes → one shared persistent session store for all content webviews.
 const SESSION_STORE: [u8; 16] = *b"curator-session1";
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
@@ -81,7 +81,8 @@ fn content_size(w: f64, h: f64) -> LogicalSize<f64> {
 fn layout_webviews(window: &Window) {
     let (w, h) = logical_inner(window);
     for wv in window.webviews() {
-        let (pos, size) = if wv.label() == "chrome" {
+        let is_chrome = wv.label().ends_with(":chrome");
+        let (pos, size) = if is_chrome {
             (
                 LogicalPosition::new(0.0, TITLEBAR_H),
                 LogicalSize::new(CHROME_W, (h - TITLEBAR_H).max(0.0)),
@@ -94,16 +95,24 @@ fn layout_webviews(window: &Window) {
     }
 }
 
-/// Build the main window and the chrome (sidebar) webview, and wire window-resize relayout.
+/// Build a window and its chrome (sidebar) webview, and wire window-resize relayout.
+/// `window_id` becomes the window label and namespaces the chrome/placeholder webview labels.
 /// Returns the window.
-pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Window> {
-    let window = tauri::window::WindowBuilder::new(app, "main")
-        .title("curator")
+pub fn build_window(
+    app: &AppHandle,
+    window_id: &str,
+    title: &str,
+    win_w: f64,
+    win_h: f64,
+) -> tauri::Result<Window> {
+    let window = tauri::window::WindowBuilder::new(app, window_id)
+        .title(title)
         .inner_size(win_w, win_h)
         .title_bar_style(TitleBarStyle::Overlay)
         .build()?;
 
-    let chrome = WebviewBuilder::new("chrome", WebviewUrl::App("index.html".into()));
+    let chrome_label = crate::identity::namespaced(window_id, "chrome");
+    let chrome = WebviewBuilder::new(&chrome_label, WebviewUrl::App("index.html".into()));
     window.add_child(
         chrome,
         LogicalPosition::new(0.0, TITLEBAR_H),
@@ -113,8 +122,8 @@ pub fn build_window(app: &AppHandle, win_w: f64, win_h: f64) -> tauri::Result<Wi
     // Blank-screen placeholder (muted grey app icon), shown in the content area behind every
     // content webview. Content webviews are added later, so they stack on top and cover it
     // when a tab is open; it shows through when nothing is selected.
-    let placeholder =
-        WebviewBuilder::new("placeholder", WebviewUrl::App("placeholder.html".into()));
+    let ph_label = crate::identity::namespaced(window_id, "placeholder");
+    let placeholder = WebviewBuilder::new(&ph_label, WebviewUrl::App("placeholder.html".into()));
     window.add_child(placeholder, content_position(), content_size(win_w, win_h))?;
 
     // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler

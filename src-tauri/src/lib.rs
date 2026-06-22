@@ -41,8 +41,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             insecure::set_allowlist(cfg.allow_insecure.clone());
             let handle = app.handle().clone();
-            let window =
-                webviews::build_window(&handle, win_cfg.width as f64, win_cfg.height as f64)?;
+            let win_id = identity::window_id(&win_cfg.title);
+            let window = webviews::build_window(
+                &handle,
+                &win_id,
+                &win_cfg.title,
+                win_cfg.width as f64,
+                win_cfg.height as f64,
+            )?;
             window.set_theme(theme_for(cfg.dark_mode))?;
 
             let views = win_cfg.tab_views();
@@ -121,7 +127,8 @@ pub fn run() {
                         Ok(win_cfg) => {
                             let keep: std::collections::HashSet<String> =
                                 win_cfg.tab_views().into_iter().map(|v| v.label).collect();
-                            if let Some(win) = app_handle.get_window("main") {
+                            let current_win_id = identity::window_id(&win_cfg.title);
+                            if let Some(win) = app_handle.get_window(&current_win_id) {
                                 let _ = win.set_theme(theme_for(dark_mode));
                                 // Close webviews orphaned by this reload (a tab whose URL
                                 // changed gets a new label; a removed tab drops out entirely).
