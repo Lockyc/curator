@@ -1,6 +1,7 @@
-//! Per-(window,tab) WebKit data-store identity. Each tab in each window gets its own 16-byte
-//! data-store id, derived from `identity::session_seed(window_id, url)`, so logins are isolated
-//! per window (profiles) and survive URL edits within a window.
+//! WebKit data-store identity. A tab's resolved `session` string (tab → window → app-wide
+//! default) maps to a stable 16-byte data-store id here; tabs sharing a session string share a
+//! login, distinct strings are isolated. Decoupled from window/URL, so renaming a window or
+//! editing a URL never changes a login.
 
 use crate::hash::fnv1a_64;
 

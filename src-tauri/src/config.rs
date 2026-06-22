@@ -40,11 +40,20 @@ pub struct WindowConfig {
     /// Opt into unread pills + dock-badge contribution.
     #[serde(default)]
     pub unread: bool,
+    /// Default login store for this window's tabs (the middle link of the session chain
+    /// `tab.session → window.session → app-wide default`). Set it to make the whole window one
+    /// profile. Omit → tabs fall back to the shared app-wide store unless they set their own.
+    #[serde(default)]
+    pub session: Option<String>,
     #[serde(default)]
     pub open_on_launch: OpenOnLaunch,
     #[serde(default, rename = "group")]
     pub groups: Vec<Group>,
 }
+
+/// The shared app-wide login store used by any tab that sets no `session` (and whose window
+/// sets none either). One store → tabs share cookies, so SSO across related services works.
+pub const DEFAULT_SESSION: &str = "default";
 
 /// A window is "live" (eager-load, never hide, inject sync/notify/badge shims) iff it opts
 /// into either noisy feature. Plain windows keep curator's lazy/hide model.
@@ -76,6 +85,11 @@ pub struct Tab {
     pub always_load: bool,
     #[serde(default)]
     pub reload_every: Option<u64>,
+    /// This tab's login store (top link of the session chain). Tabs sharing a `session` string
+    /// share a login (even across windows); a distinct string gives a separate account. Omit →
+    /// inherit the window's `session`, else the app-wide default.
+    #[serde(default)]
+    pub session: Option<String>,
 }
 
 #[derive(Debug)]
@@ -184,6 +198,11 @@ pub struct TabView {
     pub url: String,
     pub always_load: bool,
     pub reload_every: Option<u64>,
+    /// Resolved login store: `tab.session → window.session → DEFAULT_SESSION`. Tabs with the
+    /// same value share a WebKit data store (one login); distinct values are isolated. Not
+    /// serialized to the chrome sidebar — it's a backend concern, not UI.
+    #[serde(skip)]
+    pub session: String,
 }
 
 /// Stable within-window webview label derived from a tab's URL. Position-independent so
@@ -212,6 +231,12 @@ impl WindowConfig {
                     format!("{base}-{n}")
                 };
                 *n += 1;
+                // Session chain: the tab's own store, else the window's, else the shared default.
+                let session = tab
+                    .session
+                    .clone()
+                    .or_else(|| self.session.clone())
+                    .unwrap_or_else(|| DEFAULT_SESSION.to_string());
                 views.push(TabView {
                     label: crate::identity::namespaced(&wid, &within),
                     group: group.name.clone(),
@@ -219,6 +244,7 @@ impl WindowConfig {
                     url: tab.url.clone(),
                     always_load: tab.always_load,
                     reload_every: tab.reload_every,
+                    session,
                 });
             }
         }
@@ -463,6 +489,22 @@ reload_every = 15
             parse_and_validate(src).is_ok(),
             "examples/config.toml must parse: {:?}",
             parse_and_validate(src).unwrap_err()
+        );
+    }
+
+    #[test]
+    fn session_chain_resolves_tab_then_window_then_default() {
+        // Window sets a session; first tab inherits it, second overrides with its own.
+        let src = "[[window]]\ntitle = \"W\"\nsession = \"win\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Inherits\"\nurl = \"https://a.test/\"\n[[window.group.tab]]\ntitle = \"Own\"\nurl = \"https://b.test/\"\nsession = \"tabown\"\n";
+        let views = parse_and_validate(src).unwrap().windows[0].tab_views();
+        assert_eq!(views[0].session, "win");
+        assert_eq!(views[1].session, "tabown");
+
+        // Neither tab nor window sets a session → the shared app-wide default.
+        let bare = "[[window]]\ntitle = \"X\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
+        assert_eq!(
+            parse_and_validate(bare).unwrap().windows[0].tab_views()[0].session,
+            DEFAULT_SESSION
         );
     }
 

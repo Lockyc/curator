@@ -1,8 +1,15 @@
 # Example curator config. Copy to ~/.config/curator/config.toml and edit.
 # Order of groups and tabs is the render order. Required per tab: title, url.
 #
-# curator opens one window per [[window]] block. Sessions are per-window:
-# if you put the same service in two windows, each gets its own independent login.
+# curator opens one window per [[window]] block.
+#
+# Logins: by default every tab shares one app-wide store, so signing into a provider covers
+# its related services (Gmail + Calendar share your Google login). To give a tab its own
+# account, set `session = "name"` on the tab; reuse the same name on other tabs (in any
+# window) to share that login. A window-level `session` is the default for its tabs. Resolution
+# is tab.session → window.session → shared default. Logins follow the session name, so renaming
+# a window or editing a URL never signs you out.
+#
 # `just dev` loads this file (via CURATOR_CONFIG) so you can try it without touching
 # your real ~/.config/curator/config.toml.
 
@@ -81,6 +88,7 @@ unread        = true   # track unread counts → dock badge
     [[window.group.tab]]
     title = "Slack"
     url   = "https://app.slack.com/"
+    # session = "work"   # give this tab its own login store (e.g. a separate account)
 
   [[window.group]]
   name = "Notifications"

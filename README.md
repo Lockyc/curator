@@ -25,14 +25,18 @@ file-driven, everything else is ephemeral.
 - **`config.toml` is the source of truth** — each `[[window]]` block opens one window,
   containing `[[window.group]]` and `[[window.group.tab]]` entries. No in-app pin/unpin;
   you curate by editing the file (hot-reloaded on save).
-- **Multiple windows, independent sessions** — a window gets its own WebKit profile, so
-  the same service in two windows means two independent logins (two sets of cookies/storage).
+- **Multiple windows** — each `[[window]]` opens its own window with its own tab list. All
+  open at launch; ⌘W closes any non-last window and the **Window** menu reopens it.
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.
 - **New-tab intents escape** — `target="_blank"`, `window.open`, cmd/middle-click all
   shell out to `open`, routing to your macOS default browser instead of opening in curator.
-- **Sessions persist** — log into a site once in-app; it stays.
+- **Sessions persist, and are shareable** — log into a site once in-app and it stays. By
+  default every tab shares one login store, so signing into a provider covers its related
+  services (Gmail, Calendar, …). Set a tab's (or a window's) `session = "name"` to give it a
+  separate account; reuse the same name elsewhere to share that login. Logins follow the
+  `session` name, so renaming a window or editing a URL never signs you out.
 - **Page-first chrome** — the active page fills the window edge-to-edge, painting under an
   overlay title bar; the native title bar (with traffic lights, draggable) is exposed only
   as a strip above the sidebar tab list.

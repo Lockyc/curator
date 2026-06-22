@@ -16,13 +16,18 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 ## Architecture
 
 **Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
-Each window has:
+Each window has a `window_id` (derived from `title` via `identity::window_id`) that namespaces
+its webview labels (`{window_id}:{tab_hash}`) so they're collision-free across windows. The
+window id is purely a label key — run-ephemeral, nothing persistent tied to it — so renaming a
+window's `title` is harmless.
 
-- Its own WebKit profile, giving per-window session isolation: the same service in two
-  windows gets two independent logins (two sets of cookies/storage).
-- A `window_id` (derived from `title` via `identity::window_id`) that namespaces webview
-  labels (`{window_id}:{tab_hash}`) and the per-window session directory, keeping them
-  stable and collision-free across windows.
+**Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
+resolved `session` string via the chain `tab.session → window.session → DEFAULT_SESSION`
+(`config.rs` builds `TabView::session`; `session::data_store_id` hashes it). Tabs sharing a
+session string share a login (even across windows); distinct strings are isolated accounts.
+With no `session` set anywhere, all tabs share one app-wide store, so SSO across related
+services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not the window or
+URL — renaming a window or editing a tab's URL never logs you out.
 
 **Live vs plain.** A window that sets `notifications = true` or `unread = true` is "live":
 it eager-loads all its tabs from launch, never hides, and has the notify/badge shims

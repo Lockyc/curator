@@ -148,18 +148,17 @@ pub fn build_window(
     Ok(window)
 }
 
-/// Create a content webview for `view` in the given window. The webview's session store is
-/// per-(window,tab); injection + navigation handlers are chosen from the window's flags:
-/// plain windows inject only the escape-click shim; live windows add the visibility shim,
-/// plus notification/badge shims for the features they opted into.
+/// Create a content webview for `view` in the given window. Its login store is keyed on the
+/// resolved `view.session` (tabs sharing a session string share a login; the default is one
+/// shared app-wide store). Injection + navigation handlers are chosen from the window's flags:
+/// plain windows inject only the escape-click shim; live windows add the visibility shim, plus
+/// notification/badge shims for the features they opted into.
 pub fn create_content_webview(
     window: &Window,
-    window_id: &str,
     win_cfg: &crate::config::WindowConfig,
     view: &TabView,
 ) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
-    let seed = crate::identity::session_seed(window_id, &view.url);
 
     let mut init = ESCAPE_CLICK_JS.to_string();
     if win_cfg.is_live() {
@@ -181,7 +180,7 @@ pub fn create_content_webview(
     let notifications = win_cfg.notifications;
 
     let mut builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
-        .data_store_identifier(crate::session::data_store_id(&seed))
+        .data_store_identifier(crate::session::data_store_id(&view.session))
         .user_agent(DESKTOP_UA)
         .initialization_script(&init)
         .on_new_window(|url, _features| {

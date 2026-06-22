@@ -64,8 +64,7 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
         .clone();
 
     if !rt.tabs.is_created(&label) {
-        webviews::create_content_webview(&window, &wid, &rt.cfg, &target)
-            .map_err(|e| e.to_string())?;
+        webviews::create_content_webview(&window, &rt.cfg, &target).map_err(|e| e.to_string())?;
         rt.tabs.mark_created(&label);
     }
     rt.tabs.set_active(&label);

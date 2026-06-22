@@ -1,6 +1,7 @@
-//! Per-window identity. The window id seeds namespaced webview labels (Tauri labels are
-//! app-global, so two windows sharing a URL would otherwise collide) and per-(window,tab)
-//! session stores. Derived from the window title via frozen FNV-1a so it's stable across runs.
+//! Window label identity. The window id namespaces a window's webview labels (Tauri labels are
+//! app-global, so two windows sharing a URL would otherwise collide). It's a purely mechanical,
+//! run-ephemeral label key — nothing persistent (logins live in `session`-keyed data stores) is
+//! tied to it, so renaming a window is harmless. Derived from the title via frozen FNV-1a.
 
 use crate::hash::fnv1a_64;
 
@@ -15,12 +16,6 @@ pub fn namespaced(window_id: &str, within: &str) -> String {
     format!("{window_id}:{within}")
 }
 
-/// Seed for a per-(window,tab) WebKit data store: the same URL in two windows yields two
-/// stores (two logins / profiles).
-pub fn session_seed(window_id: &str, url: &str) -> String {
-    format!("{window_id}:{url}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -29,22 +24,16 @@ mod tests {
     fn window_id_is_stable_and_label_safe() {
         assert_eq!(window_id("Comms"), window_id("Comms"));
         let id = window_id("Comms");
-        assert!(id.starts_with('w'));
-        assert!(id
+        assert_eq!(id.len(), 17);
+        assert_eq!(&id[..1], "w");
+        assert!(id[1..]
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == ':' || c == '_'));
+            .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()));
     }
 
     #[test]
     fn distinct_titles_give_distinct_ids() {
         assert_ne!(window_id("Comms"), window_id("Keepers"));
-    }
-
-    #[test]
-    fn same_url_in_two_windows_gets_distinct_session_seeds() {
-        let a = session_seed(&window_id("Comms"), "https://mail.google.com/");
-        let b = session_seed(&window_id("Keepers"), "https://mail.google.com/");
-        assert_ne!(a, b);
     }
 
     #[test]

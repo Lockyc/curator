@@ -109,7 +109,7 @@ fn open_window(
     if win_cfg.is_live() {
         // Live window: eager-load every tab, raise the first, never hide.
         for v in &views {
-            webviews::create_content_webview(&window, &wid, win_cfg, v)?;
+            webviews::create_content_webview(&window, win_cfg, v)?;
             tabs.mark_created(&v.label);
         }
         if let Some(first) = views.first() {
@@ -120,7 +120,7 @@ fn open_window(
         // Plain window: lazy-load; eager-create only always_load tabs, hide all, then open
         // the startup tab if configured.
         for v in views.iter().filter(|v| v.always_load) {
-            webviews::create_content_webview(&window, &wid, win_cfg, v)?;
+            webviews::create_content_webview(&window, win_cfg, v)?;
             tabs.mark_created(&v.label);
         }
         let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
@@ -132,7 +132,7 @@ fn open_window(
         if let Some(label) = win_cfg.startup_label() {
             if let Some(v) = views.iter().find(|v| v.label == label) {
                 if !tabs.is_created(&label) {
-                    webviews::create_content_webview(&window, &wid, win_cfg, v)?;
+                    webviews::create_content_webview(&window, win_cfg, v)?;
                     tabs.mark_created(&label);
                 }
                 tabs.set_active(&label);
@@ -312,7 +312,7 @@ fn reconcile_window_tabs(
         }
     }
     for v in &to_create {
-        let _ = webviews::create_content_webview(window, window_id, win_cfg, v);
+        let _ = webviews::create_content_webview(window, win_cfg, v);
     }
     spawn_reload_timers(window, &views, reload_cancel);
     if let Some(win) = window.app_handle().get_window(window_id) {
