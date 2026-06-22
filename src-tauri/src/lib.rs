@@ -282,6 +282,14 @@ pub fn run() {
                 windows: Mutex::new(runtimes),
             });
 
+            // Extract what we need from cfg before the watcher thread takes ownership of it.
+            let dark_mode = cfg.dark_mode;
+            let window_titles: Vec<(String, String)> = cfg
+                .windows
+                .iter()
+                .map(|w| (identity::window_id(&w.title), w.title.clone()))
+                .collect();
+
             // Watch the config file and hot-reload on change, keeping the last-good config
             // (and surfacing an error banner on each open window) if the new contents don't
             // parse/validate.
@@ -366,13 +374,25 @@ pub fn run() {
             let config_menu = SubmenuBuilder::new(app, "Config")
                 .items(&[&edit_cfg, &reveal_cfg])
                 .build()?;
-            // Window menu — minimize / zoom / full screen. No Close Window (⌘W): a closed
-            // window has no reopen path short of editing the config, so closing one strands it.
-            let window_menu = SubmenuBuilder::new(app, "Window")
+            // Window menu — minimize / zoom / full screen; Close Window (⌘W) with a >1 guard
+            // so the last window can never be closed (prevents stranding the app); and one item
+            // per configured window so any closed window can be reopened from the menu.
+            let close_window = MenuItemBuilder::with_id("close_window", "Close Window")
+                .accelerator("CmdOrCtrl+W")
+                .build(app)?;
+            let mut window_menu = SubmenuBuilder::new(app, "Window")
                 .minimize()
                 .maximize()
                 .fullscreen()
-                .build()?;
+                .separator()
+                .item(&close_window)
+                .separator();
+            for (wid, title) in &window_titles {
+                let item =
+                    MenuItemBuilder::with_id(format!("open_window:{wid}"), title).build(app)?;
+                window_menu = window_menu.item(&item);
+            }
+            let window_menu = window_menu.build()?;
             let menu = MenuBuilder::new(app)
                 .items(&[
                     &app_menu,
@@ -400,6 +420,51 @@ pub fn run() {
                         .arg("-R")
                         .arg(&cfg_path)
                         .spawn();
+                }
+                "close_window" => {
+                    // Never close the last window — that would strand the app with no reopen
+                    // path. We keep the WindowRuntime in the registry so its cfg survives for
+                    // reopen via the per-window menu items below.
+                    if app.webview_windows().len() > 1 {
+                        if let Some(win) = app
+                            .webview_windows()
+                            .values()
+                            .find(|w| w.is_focused().unwrap_or(false))
+                            .and_then(|wv| {
+                                // The focused webview might be a chrome or content view;
+                                // derive the window label from the webview label by getting
+                                // the parent window via the app handle.
+                                let label = wv.label().to_string();
+                                // Content webviews are prefixed "<wid>/" — extract wid.
+                                // Chrome webviews are "<wid>/chrome". Window label == wid.
+                                let wid = label.split('/').next().unwrap_or(&label);
+                                app.get_window(wid)
+                            })
+                        {
+                            let _ = win.close();
+                        }
+                    }
+                }
+                id if id.starts_with("open_window:") => {
+                    let wid = &id["open_window:".len()..];
+                    if let Some(win) = app.get_window(wid) {
+                        // Window is already open — just focus it.
+                        let _ = win.set_focus();
+                    } else {
+                        // Window was closed; reopen it from the retained cfg in the registry.
+                        // Clone the cfg and drop the lock before calling open_window to avoid
+                        // holding the registry lock across webview construction.
+                        let state = app.state::<AppState>();
+                        let win_cfg = {
+                            let windows = state.windows.lock().unwrap();
+                            windows.get(wid).map(|rt| rt.cfg.clone())
+                        };
+                        if let Some(cfg) = win_cfg {
+                            if let Ok((new_wid, rt)) = open_window(app, dark_mode, &cfg) {
+                                state.windows.lock().unwrap().insert(new_wid, rt);
+                            }
+                        }
+                    }
                 }
                 _ => {}
             });
