@@ -453,6 +453,19 @@ reload_every = 15
             .starts_with(&format!("{wid}:")));
     }
 
+    #[test]
+    fn bundled_example_config_parses() {
+        let src = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/config.toml"
+        ));
+        assert!(
+            parse_and_validate(src).is_ok(),
+            "examples/config.toml must parse: {:?}",
+            parse_and_validate(src).unwrap_err()
+        );
+    }
+
     // Test helpers: build a one-window config with the given extra window-level keys.
     fn with_window_keys(title: &str, keys: &str) -> String {
         format!(

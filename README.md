@@ -4,15 +4,13 @@
 
 <h1 align="center">curator</h1>
 
-A dedicated, always-findable home for the handful of browser tabs you can't afford to
-lose. macOS only.
+A dedicated, always-findable home for the browser tabs you can't afford to lose. macOS only.
 
 <p align="center"><img src="docs/screenshot.png" alt="curator window showing grouped keeper tabs in the sidebar" width="840"></p>
 
-Not a general browser: a minimal, single-window app (Tauri v2) that renders a *curated,
-declarative* set of "keeper" tabs from a `config.toml` config, and refuses to let new-tab
-navigation pollute that set — handing every such intent off to your macOS default browser
-instead.
+Not a general browser: a minimal app (Tauri v2) that renders a *curated, declarative* set
+of "keeper" tabs from a `config.toml` config, and refuses to let new-tab navigation
+pollute that set — handing every such intent off to your macOS default browser instead.
 
 ## Why
 
@@ -24,8 +22,11 @@ file-driven, everything else is ephemeral.
 
 ## Model
 
-- **`config.toml` is the source of truth** — keeper tabs, grouped and ordered. No in-app
-  pin/unpin; you curate by editing the file (hot-reloaded on save).
+- **`config.toml` is the source of truth** — each `[[window]]` block opens one window,
+  containing `[[window.group]]` and `[[window.group.tab]]` entries. No in-app pin/unpin;
+  you curate by editing the file (hot-reloaded on save).
+- **Multiple windows, independent sessions** — a window gets its own WebKit profile, so
+  the same service in two windows means two independent logins (two sets of cookies/storage).
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.
@@ -35,6 +36,13 @@ file-driven, everything else is ephemeral.
 - **Page-first chrome** — the active page fills the window edge-to-edge, painting under an
   overlay title bar; the native title bar (with traffic lights, draggable) is exposed only
   as a strip above the sidebar tab list.
+- **Per-window opt-in features** — `notifications = true` lets web `Notification` calls
+  pop native banners; `unread = true` tracks per-tab unread counts, rolling them up to the
+  dock badge. Both default off; a window with either enabled is always eager-loaded.
+- **Dock badge aggregates across windows** — the badge total is the sum of all windows
+  that have `unread = true`.
+- **Window menu** — close a non-last window (⌘W); reopen any closed window from the
+  Window menu.
 
 ## Quick install
 
@@ -84,32 +92,79 @@ manual / contributor flow.
    memorise the path; the **Tabs** menu has *Reload Tab* (⌘R) and *Reset All Tabs* to snap
    every open tab back to its canonical URL.
 
-## Config options
+## Config
 
-Each `[[group.tab]]` requires `title` and `url`. Optional per tab:
+curator opens one window per `[[window]]` block. Each window inlines its groups and tabs:
 
-| Field          | Type            | Default | Meaning                                          |
-|----------------|-----------------|---------|--------------------------------------------------|
-| `always_load`  | bool            | `false` | Preload the tab and keep it warm from launch.    |
-| `reload_every` | positive int    | none    | Auto-refresh the canonical URL every N minutes.  |
+```toml
+# App-global options
+# dark_mode     = true            # force dark appearance; omit = follow system
+# allow_insecure = ["192.168.1.1"] # accept self-signed TLS for these hosts
 
-Lazy by default: a tab's webview is created on first activation and kept warm for the
+[[window]]
+title         = "Keepers"          # required; must be unique across windows
+# width       = 1500               # optional; default 1500 × 1000
+# height      = 1000
+# open_on_launch = "Grafana"       # true/false/"Tab Title"
+# notifications = false            # allow web Notification API to pop native banners
+# unread        = false            # track unread counts → dock badge
+
+  [[window.group]]
+  name = "Dashboards"
+
+    [[window.group.tab]]
+    title        = "Grafana"
+    url          = "https://play.grafana.org/"
+    always_load  = true    # preload + keep warm from launch
+    reload_every = 5       # auto-refresh every 5 minutes
+
+[[window]]
+title         = "Comms"
+notifications = true
+unread        = true
+
+  [[window.group]]
+  name = "Chat"
+
+    [[window.group.tab]]
+    title       = "Mattermost"
+    url         = "https://community.mattermost.com/"
+    always_load = true
+```
+
+### Per-window options
+
+| Field             | Type                     | Default       | Meaning                                                                    |
+|-------------------|--------------------------|---------------|----------------------------------------------------------------------------|
+| `title`           | string                   | **required**  | Window title; must be unique across all windows.                           |
+| `width`/`height`  | int                      | `1500`/`1000` | Initial window size in logical pixels. Applied at launch (restart to change). |
+| `open_on_launch`  | bool \| tab title string | `false`       | `true` opens the first tab; a string opens the named tab; `false` = blank screen. |
+| `notifications`   | bool                     | `false`       | Allow the web `Notification` API to pop native banners.                    |
+| `unread`          | bool                     | `false`       | Track per-tab unread counts; roll them up to the dock badge.               |
+
+### Per-tab options
+
+Each `[[window.group.tab]]` requires `title` and `url`. Optional:
+
+| Field          | Type         | Default | Meaning                                         |
+|----------------|--------------|---------|--------------------------------------------------|
+| `always_load`  | bool         | `false` | Preload the tab and keep it warm from launch.    |
+| `reload_every` | positive int | none    | Auto-refresh the canonical URL every N minutes.  |
+
+### App-global options
+
+| Field            | Type          | Default | Meaning                                                                                       |
+|------------------|---------------|---------|-----------------------------------------------------------------------------------------------|
+| `dark_mode`      | bool          | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark.                  |
+| `allow_insecure` | list of hosts | `[]`    | Accept self-signed/invalid TLS certs for these hosts. Applied at launch (restart to change).  |
+
+Tabs are lazy by default: a webview is created on first activation and kept warm for the
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
-that webview's memory); the tab reloads on next click. The ⟳ reloads a tab's current page
-(**⌘R** reloads the active tab). A navigation pill at the top of the sidebar drives the
-active tab: **◀ back** and **▶ forward** through its in-page history, and **⌂ home** to
-snap back to its canonical URL — re-clicking the already-active tab does the same.
+that webview's memory); the tab reloads on next click. A navigation pill at the top of the
+sidebar drives the active tab: **◀ back** and **▶ forward** through in-page history, and
+**⌂ home** to snap back to its canonical URL.
 
-Top-level options:
-
-| Field            | Type                | Default | Meaning                                              |
-|------------------|---------------------|---------|------------------------------------------------------|
-| `open_on_launch` | bool \| tab title   | `false` | `true` opens the first tab on launch; a string opens the tab with that title; `false`/omit shows the blank screen. |
-| `dark_mode`      | bool                | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark. Omit/false follows the system. |
-| `allow_insecure` | list of hosts       | `[]`    | Accept self-signed/invalid TLS certs for these hosts only, e.g. `["192.168.1.1"]` for homelab devices. Applied at launch (restart to change). |
-| `[window]`       | table `{ width, height }` | `1500 × 1000` | Initial window size in logical pixels. Set either key alone (the other keeps its default). Applied at launch (restart to change). |
-
-See `examples/config.toml` for a starting point.
+See `examples/config.toml` for a two-window starting-point example.
 
 ## License
 

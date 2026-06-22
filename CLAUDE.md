@@ -13,8 +13,30 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 (`config::resolve_config_path`). `just dev` sets `CURATOR_CONFIG` to the repo's
 `examples/config.toml` so dev runs never touch a real user config.
 
-The app menu (`lib.rs`) fully replaces Tauri's default menu, so the standard macOS menus
-must be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the
+## Architecture
+
+**Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
+Each window has:
+
+- Its own WebKit profile, giving per-window session isolation: the same service in two
+  windows gets two independent logins (two sets of cookies/storage).
+- A `window_id` (derived from `title` via `identity::window_id`) that namespaces webview
+  labels (`{window_id}:{tab_hash}`) and the per-window session directory, keeping them
+  stable and collision-free across windows.
+
+**Live vs plain.** A window that sets `notifications = true` or `unread = true` is "live":
+it eager-loads all its tabs from launch, never hides, and has the notify/badge shims
+injected. A plain window keeps the lazy/hide model (webview created on first click, hidden
+when the window isn't active). `WindowConfig::is_live()` in `config.rs` captures this.
+
+**Dock badge** aggregates the unread count across all windows that have `unread = true`.
+
+**Window menu** — a real **Window** submenu lets the user close a non-last window (⌘W)
+and reopen any closed window from the list. All configured windows open at launch; closed
+windows can be reopened from the Window menu.
+
+**App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must
+be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the
 clipboard accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content
 webviews. Keep Edit (and Window/Hide) when touching the menu.
 
