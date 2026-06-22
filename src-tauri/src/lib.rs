@@ -6,9 +6,12 @@ mod hash;
 mod identity;
 #[cfg(target_os = "macos")]
 mod insecure;
+mod notification;
 mod session;
 mod watcher;
 mod webviews;
+#[cfg(target_os = "macos")]
+mod zorder;
 
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, Theme};
@@ -25,6 +28,7 @@ pub struct AppState {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let path = config::resolve_config_path();
             let cfg = config::load_config(&path).unwrap_or_else(|e| {
