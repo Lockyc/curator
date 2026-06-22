@@ -54,10 +54,17 @@ pub const CHROME_W: f64 = 240.0;
 /// lights); the content webview paints over it full-height while the chrome sidebar is
 /// inset by this much, leaving the native title-bar strip exposed only above the tab list.
 pub const TITLEBAR_H: f64 = 28.0;
-/// 16 bytes → one shared persistent session store for all content webviews.
-const SESSION_STORE: [u8; 16] = *b"curator-session1";
+const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
 const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
+/// Drives WebKit's `visibilitychange`/`focus` so live services keep syncing while hidden.
+const VISIBILITY_SHIM_JS: &str = include_str!("../../src/inject/visibility.js");
+/// Reroutes web `Notification` calls through the notify sentinel for a native banner.
+const NOTIFICATION_JS: &str = include_str!("../../src/inject/notification.js");
+/// Reroutes the Badging API through the badge sentinel for unread pills + dock badge.
+const BADGE_JS: &str = include_str!("../../src/inject/badge.js");
 
 /// Current inner size of the window in logical px.
 fn logical_inner(window: &Window) -> (f64, f64) {
@@ -137,26 +144,73 @@ pub fn build_window(
     Ok(window)
 }
 
-/// Lazily create a content webview for `tab`, sized to the window's current content area.
-/// Idempotent via the caller's TabState. `on_new_window` denies in-app creation and escapes
-/// to the default browser; `on_navigation` allows same-tab navigation.
-pub fn create_content_webview(window: &Window, tab: &TabView) -> tauri::Result<()> {
-    let url: url::Url = tab.url.parse().expect("url validated at config load");
-    let builder = WebviewBuilder::new(&tab.label, WebviewUrl::External(url))
-        .data_store_identifier(SESSION_STORE)
-        .initialization_script(ESCAPE_CLICK_JS)
+/// Create a content webview for `view` in the given window. The webview's session store is
+/// per-(window,tab); injection + navigation handlers are chosen from the window's flags:
+/// plain windows inject only the escape-click shim; live windows add the visibility shim,
+/// plus notification/badge shims for the features they opted into.
+pub fn create_content_webview(
+    window: &Window,
+    window_id: &str,
+    win_cfg: &crate::config::WindowConfig,
+    view: &TabView,
+) -> tauri::Result<()> {
+    let url: url::Url = view.url.parse().expect("url validated at config load");
+    let seed = crate::identity::session_seed(window_id, &view.url);
+
+    let mut init = ESCAPE_CLICK_JS.to_string();
+    if win_cfg.is_live() {
+        init.push_str("\n;\n");
+        init.push_str(VISIBILITY_SHIM_JS);
+    }
+    if win_cfg.notifications {
+        init.push_str("\n;\n");
+        init.push_str(NOTIFICATION_JS);
+    }
+    if win_cfg.unread {
+        init.push_str("\n;\n");
+        init.push_str(BADGE_JS);
+    }
+
+    let nav_app = window.app_handle().clone();
+    let nav_label = view.label.clone();
+    let unread = win_cfg.unread;
+    let notifications = win_cfg.notifications;
+
+    let mut builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
+        .data_store_identifier(crate::session::data_store_id(&seed))
+        .user_agent(DESKTOP_UA)
+        .initialization_script(&init)
         .on_new_window(|url, _features| {
-            escape::escape_to_default_browser(url.as_str());
+            if escape::is_escapable_scheme(&url) {
+                escape::escape_to_default_browser(url.as_str());
+            }
             NewWindowResponse::Deny
         })
-        .on_navigation(|url| {
-            // cmd/middle-click sentinel → escape to the default browser, cancel the in-app nav.
+        .on_navigation(move |url| {
+            if unread {
+                if let Some(sig) = escape::badge_sentinel(url) {
+                    crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
+                    return false;
+                }
+            }
+            if notifications {
+                if let Some(p) = escape::notify_sentinel(url) {
+                    crate::notification::fire(&nav_app, &p.title, &p.body);
+                    return false;
+                }
+            }
             if let Some(target) = escape::sentinel_target(url) {
                 escape::escape_to_default_browser(&target);
                 return false;
             }
             escape::allow_same_tab_navigation(url.as_str())
         });
+
+    if win_cfg.unread {
+        builder = builder.on_document_title_changed(|webview, title| {
+            crate::awareness::on_title_changed(&webview, &title);
+        });
+    }
 
     let (w, h) = logical_inner(window);
     let webview = window.add_child(builder, content_position(), content_size(w, h))?;
@@ -173,6 +227,18 @@ pub fn reload_canonical(window: &Window, label: &str, canonical_url: &str) -> ta
     if let Some(wv) = window.get_webview(label) {
         let url: url::Url = canonical_url.parse().expect("url validated at config load");
         wv.navigate(url)?;
+    }
+    Ok(())
+}
+
+/// Raise `label` to the front without hiding others (hiding throttles their sync). Live
+/// windows switch tabs with this. No-op if the webview doesn't exist.
+pub fn raise(window: &Window, label: &str) -> tauri::Result<()> {
+    if let Some(_wv) = window.get_webview(label) {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = _wv.with_webview(|pw| crate::zorder::raise_to_front(pw.inner()));
+        }
     }
     Ok(())
 }

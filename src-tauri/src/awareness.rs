@@ -2,6 +2,9 @@
 //! badge and the aggregate macOS dock badge.
 
 use crate::escape::BadgeSignal;
+use crate::{identity, AppState};
+use serde::Serialize;
+use tauri::{Emitter, Manager};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Unread {
@@ -78,6 +81,77 @@ pub fn dock_count(states: &[Unread]) -> Option<i64> {
         })
         .sum();
     (total > 0).then_some(total)
+}
+
+#[derive(Clone, Serialize)]
+struct BadgeEvent {
+    label: String,
+    text: String,
+}
+
+/// Update `label`'s unread state within its window, push the per-window `service-badge`, and
+/// refresh the single aggregate dock badge from every window's counts.
+fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: Unread) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    {
+        let mut windows = state.windows.lock().unwrap();
+        if let Some(rt) = windows.get_mut(window_id) {
+            rt.unread.insert(label.clone(), unread);
+        }
+    }
+    // Per-window sidebar update → that window's chrome only.
+    let chrome = identity::namespaced(window_id, "chrome");
+    let _ = app.emit_to(
+        chrome,
+        "service-badge",
+        BadgeEvent {
+            label,
+            text: badge_text(unread),
+        },
+    );
+    // Single dock badge across all windows.
+    let total = dock_count(&state.all_unread());
+    if let Some(win) = app.get_window(window_id) {
+        let _ = win.set_badge_count(total);
+    }
+}
+
+/// Title-change handler: drive the badge from the title heuristic unless the service has gone
+/// Badging-authoritative for its window.
+pub fn on_title_changed(webview: &tauri::Webview, title: &str) {
+    let app = webview.app_handle();
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let label = webview.label().to_string();
+    let window_id = webview.window().label().to_string();
+    {
+        let windows = state.windows.lock().unwrap();
+        if let Some(rt) = windows.get(&window_id) {
+            if !title_update_allowed(&rt.badge_authoritative, &label) {
+                return;
+            }
+        }
+    }
+    apply_unread(app, &window_id, label, parse_unread(title));
+}
+
+/// Badging-API sentinel handler: mark the service authoritative for its window and apply.
+pub fn on_badge_signal(app: &tauri::AppHandle, label: &str, signal: BadgeSignal) {
+    // The label is window-namespaced (`<wid>:tab-…`); recover the window id from its prefix.
+    let window_id = label
+        .split_once(':')
+        .map(|(w, _)| w.to_string())
+        .unwrap_or_default();
+    if let Some(state) = app.try_state::<AppState>() {
+        let mut windows = state.windows.lock().unwrap();
+        if let Some(rt) = windows.get_mut(&window_id) {
+            rt.badge_authoritative.insert(label.to_string());
+        }
+    }
+    apply_unread(app, &window_id, label.to_string(), badge_unread(signal));
 }
 
 #[cfg(test)]

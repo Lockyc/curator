@@ -17,7 +17,6 @@ pub fn namespaced(window_id: &str, within: &str) -> String {
 
 /// Seed for a per-(window,tab) WebKit data store: the same URL in two windows yields two
 /// stores (two logins / profiles).
-#[allow(dead_code)]
 pub fn session_seed(window_id: &str, url: &str) -> String {
     format!("{window_id}:{url}")
 }

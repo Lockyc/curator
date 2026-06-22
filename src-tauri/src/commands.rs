@@ -1,6 +1,6 @@
-use crate::{config::TabView, webviews, AppState};
+use crate::{config::TabView, webviews, AppState, WindowRuntime};
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, Webview, Window};
 
 /// A tab plus its runtime state: whether its content webview is warm, and whether it's the
 /// active (visible) tab.
@@ -12,15 +12,35 @@ pub struct TabItem {
     active: bool,
 }
 
+/// The window id of the window owning the invoking webview. A command is invoked from a
+/// window's chrome sidebar, whose parent window's label *is* the window id.
+fn calling_window_id(webview: &Webview) -> String {
+    webview.window().label().to_string()
+}
+
+/// Resolve the invoking webview's window handle plus a closure-friendly window id.
+fn calling_window(webview: &Webview) -> Result<(Window, String), String> {
+    let wid = calling_window_id(webview);
+    let window = webview
+        .app_handle()
+        .get_window(&wid)
+        .ok_or("no such window")?;
+    Ok((window, wid))
+}
+
 #[tauri::command]
-pub fn get_tabs(state: State<AppState>) -> Vec<TabItem> {
-    let cfg = state.config.lock().unwrap();
-    let tabs = state.tabs.lock().unwrap();
-    let active = tabs.active().map(str::to_string);
-    cfg.tab_views()
+pub fn get_tabs(webview: Webview, state: State<AppState>) -> Vec<TabItem> {
+    let wid = calling_window_id(&webview);
+    let windows = state.windows.lock().unwrap();
+    let Some(rt) = windows.get(&wid) else {
+        return Vec::new();
+    };
+    let active = rt.tabs.active().map(str::to_string);
+    rt.cfg
+        .tab_views()
         .into_iter()
         .map(|view| {
-            let loaded = tabs.is_created(&view.label);
+            let loaded = rt.tabs.is_created(&view.label);
             let active = active.as_deref() == Some(view.label.as_str());
             TabItem {
                 view,
@@ -32,54 +52,57 @@ pub fn get_tabs(state: State<AppState>) -> Vec<TabItem> {
 }
 
 #[tauri::command]
-pub fn select_tab(label: String, app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    let main = app.get_window("main").ok_or("no main window")?;
-    let views = state.config.lock().unwrap().tab_views();
+pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
+    let (window, wid) = calling_window(&webview)?;
+    let mut windows = state.windows.lock().unwrap();
+    let rt = windows.get_mut(&wid).ok_or("no such window")?;
+    let views = rt.cfg.tab_views();
     let target = views
         .iter()
         .find(|v| v.label == label)
         .ok_or("unknown tab")?
         .clone();
 
-    {
-        let mut tabs = state.tabs.lock().unwrap();
-        if !tabs.is_created(&label) {
-            webviews::create_content_webview(&main, &target).map_err(|e| e.to_string())?;
-            tabs.mark_created(&label);
-        }
-        tabs.set_active(&label);
+    if !rt.tabs.is_created(&label) {
+        webviews::create_content_webview(&window, &wid, &rt.cfg, &target)
+            .map_err(|e| e.to_string())?;
+        rt.tabs.mark_created(&label);
     }
+    rt.tabs.set_active(&label);
 
-    let all: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
-    webviews::show_only(&main, &label, &all).map_err(|e| e.to_string())?;
-    Ok(())
+    if rt.cfg.is_live() {
+        webviews::raise(&window, &label).map_err(|e| e.to_string())
+    } else {
+        let all: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
+        webviews::show_only(&window, &label, &all).map_err(|e| e.to_string())
+    }
 }
 
-/// Reload every already-created content webview back to its canonical URL. Shared by the
-/// `reset_all` command and the "Reset All Tabs" menu item.
-pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
+/// Reload every already-created content webview in `wid`'s window back to its canonical URL.
+fn reset_window_tabs(app: &AppHandle, wid: &str) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let main = app.get_window("main").ok_or("no main window")?;
-    let views = state.config.lock().unwrap().tab_views();
-    let tabs = state.tabs.lock().unwrap();
-    for v in &views {
-        if tabs.is_created(&v.label) {
-            webviews::reload_canonical(&main, &v.label, &v.url).map_err(|e| e.to_string())?;
+    let window = app.get_window(wid).ok_or("no such window")?;
+    let windows = state.windows.lock().unwrap();
+    let rt = windows.get(wid).ok_or("no such window")?;
+    for v in &rt.cfg.tab_views() {
+        if rt.tabs.is_created(&v.label) {
+            webviews::reload_canonical(&window, &v.label, &v.url).map_err(|e| e.to_string())?;
         }
     }
     Ok(())
 }
 
 #[tauri::command]
-pub fn reset_all(app: AppHandle) -> Result<(), String> {
-    reset_all_tabs(&app)
+pub fn reset_all(webview: Webview) -> Result<(), String> {
+    let wid = calling_window_id(&webview);
+    reset_window_tabs(webview.app_handle(), &wid)
 }
 
 /// Refresh a single tab's current page in place (no-op if it hasn't been opened yet).
 #[tauri::command]
-pub fn reload_tab(label: String, app: AppHandle) -> Result<(), String> {
-    let main = app.get_window("main").ok_or("no main window")?;
-    if let Some(wv) = main.get_webview(&label) {
+pub fn reload_tab(label: String, webview: Webview) -> Result<(), String> {
+    let (window, _) = calling_window(&webview)?;
+    if let Some(wv) = window.get_webview(&label) {
         wv.eval("location.reload()").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -87,24 +110,29 @@ pub fn reload_tab(label: String, app: AppHandle) -> Result<(), String> {
 
 /// Return a single tab's content webview to its config-defined start URL. Powers both the
 /// sidebar home button and the click-active-tab-again gesture. No-op if the tab's webview
-/// isn't created yet. Single-tab analog of `reset_all_tabs`, reusing `reload_canonical`.
+/// isn't created yet.
 #[tauri::command]
-pub fn home_tab(label: String, app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    let main = app.get_window("main").ok_or("no main window")?;
-    let views = state.config.lock().unwrap().tab_views();
-    let view = views
-        .iter()
-        .find(|v| v.label == label)
-        .ok_or("unknown tab")?;
-    webviews::reload_canonical(&main, &label, &view.url).map_err(|e| e.to_string())
+pub fn home_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
+    let (window, wid) = calling_window(&webview)?;
+    let url = {
+        let windows = state.windows.lock().unwrap();
+        let rt = windows.get(&wid).ok_or("no such window")?;
+        rt.cfg
+            .tab_views()
+            .into_iter()
+            .find(|v| v.label == label)
+            .ok_or("unknown tab")?
+            .url
+    };
+    webviews::reload_canonical(&window, &label, &url).map_err(|e| e.to_string())
 }
 
 /// Step the tab's content webview back through its in-page history. No-op if the webview
 /// isn't created or there's nothing to go back to (WKWebView history isn't exposed here).
 #[tauri::command]
-pub fn nav_back(label: String, app: AppHandle) -> Result<(), String> {
-    let main = app.get_window("main").ok_or("no main window")?;
-    if let Some(wv) = main.get_webview(&label) {
+pub fn nav_back(label: String, webview: Webview) -> Result<(), String> {
+    let (window, _) = calling_window(&webview)?;
+    if let Some(wv) = window.get_webview(&label) {
         wv.eval("history.back()").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -113,9 +141,9 @@ pub fn nav_back(label: String, app: AppHandle) -> Result<(), String> {
 /// Step the tab's content webview forward through its in-page history. No-op if the webview
 /// isn't created or there's nothing to go forward to.
 #[tauri::command]
-pub fn nav_forward(label: String, app: AppHandle) -> Result<(), String> {
-    let main = app.get_window("main").ok_or("no main window")?;
-    if let Some(wv) = main.get_webview(&label) {
+pub fn nav_forward(label: String, webview: Webview) -> Result<(), String> {
+    let (window, _) = calling_window(&webview)?;
+    if let Some(wv) = window.get_webview(&label) {
         wv.eval("history.forward()").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -124,27 +152,47 @@ pub fn nav_forward(label: String, app: AppHandle) -> Result<(), String> {
 /// Destroy a tab's content webview, freeing its memory. The tab stays in the sidebar and
 /// reloads lazily on next selection. No-op if it isn't loaded.
 #[tauri::command]
-pub fn unload_tab(label: String, app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    let main = app.get_window("main").ok_or("no main window")?;
-    if let Some(wv) = main.get_webview(&label) {
+pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
+    let (window, wid) = calling_window(&webview)?;
+    if let Some(wv) = window.get_webview(&label) {
         wv.close().map_err(|e| e.to_string())?;
     }
-    state.tabs.lock().unwrap().mark_unloaded(&label);
+    let mut windows = state.windows.lock().unwrap();
+    if let Some(rt) = windows.get_mut(&wid) {
+        rt.tabs.mark_unloaded(&label);
+    }
     Ok(())
 }
 
-/// Refresh the currently-active tab's page (Cmd+R / menu). No-op if nothing is active.
+/// Window id to drive from a menu command: the focused window (menu items act on whichever
+/// window has key focus).
+fn focused_window_id(app: &AppHandle) -> Option<String> {
+    app.get_focused_window().map(|w| w.label().to_string())
+}
+
+/// Reload the focused window's active tab (Cmd+R / menu). No-op if nothing is active.
 pub fn reload_active_tab(app: &AppHandle) {
-    let active = app
-        .state::<AppState>()
-        .tabs
-        .lock()
-        .unwrap()
-        .active()
-        .map(str::to_string);
-    if let (Some(label), Some(main)) = (active, app.get_window("main")) {
-        if let Some(wv) = main.get_webview(&label) {
+    let Some(wid) = focused_window_id(app) else {
+        return;
+    };
+    let active = {
+        let state = app.state::<AppState>();
+        let windows = state.windows.lock().unwrap();
+        windows
+            .get(&wid)
+            .and_then(|rt: &WindowRuntime| rt.tabs.active().map(str::to_string))
+    };
+    if let (Some(label), Some(window)) = (active, app.get_window(&wid)) {
+        if let Some(wv) = window.get_webview(&label) {
             let _ = wv.eval("location.reload()");
         }
     }
+}
+
+/// Reset the focused window's tabs (menu "Reset All Tabs"). No-op if no window is focused.
+pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
+    let Some(wid) = focused_window_id(app) else {
+        return Ok(());
+    };
+    reset_window_tabs(app, &wid)
 }
