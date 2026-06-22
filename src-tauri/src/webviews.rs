@@ -49,6 +49,10 @@ use tauri::{
     Window, WindowEvent,
 };
 
+/// Window label for the fallback error window (config failed to load / no windows defined).
+/// Not a real window id, so it never collides with a `w<hex>` window.
+pub const WINDOW_ERROR: &str = "curator-error";
+
 pub const CHROME_W: f64 = 240.0;
 /// macOS title-bar height. The title bar is an overlay (transparent, floating traffic
 /// lights); the content webview paints over it full-height while the chrome sidebar is
@@ -219,6 +223,44 @@ pub fn create_content_webview(
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
     }
     Ok(())
+}
+
+/// Escape a string for embedding inside a double-quoted JS string literal.
+fn js_string_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Build a standalone error window shown when the config can't be loaded or defines no windows.
+/// A single webview fills it and displays `message`; the app menu (incl. Config ▸ Edit Config)
+/// still works, so the user can fix the config — after which hot-reload opens the real windows
+/// and closes this one. Labelled `WINDOW_ERROR` so the reload path can find and close it.
+pub fn build_error_window(app: &AppHandle, message: &str) -> tauri::Result<Window> {
+    let window = tauri::window::WindowBuilder::new(app, WINDOW_ERROR)
+        .title("curator")
+        .inner_size(720.0, 420.0)
+        .title_bar_style(TitleBarStyle::Overlay)
+        .build()?;
+
+    let view = WebviewBuilder::new("curator-error-view", WebviewUrl::App("error.html".into()))
+        .initialization_script(format!(
+            "window.__CURATOR_ERROR__ = \"{}\";",
+            js_string_escape(message)
+        ));
+    let (w, h) = logical_inner(&window);
+    window.add_child(view, LogicalPosition::new(0.0, 0.0), LogicalSize::new(w, h))?;
+    Ok(window)
 }
 
 /// Navigate a content webview back to its canonical URL (reset / periodic reload).
