@@ -5,6 +5,7 @@ mod hash;
 mod identity;
 #[cfg(target_os = "macos")]
 mod insecure;
+mod session;
 mod watcher;
 mod webviews;
 
