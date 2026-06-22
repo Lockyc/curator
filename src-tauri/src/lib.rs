@@ -425,21 +425,10 @@ pub fn run() {
                     // Never close the last window — that would strand the app with no reopen
                     // path. We keep the WindowRuntime in the registry so its cfg survives for
                     // reopen via the per-window menu items below.
-                    if app.webview_windows().len() > 1 {
-                        if let Some(win) = app
-                            .webview_windows()
-                            .values()
-                            .find(|w| w.is_focused().unwrap_or(false))
-                            .and_then(|wv| {
-                                // The focused webview might be a chrome or content view;
-                                // derive the window label from the webview label by getting
-                                // the parent window via the app handle.
-                                let label = wv.label().to_string();
-                                // Content webviews are prefixed "<wid>/" — extract wid.
-                                // Chrome webviews are "<wid>/chrome". Window label == wid.
-                                let wid = label.split('/').next().unwrap_or(&label);
-                                app.get_window(wid)
-                            })
+                    let windows = app.windows();
+                    if windows.len() > 1 {
+                        if let Some(win) =
+                            windows.values().find(|w| w.is_focused().unwrap_or(false))
                         {
                             let _ = win.close();
                         }
