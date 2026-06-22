@@ -199,20 +199,21 @@ fn url_label(url: &str) -> String {
 impl WindowConfig {
     /// Flatten this window's groups → ordered tabs with stable labels (file order).
     pub fn tab_views(&self) -> Vec<TabView> {
+        let wid = crate::identity::window_id(&self.title);
         let mut views = Vec::new();
         let mut seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         for group in &self.groups {
             for tab in &group.tabs {
                 let base = url_label(&tab.url);
                 let n = seen.entry(base.clone()).or_insert(0);
-                let label = if *n == 0 {
+                let within = if *n == 0 {
                     base.clone()
                 } else {
                     format!("{base}-{n}")
                 };
                 *n += 1;
                 views.push(TabView {
-                    label,
+                    label: crate::identity::namespaced(&wid, &within),
                     group: group.name.clone(),
                     title: tab.title.clone(),
                     url: tab.url.clone(),
@@ -441,6 +442,15 @@ reload_every = 15
         let cfg = parse_and_validate(src).unwrap();
         let views = cfg.windows[0].tab_views();
         assert_ne!(views[0].label, views[1].label);
+    }
+
+    #[test]
+    fn tab_labels_are_window_namespaced() {
+        let cfg = parse_and_validate(VALID).unwrap();
+        let wid = crate::identity::window_id("Comms");
+        assert!(cfg.windows[0].tab_views()[0]
+            .label
+            .starts_with(&format!("{wid}:")));
     }
 
     // Test helpers: build a one-window config with the given extra window-level keys.

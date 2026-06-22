@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod escape;
 mod hash;
+mod identity;
 #[cfg(target_os = "macos")]
 mod insecure;
 mod watcher;
