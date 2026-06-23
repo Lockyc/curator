@@ -152,15 +152,36 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     if let Some(wv) = window.get_webview(&label) {
         wv.close().map_err(|e| e.to_string())?;
     }
-    {
+    // Mark unloaded. If this was the active tab, promote an already-live `always_load` tab to
+    // active (mirroring launch's active-resolution) and relayout after the lock drops — without
+    // this the content area would strand a still-shown `always_load` webview behind a sidebar
+    // that highlights nothing. If it wasn't active, the layout is untouched.
+    let relayout = {
         let mut windows = state.windows.lock().unwrap();
-        if let Some(rt) = windows.get_mut(&wid) {
+        windows.get_mut(&wid).and_then(|rt| {
+            let was_active = rt.tabs.active() == Some(label.as_str());
             rt.tabs.mark_unloaded(&label);
-        }
-    }
+            if !was_active {
+                return None;
+            }
+            let views = rt.cfg.tab_views();
+            let new_active = views
+                .iter()
+                .find(|v| v.always_load && v.label != label && rt.tabs.is_created(&v.label))
+                .map(|v| v.label.clone());
+            if let Some(a) = &new_active {
+                rt.tabs.set_active(a);
+            }
+            Some((views, new_active))
+        })
+    };
     // Drop the gone webview's unread contribution: clear its sidebar pill and refresh the dock
     // badge. The closed webview can never send a clear, so without this its count is stranded.
     crate::awareness::forget_tab(webview.app_handle(), &wid, &label);
+    if let Some((views, new_active)) = relayout {
+        webviews::apply_active(&window, new_active.as_deref(), &views)
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

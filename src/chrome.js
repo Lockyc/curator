@@ -136,13 +136,13 @@ async function render() {
       unload.className = "unload";
       unload.innerHTML = DOT_SVG + CROSS_SVG;
       setLoaded(unload, t.loaded);
-      unload.addEventListener("click", (e) => {
+      unload.addEventListener("click", async (e) => {
         e.stopPropagation();
         if (!unload.classList.contains("loaded")) return;
-        invoke("unload_tab", { label: t.label });
-        setLoaded(unload, false);
-        row.classList.remove("active");
-        updateNav();
+        await invoke("unload_tab", { label: t.label });
+        // Unloading the active tab makes Rust promote an always_load tab to active (or clear
+        // it); re-render so the active highlight and loaded dots follow the new state.
+        await render();
       });
       actions.appendChild(unload);
 
