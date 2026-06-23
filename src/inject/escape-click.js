@@ -7,6 +7,10 @@
 // maps the mouse side-buttons to history back/forward, which WKWebView ignores by default.
 (function () {
   var SENTINEL = "https://curator.escape.invalid/?u=";
+  // Per-webview secret, substituted in by Rust at injection (never exposed on window). The
+  // native on_navigation handler honours the sentinel only when it carries this key, so a page
+  // can't forge an escape by navigating to the host directly.
+  var KEY = "__CURATOR_KEY__";
 
   function anchorFrom(target) {
     var el = target;
@@ -19,7 +23,7 @@
   }
 
   function escapeTo(href) {
-    window.location.href = SENTINEL + encodeURIComponent(href);
+    window.location.href = SENTINEL + encodeURIComponent(href) + "&k=" + KEY;
   }
 
   // cmd-click ("open elsewhere" muscle memory) → escape.

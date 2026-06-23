@@ -152,10 +152,15 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     if let Some(wv) = window.get_webview(&label) {
         wv.close().map_err(|e| e.to_string())?;
     }
-    let mut windows = state.windows.lock().unwrap();
-    if let Some(rt) = windows.get_mut(&wid) {
-        rt.tabs.mark_unloaded(&label);
+    {
+        let mut windows = state.windows.lock().unwrap();
+        if let Some(rt) = windows.get_mut(&wid) {
+            rt.tabs.mark_unloaded(&label);
+        }
     }
+    // Drop the gone webview's unread contribution: clear its sidebar pill and refresh the dock
+    // badge. The closed webview can never send a clear, so without this its count is stranded.
+    crate::awareness::forget_tab(webview.app_handle(), &wid, &label);
     Ok(())
 }
 

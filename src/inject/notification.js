@@ -5,11 +5,20 @@
 // command/IPC is exposed to the page.
 (function () {
   var SENTINEL = "https://curator.notify.invalid/?";
+  // Per-webview secret, substituted in by Rust at injection (never exposed on window) so a page
+  // can't forge a native banner by navigating to the sentinel host directly.
+  var KEY = "__CURATOR_KEY__";
 
   function fire(title, body) {
     try {
       window.location.href =
-        SENTINEL + "t=" + encodeURIComponent(title || "") + "&b=" + encodeURIComponent(body || "");
+        SENTINEL +
+        "t=" +
+        encodeURIComponent(title || "") +
+        "&b=" +
+        encodeURIComponent(body || "") +
+        "&k=" +
+        KEY;
     } catch (e) {}
   }
 

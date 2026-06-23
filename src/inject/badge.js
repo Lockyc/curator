@@ -6,10 +6,13 @@
 // the nav). No Tauri command/IPC is exposed to the page.
 (function () {
   var SENTINEL = "https://curator.badge.invalid/?";
+  // Per-webview secret, substituted in by Rust at injection (never exposed on window) so a page
+  // can't forge an unread badge by navigating to the sentinel host directly.
+  var KEY = "__CURATOR_KEY__";
 
   function fire(qs) {
     try {
-      window.location.href = SENTINEL + qs;
+      window.location.href = SENTINEL + qs + "&k=" + KEY;
     } catch (e) {}
   }
 

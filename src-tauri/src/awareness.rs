@@ -124,6 +124,37 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
     }
 }
 
+/// Forget a tab's unread state entirely — used when its content webview is destroyed by an
+/// explicit unload. Unlike [`apply_unread`] (which inserts a state and requires the tab to still
+/// be created), this *removes* the entry, clears the sidebar pill, drops its dock contribution,
+/// and lets its title drive the badge again if it's ever reloaded. Without this, an unloaded
+/// tab's count would stay stranded on the dock badge (the gone webview can never send a clear).
+pub fn forget_tab(app: &tauri::AppHandle, window_id: &str, label: &str) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    {
+        let mut windows = state.windows.lock().unwrap();
+        if let Some(rt) = windows.get_mut(window_id) {
+            rt.unread.remove(label);
+            rt.badge_authoritative.remove(label);
+        }
+    }
+    let chrome = identity::namespaced(window_id, "chrome");
+    let _ = app.emit_to(
+        chrome,
+        "service-badge",
+        BadgeEvent {
+            label: label.to_string(),
+            text: String::new(),
+        },
+    );
+    let total = dock_count(&state.all_unread());
+    if let Some(win) = app.get_window(window_id) {
+        let _ = win.set_badge_count(total);
+    }
+}
+
 /// Title-change handler: drive the badge from the title heuristic unless the service has gone
 /// Badging-authoritative for its window.
 pub fn on_title_changed(webview: &tauri::Webview, title: &str) {

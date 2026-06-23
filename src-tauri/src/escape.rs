@@ -132,6 +132,21 @@ pub fn sentinel_target(nav_url: &url::Url) -> Option<String> {
     }
 }
 
+/// True if `url`'s host is one of curator's internal sentinel hosts (notify / badge / escape).
+pub fn is_sentinel_host(url: &url::Url) -> bool {
+    matches!(
+        url.host_str(),
+        Some(NOTIFY_SENTINEL_HOST | BADGE_SENTINEL_HOST | SENTINEL_HOST)
+    )
+}
+
+/// Whether a sentinel `url` carries this webview's secret `expected` key (the `k` param). Our
+/// injected shims bake the key in as a function-local literal — never on `window` — so a page
+/// can't read it and therefore can't forge a sentinel navigation by hitting the host directly.
+pub fn sentinel_key_ok(url: &url::Url, expected: &str) -> bool {
+    !expected.is_empty() && url.query_pairs().any(|(k, v)| k == "k" && v == expected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,6 +301,32 @@ mod tests {
             badge_sentinel(&url("https://curator.badge.invalid/")),
             Some(BadgeSignal::Count(0))
         );
+    }
+
+    #[test]
+    fn sentinel_hosts_are_recognised() {
+        assert!(is_sentinel_host(&url(
+            "https://curator.notify.invalid/?t=x"
+        )));
+        assert!(is_sentinel_host(&url("https://curator.badge.invalid/?n=1")));
+        assert!(is_sentinel_host(&url(
+            "https://curator.escape.invalid/?u=x"
+        )));
+        assert!(!is_sentinel_host(&url("https://mail.google.com/")));
+    }
+
+    #[test]
+    fn sentinel_key_must_match() {
+        let u = url("https://curator.notify.invalid/?t=x&k=abc123");
+        assert!(sentinel_key_ok(&u, "abc123"));
+        assert!(!sentinel_key_ok(&u, "wrong"));
+        // A missing key never matches (a forged sentinel with no key is rejected).
+        assert!(!sentinel_key_ok(
+            &url("https://curator.notify.invalid/?t=x"),
+            "abc123"
+        ));
+        // An empty expected key never matches, even against a keyless URL.
+        assert!(!sentinel_key_ok(&u, ""));
     }
 
     #[test]

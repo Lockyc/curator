@@ -164,6 +164,40 @@ fn emit_to_all_chrome<S: serde::Serialize + Clone>(
     }
 }
 
+/// Clear a closed window's awareness contribution and stop its reload timers, then recompute and
+/// apply the aggregate dock badge. The `WindowRuntime` stays in the registry so its cfg survives
+/// for reopen from the Window menu — only the live state (unread, badging-authoritative set,
+/// timers) is wiped. Shared by the user-close path; the dock badge is applied to some *other*
+/// open window since this one is on its way out.
+fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
+    let state = app.state::<AppState>();
+    {
+        let mut windows = state.windows.lock().unwrap();
+        if let Some(rt) = windows.get_mut(window_id) {
+            rt.unread.clear();
+            rt.badge_authoritative.clear();
+            rt.reload_cancel.store(true, Ordering::Relaxed);
+        }
+    }
+    let total = awareness::dock_count(&state.all_unread());
+    if let Some(remaining) = app.windows().values().find(|w| w.label() != window_id) {
+        let _ = remaining.set_badge_count(total);
+    }
+}
+
+/// Handle a user-initiated close (native red button or ⌘W) of a real window. Returns `true` if
+/// the close should be *prevented*: we never close the last open window, which would strand the
+/// app with no visible UI and only the menu bar left. Otherwise it runs `cleanup_closed_window`
+/// and returns `false` to let the close proceed. (The fallback error window isn't built via
+/// `build_window`, so it never reaches here.)
+pub(crate) fn on_real_window_close(app: &tauri::AppHandle, window_id: &str) -> bool {
+    if app.windows().len() <= 1 {
+        return true;
+    }
+    cleanup_closed_window(app, window_id);
+    false
+}
+
 /// Apply a successful config reload: close windows that disappeared (dropping their runtime),
 /// open windows that appeared, and reconcile tabs for windows that stayed. Emits
 /// `config-reloaded` to each kept/added window's chrome.
@@ -171,10 +205,12 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
     let diff = watcher::diff_windows(old_cfg, new_cfg);
     let state = app.state::<AppState>();
 
-    // Closed windows: drop the window and its runtime, and stop its reload timers.
+    // Closed windows: drop the window and its runtime, and stop its reload timers. Use
+    // `destroy()` (not `close()`) so this programmatic removal bypasses the user-close guard in
+    // `on_real_window_close` — that guard must only block the user closing their last window.
     for id in &diff.removed {
         if let Some(win) = app.get_window(id) {
-            let _ = win.close();
+            let _ = win.destroy();
         }
         if let Some(rt) = state.windows.lock().unwrap().remove(id) {
             rt.reload_cancel.store(true, Ordering::Relaxed);
@@ -204,6 +240,11 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
             continue;
         };
         let Some(window) = app.get_window(id) else {
+            // Window is closed but its runtime is retained for reopen — refresh its stored cfg
+            // so reopening it from the Window menu uses the latest config, not a stale snapshot.
+            if let Some(rt) = state.windows.lock().unwrap().get_mut(id) {
+                rt.cfg = win_cfg.clone();
+            }
             continue;
         };
         let _ = window.set_theme(theme_for(new_cfg.dark_mode));
@@ -233,6 +274,14 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
         .collect();
     if let Ok(menu) = build_app_menu(app, &titles) {
         let _ = app.set_menu(menu);
+    }
+
+    // Refresh the aggregate dock badge to reflect windows that came or went (a removed window's
+    // unread is dropped with its runtime; without this its count would linger until the next
+    // badge event). There's always at least one window here (the error window, if no real ones).
+    let total = awareness::dock_count(&state.all_unread());
+    if let Some(win) = app.windows().values().next() {
+        let _ = win.set_badge_count(total);
     }
 
     // Surface the reload on every window that's still open.
@@ -526,40 +575,12 @@ pub fn run() {
                         .spawn();
                 }
                 "close_window" => {
-                    // Never close the last window — that would strand the app with no reopen
-                    // path. We keep the WindowRuntime in the registry so its cfg survives for
-                    // reopen via the per-window menu items below.
-                    let windows = app.windows();
-                    if windows.len() > 1 {
-                        if let Some(win) =
-                            windows.values().find(|w| w.is_focused().unwrap_or(false))
-                        {
-                            let closed_label = win.label().to_string();
-                            let _ = win.close();
-
-                            // Clear the closed window's unread contribution so its stale counts
-                            // don't persist on the dock badge. The runtime stays in the registry
-                            // (cfg survives for reopen); only the awareness state is wiped.
-                            {
-                                let state = app.state::<AppState>();
-                                let mut wmap = state.windows.lock().unwrap();
-                                if let Some(rt) = wmap.get_mut(&closed_label) {
-                                    rt.unread.clear();
-                                    rt.badge_authoritative.clear();
-                                    // Stop its reload timers; reopen spawns a fresh generation.
-                                    rt.reload_cancel.store(true, Ordering::Relaxed);
-                                }
-                            } // lock released here
-
-                            // Recompute and apply the aggregate dock badge. Lock is not held
-                            // across all_unread() — it re-acquires internally — or across
-                            // set_badge_count (which dispatches to the macOS API).
-                            let state = app.state::<AppState>();
-                            let total = awareness::dock_count(&state.all_unread());
-                            if let Some(remaining) = app.windows().values().next() {
-                                let _ = remaining.set_badge_count(total);
-                            }
-                        }
+                    // Close the focused window via `close()` so it flows through the same
+                    // `CloseRequested` path as the native red button: that handler keeps the
+                    // last window open and wipes the closed window's unread/timers (the runtime
+                    // stays registered so its cfg survives for reopen via the menu items below).
+                    if let Some(win) = app.get_focused_window() {
+                        let _ = win.close();
                     }
                 }
                 id if id.starts_with("open_window:") => {

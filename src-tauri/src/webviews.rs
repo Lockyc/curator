@@ -72,6 +72,20 @@ const NOTIFICATION_JS: &str = include_str!("../../src/inject/notification.js");
 /// Reroutes the Badging API through the badge sentinel for unread pills + dock badge.
 const BADGE_JS: &str = include_str!("../../src/inject/badge.js");
 
+/// A per-webview anti-forgery key, baked into that webview's injected shims as a function-local
+/// literal (never exposed on `window`, so page scripts can't read it) and required on every
+/// sentinel navigation. Seeded from the OS RNG via `RandomState`, so a page can't guess it to
+/// forge a banner/badge/browser-escape by navigating to a sentinel host directly.
+fn random_nonce() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let mk = || {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u64(0x9e37_79b9_7f4a_7c15);
+        h.finish()
+    };
+    format!("{:016x}{:016x}", mk(), mk())
+}
+
 /// Current inner size of the window in logical px.
 fn logical_inner(window: &Window) -> (f64, f64) {
     let scale = window.scale_factor().unwrap_or(1.0);
@@ -140,10 +154,19 @@ pub fn build_window(
     window.add_child(placeholder, content_position(), content_size(win_w, win_h))?;
 
     // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler
-    // queries webviews() live, so content webviews created later are covered too.
+    // queries webviews() live, so content webviews created later are covered too. The same
+    // handler routes a user close (native red button or ⌘W) through the shared close logic so
+    // it can't strand the app and doesn't leak the window's unread/timers (see lib.rs).
     let win = window.clone();
+    let close_app = app.clone();
+    let close_wid = window_id.to_string();
     window.on_window_event(move |event| match event {
         WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => layout_webviews(&win),
+        WindowEvent::CloseRequested { api, .. }
+            if crate::on_real_window_close(&close_app, &close_wid) =>
+        {
+            api.prevent_close();
+        }
         _ => {}
     });
 
@@ -158,11 +181,17 @@ pub fn build_window(
 pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
-    let init =
-        format!("{ESCAPE_CLICK_JS}\n;\n{VISIBILITY_SHIM_JS}\n;\n{NOTIFICATION_JS}\n;\n{BADGE_JS}");
+    // Per-webview secret keying the sentinel handlers; substituted into the shims that emit
+    // sentinel navigations so only our own injected code can trigger them.
+    let nonce = random_nonce();
+    let escape_js = ESCAPE_CLICK_JS.replace("__CURATOR_KEY__", &nonce);
+    let notification_js = NOTIFICATION_JS.replace("__CURATOR_KEY__", &nonce);
+    let badge_js = BADGE_JS.replace("__CURATOR_KEY__", &nonce);
+    let init = format!("{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}");
 
     let nav_app = window.app_handle().clone();
     let nav_label = view.label.clone();
+    let nav_nonce = nonce;
     // Captured separately for the new-window handler (the above are moved into on_navigation).
     let open_app = window.app_handle().clone();
     let open_label = view.label.clone();
@@ -188,16 +217,21 @@ pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<
             NewWindowResponse::Deny
         })
         .on_navigation(move |url| {
-            if let Some(sig) = escape::badge_sentinel(url) {
-                crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
-                return false;
-            }
-            if let Some(p) = escape::notify_sentinel(url) {
-                crate::notification::fire(&nav_app, &p.title, &p.body);
-                return false;
-            }
-            if let Some(target) = escape::sentinel_target(url) {
-                escape::escape_to_default_browser(&target);
+            // Sentinel hosts drive native banners / unread badges / browser-escape. Honour them
+            // only when the navigation carries this webview's secret key — otherwise a page
+            // could forge one by navigating to the host directly. Forged or unrecognised
+            // sentinels are swallowed (never navigated to the dead host).
+            if escape::is_sentinel_host(url) {
+                if !escape::sentinel_key_ok(url, &nav_nonce) {
+                    return false;
+                }
+                if let Some(sig) = escape::badge_sentinel(url) {
+                    crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
+                } else if let Some(p) = escape::notify_sentinel(url) {
+                    crate::notification::fire(&nav_app, &p.title, &p.body);
+                } else if let Some(target) = escape::sentinel_target(url) {
+                    escape::escape_to_default_browser(&target);
+                }
                 return false;
             }
             escape::allow_same_tab_navigation(url.as_str())

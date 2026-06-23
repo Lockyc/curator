@@ -29,6 +29,14 @@ With no `session` set anywhere, all tabs share one app-wide store, so SSO across
 services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not the window or
 URL — renaming a window or editing a tab's URL never logs you out.
 
+**Sentinels are key-gated.** The notification/badge/escape shims signal the Rust side by
+navigating to dead sentinel hosts (`curator.*.invalid`) that `on_navigation` intercepts — no
+command/IPC is exposed to remote pages. Each content webview gets a random per-load key,
+substituted into its shims at injection (a function-local literal, never on `window`) and
+required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel without it, so a
+page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
+sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
+
 **Loading is driven solely by per-tab `always_load`** — there are no per-window mode flags.
 Every content webview gets the full shim set (escape-click, visibility, notification, badge),
 so any *loaded* tab can fire native banners and report unread. `always_load` tabs are created
@@ -42,7 +50,10 @@ active tab, keep `always_load` tabs shown, hide the rest.
 
 **Window menu** — a real **Window** submenu lets the user close a non-last window (⌘W)
 and reopen any closed window from the list. All configured windows open at launch; closed
-windows can be reopened from the Window menu.
+windows can be reopened from the Window menu. Both ⌘W and the native red button flow through
+`on_real_window_close`, which refuses to close the last window (no stranding) and, on close,
+wipes the window's unread/timers while keeping its `WindowRuntime` registered so its cfg
+survives for reopen. Config-reload window removal uses `destroy()` to bypass that guard.
 
 **App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must
 be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the
