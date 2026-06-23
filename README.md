@@ -4,6 +4,13 @@
 
 <h1 align="center">curator</h1>
 
+<p align="center">
+  <a href="https://github.com/Lockyc/curator/releases/latest"><img src="https://img.shields.io/github/v/release/Lockyc/curator?sort=semver&label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" alt="Platform: macOS">
+  <img src="https://img.shields.io/badge/built%20with-Tauri%20v2-24C8DB?logo=tauri&logoColor=white" alt="Built with Tauri v2">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Lockyc/curator" alt="License: MIT"></a>
+</p>
+
 A dedicated, always-findable home for the browser tabs you can't afford to lose. macOS only.
 
 <p align="center"><img src="docs/screenshot.png" alt="curator window showing grouped keeper tabs in the sidebar" width="840"></p>
