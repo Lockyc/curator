@@ -62,7 +62,7 @@ In **Claude Code**, run `/curator:install` — it checks prerequisites (offering
 any that are missing), builds curator from source into `~/.curator`, installs `curator.app`
 to `/Applications`, and seeds your config.
 
-Or install from a terminal (once this repo is public):
+Or install from a terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | bash

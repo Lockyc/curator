@@ -108,15 +108,9 @@ Every release gets a matching GitHub release — don't just push `main`. To cut 
 
 This is part of cutting a release, not a follow-up; do it without being asked.
 
-## Installer & the public-repo requirement
+## Installer & the public repo
 
 `install.sh` and the `/curator:install` command install curator by `git clone`-ing
 `~/.curator` from `https://github.com/Lockyc/curator` and building from source; the
-README's `curl` one-liner fetches `install.sh` from that repo over
-`raw.githubusercontent.com`. **These public URLs — the raw fetch and the unauthenticated
-`git clone` — only work once the GitHub repo is public.** This is known and intentional.
-
-**Do not prompt the owner about making the repo public.** They are fully aware of the
-requirement and will flip the repo when they are ready. Do not raise it as a TODO,
-caveat, blocker, or question; do not re-explain the public-repo dependency back to them.
-Document it for other agents (as here) and move on.
+README's `curl` one-liner fetches `install.sh` over `raw.githubusercontent.com`. The repo
+is public, so the raw fetch and the unauthenticated `git clone` both work.
