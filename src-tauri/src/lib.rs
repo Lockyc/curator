@@ -84,10 +84,10 @@ impl AppState {
     }
 }
 
-/// Build one window from its config, populate its content webviews per its lifecycle model
-/// (live: eager-load all + raise first, never hide; plain: lazy-load, hide all, open the
-/// startup tab via show_only), and start its per-tab reload timers. Returns the window id and
-/// its fresh `WindowRuntime` for the caller to register. Shared by setup and hot-reload.
+/// Build one window from its config: eager-create its `always_load` tabs (loaded at launch and
+/// kept live), lazily defer the rest, lay them out around the active tab (`apply_active`), and
+/// start per-tab reload timers. Returns the window id and its fresh `WindowRuntime` for the
+/// caller to register. Shared by setup and hot-reload.
 fn open_window(
     handle: &tauri::AppHandle,
     dark_mode: bool,
@@ -106,40 +106,31 @@ fn open_window(
     let views = win_cfg.tab_views();
     let mut tabs = webviews::TabState::default();
 
-    if win_cfg.is_live() {
-        // Live window: eager-load every tab, raise the first, never hide.
-        for v in &views {
-            webviews::create_content_webview(&window, win_cfg, v)?;
-            tabs.mark_created(&v.label);
-        }
-        if let Some(first) = views.first() {
-            tabs.set_active(&first.label);
-            webviews::raise(&window, &first.label)?;
-        }
-    } else {
-        // Plain window: lazy-load; eager-create only always_load tabs, hide all, then open
-        // the startup tab if configured.
-        for v in views.iter().filter(|v| v.always_load) {
-            webviews::create_content_webview(&window, win_cfg, v)?;
-            tabs.mark_created(&v.label);
-        }
-        let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
-        for l in &all_labels {
-            if let Some(wv) = window.get_webview(l) {
-                wv.hide()?;
+    // Eager-create the `always_load` tabs: they load at launch and stay live (never hidden), so
+    // they keep syncing and can notify in the background. Everything else is lazy.
+    for v in views.iter().filter(|v| v.always_load) {
+        webviews::create_content_webview(&window, v)?;
+        tabs.mark_created(&v.label);
+    }
+
+    // Active tab: whatever `open_on_launch` resolves to, else the first always_load tab (so a
+    // window of background services opens showing one of them rather than the blank placeholder).
+    let active = win_cfg.startup_label().or_else(|| {
+        views
+            .iter()
+            .find(|v| v.always_load)
+            .map(|v| v.label.clone())
+    });
+    if let Some(label) = &active {
+        if let Some(v) = views.iter().find(|v| &v.label == label) {
+            if !tabs.is_created(label) {
+                webviews::create_content_webview(&window, v)?;
+                tabs.mark_created(label);
             }
-        }
-        if let Some(label) = win_cfg.startup_label() {
-            if let Some(v) = views.iter().find(|v| v.label == label) {
-                if !tabs.is_created(&label) {
-                    webviews::create_content_webview(&window, win_cfg, v)?;
-                    tabs.mark_created(&label);
-                }
-                tabs.set_active(&label);
-                webviews::show_only(&window, &label, &all_labels)?;
-            }
+            tabs.set_active(label);
         }
     }
+    webviews::apply_active(&window, active.as_deref(), &views)?;
 
     // Periodic reload timers for tabs with `reload_every` (minutes). Only acts on
     // already-created webviews, so a never-opened lazy tab is harmlessly skipped. The cancel
@@ -248,10 +239,9 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
     emit_to_all_chrome(app, "config-reloaded", ());
 }
 
-/// Reconcile one kept window's content webviews to its new config: create newly-added tabs
-/// (live windows eager-load them; plain windows leave them lazy), close orphaned webviews and
-/// drop their unread/authoritative state, recompute the dock badge, then re-show the active
-/// tab. Mirrors the single-window watcher's teardown, per window.
+/// Reconcile one kept window's content webviews to its new config: eager-create newly-added
+/// always_load tabs (others stay lazy), close orphaned webviews and drop their
+/// unread/authoritative state, recompute the dock badge, then re-apply the active layout.
 fn reconcile_window_tabs(
     state: &AppState,
     window: &tauri::Window,
@@ -260,7 +250,6 @@ fn reconcile_window_tabs(
 ) {
     let views = win_cfg.tab_views();
     let keep: HashSet<String> = views.iter().map(|v| v.label.clone()).collect();
-    let all_labels: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
 
     // Decide everything under the lock, but perform the webview ops AFTER releasing it.
     // reconcile runs on the watcher thread; Tauri marshals webview ops (add_child / close) to
@@ -283,16 +272,38 @@ fn reconcile_window_tabs(
             rt.badge_authoritative.remove(label);
         }
 
-        // Live windows eager-load every (including newly-added) tab. Mark created here; build
-        // after the lock is dropped.
+        // Eager-create newly-added always_load tabs so they're live immediately; others stay
+        // lazy. Mark created here; build after the lock is dropped.
         let mut to_create: Vec<config::TabView> = Vec::new();
-        if win_cfg.is_live() {
-            for v in &views {
-                if !rt.tabs.is_created(&v.label) {
-                    rt.tabs.mark_created(&v.label);
+        for v in &views {
+            if v.always_load && !rt.tabs.is_created(&v.label) {
+                rt.tabs.mark_created(&v.label);
+                to_create.push(v.clone());
+            }
+        }
+
+        // Resolve the active tab: keep the current one if it survived (mark_unloaded already
+        // cleared it if it was orphaned), else fall back to open_on_launch or the first
+        // always_load tab. Ensure it's created.
+        let active = rt
+            .tabs
+            .active()
+            .map(str::to_string)
+            .or_else(|| win_cfg.startup_label())
+            .or_else(|| {
+                views
+                    .iter()
+                    .find(|v| v.always_load)
+                    .map(|v| v.label.clone())
+            });
+        if let Some(a) = &active {
+            if !rt.tabs.is_created(a) {
+                rt.tabs.mark_created(a);
+                if let Some(v) = views.iter().find(|v| &v.label == a) {
                     to_create.push(v.clone());
                 }
             }
+            rt.tabs.set_active(a);
         }
 
         // Stop the old reload timers and start a fresh generation for the new tab set (this is
@@ -301,7 +312,6 @@ fn reconcile_window_tabs(
         let reload_cancel = Arc::new(AtomicBool::new(false));
         rt.reload_cancel = reload_cancel.clone();
 
-        let active = rt.tabs.active().map(str::to_string);
         // Recompute the single dock badge now that this window's unread set may have shrunk.
         let dock_total = awareness::dock_count(
             &windows
@@ -319,21 +329,14 @@ fn reconcile_window_tabs(
         }
     }
     for v in &to_create {
-        let _ = webviews::create_content_webview(window, win_cfg, v);
+        let _ = webviews::create_content_webview(window, v);
     }
     spawn_reload_timers(window, &views, reload_cancel);
     if let Some(win) = window.app_handle().get_window(window_id) {
         let _ = win.set_badge_count(dock_total);
     }
-
-    // Re-show/raise the active tab so the content area isn't left on a closed orphan.
-    if let Some(active) = active {
-        if win_cfg.is_live() {
-            let _ = webviews::raise(window, &active);
-        } else {
-            let _ = webviews::show_only(window, &active, &all_labels);
-        }
-    }
+    // Re-apply the layout so the content area isn't left on a closed orphan.
+    let _ = webviews::apply_active(window, active.as_deref(), &views);
 }
 
 /// Build the full app menu. Re-added because we replace Tauri's default menu; the Edit submenu

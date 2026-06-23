@@ -30,7 +30,7 @@ impl TabState {
     /// Created-webview labels absent from `keep` (the new config's labels) — orphaned by a
     /// reload that changed a tab's URL (its hash-derived label moves) or removed the tab.
     /// Pure: the caller closes each webview and calls `mark_unloaded`. Without this, an
-    /// orphan lingers visible (show_only only hides labels in the live config) and surfaces
+    /// orphan lingers (`apply_active` only lays out tabs in the live config) and surfaces
     /// when the covering tab is unloaded.
     pub fn orphans(&self, keep: &HashSet<String>) -> Vec<String> {
         self.created
@@ -152,40 +152,23 @@ pub fn build_window(
 
 /// Create a content webview for `view` in the given window. Its login store is keyed on the
 /// resolved `view.session` (tabs sharing a session string share a login; the default is one
-/// shared app-wide store). Injection + navigation handlers are chosen from the window's flags:
-/// plain windows inject only the escape-click shim; live windows add the visibility shim, plus
-/// notification/badge shims for the features they opted into.
-pub fn create_content_webview(
-    window: &Window,
-    win_cfg: &crate::config::WindowConfig,
-    view: &TabView,
-) -> tauri::Result<()> {
+/// shared app-wide store). Every tab gets the full shim set, so any loaded tab can fire native
+/// banners and report unread — whether it notifies in the background is purely a function of
+/// whether it's kept live, which is what `always_load` controls (see `apply_active`).
+pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
-    let mut init = ESCAPE_CLICK_JS.to_string();
-    if win_cfg.is_live() {
-        init.push_str("\n;\n");
-        init.push_str(VISIBILITY_SHIM_JS);
-    }
-    if win_cfg.notifications {
-        init.push_str("\n;\n");
-        init.push_str(NOTIFICATION_JS);
-    }
-    if win_cfg.unread {
-        init.push_str("\n;\n");
-        init.push_str(BADGE_JS);
-    }
+    let init =
+        format!("{ESCAPE_CLICK_JS}\n;\n{VISIBILITY_SHIM_JS}\n;\n{NOTIFICATION_JS}\n;\n{BADGE_JS}");
 
     let nav_app = window.app_handle().clone();
     let nav_label = view.label.clone();
-    let unread = win_cfg.unread;
-    let notifications = win_cfg.notifications;
     // Captured separately for the new-window handler (the above are moved into on_navigation).
     let open_app = window.app_handle().clone();
     let open_label = view.label.clone();
     let home_url = view.url.clone();
 
-    let mut builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
+    let builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
         .data_store_identifier(crate::session::data_store_id(&view.session))
         .user_agent(DESKTOP_UA)
         .initialization_script(&init)
@@ -205,30 +188,23 @@ pub fn create_content_webview(
             NewWindowResponse::Deny
         })
         .on_navigation(move |url| {
-            if unread {
-                if let Some(sig) = escape::badge_sentinel(url) {
-                    crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
-                    return false;
-                }
+            if let Some(sig) = escape::badge_sentinel(url) {
+                crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
+                return false;
             }
-            if notifications {
-                if let Some(p) = escape::notify_sentinel(url) {
-                    crate::notification::fire(&nav_app, &p.title, &p.body);
-                    return false;
-                }
+            if let Some(p) = escape::notify_sentinel(url) {
+                crate::notification::fire(&nav_app, &p.title, &p.body);
+                return false;
             }
             if let Some(target) = escape::sentinel_target(url) {
                 escape::escape_to_default_browser(&target);
                 return false;
             }
             escape::allow_same_tab_navigation(url.as_str())
-        });
-
-    if win_cfg.unread {
-        builder = builder.on_document_title_changed(|webview, title| {
+        })
+        .on_document_title_changed(|webview, title| {
             crate::awareness::on_title_changed(&webview, &title);
         });
-    }
 
     let (w, h) = logical_inner(window);
     let webview = window.add_child(builder, content_position(), content_size(w, h))?;
@@ -313,16 +289,22 @@ pub fn raise(window: &Window, label: &str) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Show `label`'s content webview and hide all others in `all_labels`.
-pub fn show_only(window: &Window, label: &str, all_labels: &[String]) -> tauri::Result<()> {
-    for l in all_labels {
-        if let Some(wv) = window.get_webview(l) {
-            if l == label {
+/// Lay out a window's created webviews around the `active` tab: the active tab is shown and
+/// raised to the front; `always_load` tabs stay shown (live behind it, so they keep syncing and
+/// can notify in the background); every other created tab is hidden (and thus throttled). This
+/// is the single switching primitive — `always_load` alone decides what stays live.
+pub fn apply_active(window: &Window, active: Option<&str>, views: &[TabView]) -> tauri::Result<()> {
+    for v in views {
+        if let Some(wv) = window.get_webview(&v.label) {
+            if v.always_load || Some(v.label.as_str()) == active {
                 wv.show()?;
             } else {
                 wv.hide()?;
             }
         }
+    }
+    if let Some(label) = active {
+        raise(window, label)?;
     }
     Ok(())
 }

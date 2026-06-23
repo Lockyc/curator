@@ -34,12 +34,6 @@ pub struct WindowConfig {
     pub width: u32,
     #[serde(default = "default_window_height")]
     pub height: u32,
-    /// Opt into native banners from web `Notification` calls.
-    #[serde(default)]
-    pub notifications: bool,
-    /// Opt into unread pills + dock-badge contribution.
-    #[serde(default)]
-    pub unread: bool,
     /// Default login store for this window's tabs (the middle link of the session chain
     /// `tab.session → window.session → app-wide default`). Set it to make the whole window one
     /// profile. Omit → tabs fall back to the shared app-wide store unless they set their own.
@@ -54,14 +48,6 @@ pub struct WindowConfig {
 /// The shared app-wide login store used by any tab that sets no `session` (and whose window
 /// sets none either). One store → tabs share cookies, so SSO across related services works.
 pub const DEFAULT_SESSION: &str = "default";
-
-/// A window is "live" (eager-load, never hide, inject sync/notify/badge shims) iff it opts
-/// into either noisy feature. Plain windows keep curator's lazy/hide model.
-impl WindowConfig {
-    pub fn is_live(&self) -> bool {
-        self.notifications || self.unread
-    }
-}
 
 fn default_window_width() -> u32 {
     1500
@@ -312,22 +298,6 @@ reload_every = 15
         let cfg =
             parse_and_validate(&with_window_keys("Comms", "width = 1680\nheight = 1120")).unwrap();
         assert_eq!((cfg.windows[0].width, cfg.windows[0].height), (1680, 1120));
-    }
-
-    #[test]
-    fn flags_default_off_and_parse() {
-        let cfg = parse_and_validate(VALID).unwrap();
-        assert!(!cfg.windows[0].notifications);
-        assert!(!cfg.windows[0].unread);
-        assert!(!cfg.windows[0].is_live());
-        let cfg = parse_and_validate(&with_window_keys(
-            "Comms",
-            "notifications = true\nunread = true",
-        ))
-        .unwrap();
-        assert!(cfg.windows[0].notifications);
-        assert!(cfg.windows[0].unread);
-        assert!(cfg.windows[0].is_live());
     }
 
     #[test]

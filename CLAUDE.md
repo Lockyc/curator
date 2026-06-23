@@ -29,12 +29,16 @@ With no `session` set anywhere, all tabs share one app-wide store, so SSO across
 services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not the window or
 URL — renaming a window or editing a tab's URL never logs you out.
 
-**Live vs plain.** A window that sets `notifications = true` or `unread = true` is "live":
-it eager-loads all its tabs from launch, never hides, and has the notify/badge shims
-injected. A plain window keeps the lazy/hide model (webview created on first click, hidden
-when the window isn't active). `WindowConfig::is_live()` in `config.rs` captures this.
+**Loading is driven solely by per-tab `always_load`** — there are no per-window mode flags.
+Every content webview gets the full shim set (escape-click, visibility, notification, badge),
+so any *loaded* tab can fire native banners and report unread. `always_load` tabs are created
+at launch and kept live (never hidden — `apply_active` in `webviews.rs` shows them behind the
+active tab), so they keep syncing and notify in the background. Tabs without `always_load` are
+lazy (created on first click) and hidden when inactive (throttled → no background notifications,
+by choice — same as unloading). `apply_active` is the single switch primitive: show+raise the
+active tab, keep `always_load` tabs shown, hide the rest.
 
-**Dock badge** aggregates the unread count across all windows that have `unread = true`.
+**Dock badge** aggregates the unread count across every window's loaded tabs.
 
 **Window menu** — a real **Window** submenu lets the user close a non-last window (⌘W)
 and reopen any closed window from the list. All configured windows open at launch; closed

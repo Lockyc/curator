@@ -3,6 +3,11 @@
 #
 # curator opens one window per [[window]] block.
 #
+# Loading & notifications: a tab marked `always_load` is loaded at launch and kept live, so it
+# keeps syncing and can fire native banners / report unread in the background. Tabs without it
+# are lazy (loaded on first click) and don't notify in the background until you open them. There
+# is no per-window switch — `always_load` is the only knob.
+#
 # Logins: by default every tab shares one app-wide store, so signing into a provider covers
 # its related services (Gmail + Calendar share your Google login). To give a tab its own
 # account, set `session = "name"` on the tab; reuse the same name on other tabs (in any
@@ -21,13 +26,11 @@
 # allow_insecure = ["192.168.1.1"]
 
 # ─── Window 1: Keepers ────────────────────────────────────────────────────────
-# A plain, quiet window for dashboards and docs. No notifications or unread tracking.
-# Tabs are lazy by default — each webview is created on first click and kept warm.
+# Dashboards and docs. Tabs are lazy by default (loaded on first click); none are kept live,
+# so this window stays quiet.
 
 [[window]]
 title           = "Keepers"
-# notifications = false   # default — no native banner popups
-# unread        = false   # default — no unread pill or dock-badge contribution
 open_on_launch  = "Grafana"   # open this tab on launch instead of the blank screen
 
   [[window.group]]
@@ -66,16 +69,11 @@ open_on_launch  = "Grafana"   # open this tab on launch instead of the blank scr
     url   = "https://tauri.app/"
 
 # ─── Window 2: Comms ──────────────────────────────────────────────────────────
-# A "live" window opted into notifications and unread tracking.
-# notifications = true  → web Notification calls pop native banners.
-# unread        = true  → pages can badge their tab; unread count rolls up to the dock badge.
-# This window stays open and eager-loads its tabs — curator injects the sync/notify shims
-# needed for live features.
+# Chat apps you want live: each is `always_load`, so it stays loaded in the background, fires
+# native banners on new messages, and rolls its unread count up to the dock badge.
 
 [[window]]
-title         = "Comms"
-notifications = true   # allow web Notification API to pop native banners
-unread        = true   # track unread counts → dock badge
+title = "Comms"
 
   [[window.group]]
   name = "Chat"
@@ -83,11 +81,12 @@ unread        = true   # track unread counts → dock badge
     [[window.group.tab]]
     title       = "Mattermost"
     url         = "https://community.mattermost.com/"
-    always_load = true   # keep warm so notifications fire even when the tab isn't active
+    always_load = true   # keep live so it notifies even when it isn't the active tab
 
     [[window.group.tab]]
-    title = "Slack"
-    url   = "https://app.slack.com/"
+    title       = "Slack"
+    url         = "https://app.slack.com/"
+    always_load = true
     # session = "work"   # give this tab its own login store (e.g. a separate account)
 
   [[window.group]]

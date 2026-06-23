@@ -64,17 +64,13 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
         .clone();
 
     if !rt.tabs.is_created(&label) {
-        webviews::create_content_webview(&window, &rt.cfg, &target).map_err(|e| e.to_string())?;
+        webviews::create_content_webview(&window, &target).map_err(|e| e.to_string())?;
         rt.tabs.mark_created(&label);
     }
     rt.tabs.set_active(&label);
 
-    if rt.cfg.is_live() {
-        webviews::raise(&window, &label).map_err(|e| e.to_string())
-    } else {
-        let all: Vec<String> = views.iter().map(|v| v.label.clone()).collect();
-        webviews::show_only(&window, &label, &all).map_err(|e| e.to_string())
-    }
+    // Raise the selected tab; always_load tabs stay live behind it, others are hidden.
+    webviews::apply_active(&window, Some(&label), &views).map_err(|e| e.to_string())
 }
 
 /// Reload every already-created content webview in `wid`'s window back to its canonical URL.

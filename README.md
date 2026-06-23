@@ -40,11 +40,12 @@ file-driven, everything else is ephemeral.
 - **Page-first chrome** — the active page fills the window edge-to-edge, painting under an
   overlay title bar; the native title bar (with traffic lights, draggable) is exposed only
   as a strip above the sidebar tab list.
-- **Per-window opt-in features** — `notifications = true` lets web `Notification` calls
-  pop native banners; `unread = true` tracks per-tab unread counts, rolling them up to the
-  dock badge. Both default off; a window with either enabled is always eager-loaded.
-- **Dock badge aggregates across windows** — the badge total is the sum of all windows
-  that have `unread = true`.
+- **`always_load` keeps a tab live** — mark a chat/service `always_load` and it loads at
+  launch, stays live in the background, fires native banners, and rolls its unread count up
+  to the dock badge. Tabs without it are lazy and stay quiet until you open them. That one
+  per-tab flag is the only knob — no per-window modes.
+- **Dock badge aggregates across windows** — the badge total sums unread across every
+  window's loaded tabs.
 - **Window menu** — close a non-last window (⌘W); reopen any closed window from the
   Window menu.
 
@@ -110,8 +111,6 @@ title         = "Keepers"          # required; must be unique across windows
 # width       = 1500               # optional; default 1500 × 1000
 # height      = 1000
 # open_on_launch = "Grafana"       # true/false/"Tab Title"
-# notifications = false            # allow web Notification API to pop native banners
-# unread        = false            # track unread counts → dock badge
 
   [[window.group]]
   name = "Dashboards"
@@ -119,13 +118,11 @@ title         = "Keepers"          # required; must be unique across windows
     [[window.group.tab]]
     title        = "Grafana"
     url          = "https://play.grafana.org/"
-    always_load  = true    # preload + keep warm from launch
+    always_load  = true    # load at launch + keep live
     reload_every = 5       # auto-refresh every 5 minutes
 
 [[window]]
-title         = "Comms"
-notifications = true
-unread        = true
+title = "Comms"
 
   [[window.group]]
   name = "Chat"
@@ -133,7 +130,7 @@ unread        = true
     [[window.group.tab]]
     title       = "Mattermost"
     url         = "https://community.mattermost.com/"
-    always_load = true
+    always_load = true     # kept live → fires banners + unread in the background
 ```
 
 ### Per-window options
@@ -143,8 +140,7 @@ unread        = true
 | `title`           | string                   | **required**  | Window title; must be unique across all windows.                           |
 | `width`/`height`  | int                      | `1500`/`1000` | Initial window size in logical pixels. Applied at launch (restart to change). |
 | `open_on_launch`  | bool \| tab title string | `false`       | `true` opens the first tab; a string opens the named tab; `false` = blank screen. |
-| `notifications`   | bool                     | `false`       | Allow the web `Notification` API to pop native banners.                    |
-| `unread`          | bool                     | `false`       | Track per-tab unread counts; roll them up to the dock badge.               |
+| `session`         | string                   | none          | Default login store for this window's tabs (overridden per tab). See sessions below. |
 
 ### Per-tab options
 
@@ -152,8 +148,9 @@ Each `[[window.group.tab]]` requires `title` and `url`. Optional:
 
 | Field          | Type         | Default | Meaning                                         |
 |----------------|--------------|---------|--------------------------------------------------|
-| `always_load`  | bool         | `false` | Preload the tab and keep it warm from launch.    |
+| `always_load`  | bool         | `false` | Load at launch and keep the tab live in the background, so it fires native banners and reports unread even when it isn't the active tab. |
 | `reload_every` | positive int | none    | Auto-refresh the canonical URL every N minutes.  |
+| `session`      | string       | none    | Login store for this tab. Tabs sharing a value share a login (even across windows); distinct values are isolated accounts. Falls back to the window's `session`, then a shared app-wide store. |
 
 ### App-global options
 
