@@ -157,7 +157,7 @@ Each `[[window.group.tab]]` requires `title` and `url`. Optional:
 |----------------|--------------|---------|--------------------------------------------------|
 | `always_load`  | bool         | `false` | Load at launch and keep the tab live in the background, so it fires native banners and reports unread even when it isn't the active tab. |
 | `reload_every` | positive int | none    | Auto-refresh the canonical URL every N minutes.  |
-| `session`      | string       | none    | Login store for this tab. Tabs sharing a value share a login (even across windows); distinct values are isolated accounts. Falls back to the window's `session`, then a shared app-wide store. |
+| `session`      | string       | none    | Login store for this tab. Tabs sharing a value share a login (even across windows); distinct values are isolated accounts. Falls back to the window's `session`, then a shared app-wide store. A blank or whitespace-only value is treated as unset and falls through the chain. |
 
 ### App-global options
 
