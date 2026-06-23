@@ -60,6 +60,11 @@ be re-added by hand. The **Edit** submenu is load-bearing: its predefined items 
 clipboard accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content
 webviews. Keep Edit (and Window/Hide) when touching the menu.
 
+The **Tabs** submenu's "Open Developer Tools" (⌥⌘I) opens the WebKit inspector on the focused
+window's active content tab. It works in release builds because `tauri`'s `devtools` feature is
+enabled in `Cargo.toml` — that's deliberate (this is an operator console, not a sandboxed
+consumer app), not a debug leftover; don't strip the feature.
+
 ## Non-goals / parked: browser extensions (Bitwarden etc.)
 
 curator does **not** support browser/Safari web extensions, and there is no password-manager

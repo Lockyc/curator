@@ -410,6 +410,9 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         .accelerator("CmdOrCtrl+R")
         .build(manager)?;
     let reset = MenuItemBuilder::with_id("reset_all", "Reset All Tabs").build(manager)?;
+    let devtools = MenuItemBuilder::with_id("open_devtools", "Open Developer Tools")
+        .accelerator("CmdOrCtrl+Alt+I")
+        .build(manager)?;
     let edit_cfg = MenuItemBuilder::with_id("edit_config", "Edit Config").build(manager)?;
     let reveal_cfg =
         MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(manager)?;
@@ -435,7 +438,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         .select_all()
         .build()?;
     let tabs_menu = SubmenuBuilder::new(manager, "Tabs")
-        .items(&[&reload_tab, &reset])
+        .items(&[&reload_tab, &reset, &devtools])
         .build()?;
     let config_menu = SubmenuBuilder::new(manager, "Config")
         .items(&[&edit_cfg, &reveal_cfg])
@@ -564,6 +567,9 @@ pub fn run() {
                 }
                 "reset_all" => {
                     let _ = commands::reset_all_tabs(app);
+                }
+                "open_devtools" => {
+                    commands::open_active_devtools(app);
                 }
                 "edit_config" => {
                     let _ = std::process::Command::new("open").arg(&cfg_path).spawn();

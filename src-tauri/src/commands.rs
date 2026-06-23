@@ -189,6 +189,27 @@ pub fn reload_active_tab(app: &AppHandle) {
     }
 }
 
+/// Open the WebKit Web Inspector on the focused window's active tab (menu "Open Developer
+/// Tools" / ⌥⌘I). No-op if nothing is active. Compiled in for both dev and release via the
+/// `devtools` Cargo feature, so the inspector is available in deployed builds too.
+pub fn open_active_devtools(app: &AppHandle) {
+    let Some(wid) = focused_window_id(app) else {
+        return;
+    };
+    let active = {
+        let state = app.state::<AppState>();
+        let windows = state.windows.lock().unwrap();
+        windows
+            .get(&wid)
+            .and_then(|rt: &WindowRuntime| rt.tabs.active().map(str::to_string))
+    };
+    if let (Some(label), Some(window)) = (active, app.get_window(&wid)) {
+        if let Some(wv) = window.get_webview(&label) {
+            wv.open_devtools();
+        }
+    }
+}
+
 /// Reset the focused window's tabs (menu "Reset All Tabs"). No-op if no window is focused.
 pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
     let Some(wid) = focused_window_id(app) else {
