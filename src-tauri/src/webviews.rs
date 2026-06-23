@@ -203,6 +203,13 @@ pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<
     let home_url = view.url.clone();
 
     let builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
+        // Let WKWebView deliver native OS file drops to the page's own HTML5 drop targets
+        // (attach-to-compose, upload boxes, …). Tauri's default drag-drop handler consumes the
+        // drop (emits a `tauri://drag-drop` event and returns `true`), which stops WKWebView from
+        // ever seeing it — curator listens for no such event, so disabling it is pure gain. The
+        // drop lands on the active tab only: `apply_active` raises it to the front of the
+        // superview, occluding the live-but-background `always_load` tabs across the content rect.
+        .disable_drag_drop_handler()
         .data_store_identifier(crate::session::data_store_id(&view.session))
         .user_agent(DESKTOP_UA)
         .initialization_script(&init)
