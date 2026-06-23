@@ -49,6 +49,28 @@ be re-added by hand. The **Edit** submenu is load-bearing: its predefined items 
 clipboard accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content
 webviews. Keep Edit (and Window/Hide) when touching the menu.
 
+## Non-goals / parked: browser extensions (Bitwarden etc.)
+
+curator does **not** support browser/Safari web extensions, and there is no password-manager
+integration. This was evaluated for Bitwarden (2026-06-23) and parked — do not build it without
+the owner reopening it.
+
+- The capability now exists in WebKit: macOS 15.4+ ships `WKWebExtension` /
+  `WKWebExtensionContext` / `WKWebExtensionController`, which let a third-party WebKit app load
+  Safari web extensions (incl. unpacked from disk). Bitwarden ships a Safari web extension, so
+  hosting the *real* extension is theoretically possible.
+- **The blocker is the toolchain, not WebKit.** `webExtensionController` must be set on the
+  `WKWebViewConfiguration` *before* the `WKWebView` is created (config is immutable after), and
+  neither wry (`0.55.1`) nor Tauri exposes a hook to set it at that point. Tauri #13200 (the
+  generic "customize WKWebViewConfiguration" request) is open with no PR. You can reach the live
+  webview post-creation via `objc2`, but that's too late for this property. The only path is a
+  **wry fork** that attaches the controller to its internally-built config (or landing #13200
+  with that property).
+- A CLI-backed autofill shim (`bw serve` + an inject script) was considered as a fallback and
+  **rejected** — the owner will not ship credential autofill via that hack, and will not proceed
+  on extensions at all until real extension support is leverageable, nor build the wry fork now.
+  Don't propose the CLI route again as the answer.
+
 ## Releases
 
 Every release gets a matching GitHub release — don't just push `main`. To cut one:
