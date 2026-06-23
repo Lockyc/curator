@@ -63,6 +63,9 @@ pub const TITLEBAR_H: f64 = 28.0;
 const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
+/// Swallows the unhandled notification-plugin ACL rejection that withGlobalTauri leaks into
+/// content webviews, before the page's own error handler can choke on it. See the file header.
+const TAURI_GUARD_JS: &str = include_str!("../../src/inject/tauri-guard.js");
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
 const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
 /// Drives WebKit's `visibilitychange`/`focus` so live services keep syncing while hidden.
@@ -187,7 +190,9 @@ pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<
     let escape_js = ESCAPE_CLICK_JS.replace("__CURATOR_KEY__", &nonce);
     let notification_js = NOTIFICATION_JS.replace("__CURATOR_KEY__", &nonce);
     let badge_js = BADGE_JS.replace("__CURATOR_KEY__", &nonce);
-    let init = format!("{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}");
+    let init = format!(
+        "{TAURI_GUARD_JS}\n;\n{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}"
+    );
 
     let nav_app = window.app_handle().clone();
     let nav_label = view.label.clone();

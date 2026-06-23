@@ -39,7 +39,12 @@ sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
 
 **Loading is driven solely by per-tab `always_load`** — there are no per-window mode flags.
 Every content webview gets the full shim set (escape-click, visibility, notification, badge),
-so any *loaded* tab can fire native banners and report unread. `always_load` tabs are created
+so any *loaded* tab can fire native banners and report unread. It also gets a `tauri-guard`
+shim, injected first: `withGlobalTauri` leaks the notification plugin's guest init into remote
+pages, which eagerly probes `plugin:notification|is_permission_granted` over IPC — denied by ACL
+for content webviews — and the uncaught rejection trips a page's own error handler (Forgejo's
+crashes on it). The guard swallows exactly that rejection (capture phase, scoped to the command).
+`always_load` tabs are created
 at launch and kept live (never hidden — `apply_active` in `webviews.rs` shows them behind the
 active tab), so they keep syncing and notify in the background. Tabs without `always_load` are
 lazy (created on first click) and hidden when inactive (throttled → no background notifications,
