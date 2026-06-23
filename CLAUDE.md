@@ -114,3 +114,9 @@ This is part of cutting a release, not a follow-up; do it without being asked.
 `~/.curator` from `https://github.com/Lockyc/curator` and building from source; the
 README's `curl` one-liner fetches `install.sh` over `raw.githubusercontent.com`. The repo
 is public, so the raw fetch and the unauthenticated `git clone` both work.
+
+Because the repo is public, **every tracked file must be self-contained — no references
+to machine-local paths or scripts** (e.g. `~/.scripts/`, personal dotfiles helpers).
+Anyone who clones the repo, and the build-from-source install path, only have what's in
+the tree. In particular the `justfile` `default` recipe stays `@just --list` (which still
+groups by `[group()]`), not a personal pretty-printer that lives outside the repo.

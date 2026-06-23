@@ -6,7 +6,7 @@ export PATH := env_var('HOME') + "/.cargo/bin:" + env_var('PATH')
 
 # List available recipes
 default:
-    @"$HOME/.scripts/just-pretty.sh"
+    @just --list
 
 # Run the app in dev mode (hot-reload), loading the repo's demo config so iterating never touches your real config.
 [group("dev")]
