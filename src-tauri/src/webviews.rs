@@ -180,12 +180,25 @@ pub fn create_content_webview(
     let nav_label = view.label.clone();
     let unread = win_cfg.unread;
     let notifications = win_cfg.notifications;
+    // Captured separately for the new-window handler (the above are moved into on_navigation).
+    let open_app = window.app_handle().clone();
+    let open_label = view.label.clone();
+    let home_url = view.url.clone();
 
     let mut builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
         .data_store_identifier(crate::session::data_store_id(&view.session))
         .user_agent(DESKTOP_UA)
         .initialization_script(&init)
-        .on_new_window(|url, _features| {
+        .on_new_window(move |url, _features| {
+            // Keep the app's own popups/auth flows (same site as the tab) in-app by navigating
+            // the tab itself, so sign-in completes in the tab's own login session. Genuinely
+            // external links (a different site) still escape to the default browser.
+            if escape::same_site(&home_url, &url) {
+                if let Some(wv) = open_app.get_webview(&open_label) {
+                    let _ = wv.navigate(url);
+                }
+                return NewWindowResponse::Deny;
+            }
             if escape::is_escapable_scheme(&url) {
                 escape::escape_to_default_browser(url.as_str());
             }

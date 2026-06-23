@@ -22,6 +22,33 @@ pub fn is_escapable_scheme(url: &url::Url) -> bool {
     matches!(url.scheme(), "http" | "https" | "mailto" | "tel")
 }
 
+/// Naive registrable domain: the last two dot-labels of a host (`accounts.google.com` →
+/// `google.com`). Not public-suffix-aware (treats `foo.co.uk` as `co.uk`), which is fine for
+/// the everyday provider domains this is used to recognise.
+fn registrable(host: &str) -> String {
+    let mut labels: Vec<&str> = host.rsplitn(3, '.').collect();
+    labels.truncate(2);
+    labels.reverse();
+    labels.join(".")
+}
+
+/// Whether a new-window `target` belongs to the same site as the tab's `home_url` — i.e. it's
+/// the app's own flow (a sign-in popup goes to the provider's domain) rather than an external
+/// link. Same-site new windows are kept in-app so they complete in the tab's own login session;
+/// cross-site ones escape to the default browser. http(s) only.
+pub fn same_site(home_url: &str, target: &url::Url) -> bool {
+    if !matches!(target.scheme(), "http" | "https") {
+        return false;
+    }
+    let (Some(t_host), Ok(home)) = (target.host_str(), url::Url::parse(home_url)) else {
+        return false;
+    };
+    match home.host_str() {
+        Some(h_host) => registrable(h_host) == registrable(t_host),
+        None => false,
+    }
+}
+
 /// Sentinel host the injected Notification override navigates to so the native
 /// `on_navigation` handler can fire a real banner. Distinct from the cmd-click escape host.
 pub const NOTIFY_SENTINEL_HOST: &str = "curator.notify.invalid";
@@ -175,6 +202,34 @@ mod tests {
     fn non_notify_host_is_none() {
         let u = url("https://curator.escape.invalid/?u=https%3A%2F%2Fx.test%2F");
         assert!(notify_sentinel(&u).is_none());
+    }
+
+    #[test]
+    fn same_site_keeps_provider_auth_in_app() {
+        // Google Chat opening its accounts domain is same registrable domain → in-app.
+        assert!(same_site(
+            "https://chat.google.com/",
+            &url("https://accounts.google.com/o/oauth2/auth?foo=bar")
+        ));
+        // Exact-host popup is same-site too.
+        assert!(same_site(
+            "https://app.element.io/",
+            &url("https://app.element.io/#/login")
+        ));
+    }
+
+    #[test]
+    fn same_site_escapes_external_links() {
+        // A genuinely external link is cross-site → not kept in-app.
+        assert!(!same_site(
+            "https://chat.google.com/",
+            &url("https://example.com/article")
+        ));
+        // Non-web schemes are never "same site".
+        assert!(!same_site(
+            "https://chat.google.com/",
+            &url("mailto:a@b.test")
+        ));
     }
 
     #[test]
