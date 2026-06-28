@@ -118,3 +118,15 @@ is public, so the raw fetch and the unauthenticated `git clone` both work.
 Because the repo is public, **every tracked file must be self-contained** — no references
 to machine-local paths, scripts, or personal tooling. Clones, the build-from-source path,
 and any CI only have what's in the tree.
+
+## Deferred work
+
+- **Format-on-save (port from warden):** the sibling app warden formats its TOML config in
+  place on a clean hot-reload (opt-in via a `format_on_save` key, default false) and via a
+  `warden fmt [--check]` CLI. It embeds the `taplo` crate as a library with a fixed house
+  style (`indent_tables`, `indent_entries`, `align_entries`, `align_comments`,
+  `reorder_keys=false`) and rewrites the file diff-guarded (only if bytes change) + atomically
+  (temp file + rename), so the writer can't loop its own watcher; it only ever rewrites on a
+  clean parse. curator has the same watcher + config shape but **no CLI binary** (it's
+  app-only), so the natural home here is the reload path alone — or grow a small bin. **Not
+  implemented yet.**
