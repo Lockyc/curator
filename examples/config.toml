@@ -31,6 +31,7 @@
 
 [[window]]
 title           = "Keepers"
+colour          = "#0f8a8a"   # optional accent: name banner + faint navbar tint (per-window identity)
 open_on_launch  = "Grafana"   # open this tab on launch instead of the blank screen
 
   [[window.group]]

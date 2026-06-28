@@ -28,6 +28,31 @@ fn calling_window(webview: &Webview) -> Result<(Window, String), String> {
     Ok((window, wid))
 }
 
+/// The invoking window's identity for the chrome banner: its title and optional accent colour.
+#[derive(Serialize)]
+pub struct WindowIdentity {
+    title: String,
+    colour: Option<String>,
+}
+
+/// Return the calling window's title + accent colour so the chrome can paint a per-window
+/// identity banner. Colour is `None` when the window config omits it (chrome stays neutral).
+#[tauri::command]
+pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdentity {
+    let wid = calling_window_id(&webview);
+    let windows = state.windows.lock().unwrap();
+    match windows.get(&wid) {
+        Some(rt) => WindowIdentity {
+            title: rt.cfg.title.clone(),
+            colour: rt.cfg.colour.clone(),
+        },
+        None => WindowIdentity {
+            title: String::new(),
+            colour: None,
+        },
+    }
+}
+
 #[tauri::command]
 pub fn get_tabs(webview: Webview, state: State<AppState>) -> Vec<TabItem> {
     let wid = calling_window_id(&webview);

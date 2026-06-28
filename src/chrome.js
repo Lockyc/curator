@@ -1,6 +1,37 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// Opaque dark base the navbar tint composites over — matches #1e1e1e in chrome.css.
+const TINT_BASE = [30, 30, 30];
+
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  return [parseInt(f.slice(0, 2), 16), parseInt(f.slice(2, 4), 16), parseInt(f.slice(4, 6), 16)];
+}
+
+// Blend an accent colour over the dark base at `ratio`, returning an opaque rgb(...).
+function tintOverBase(hex, ratio) {
+  const c = hexToRgb(hex);
+  const ch = (i) => Math.round(TINT_BASE[i] * (1 - ratio) + c[i] * ratio);
+  return `rgb(${ch(0)},${ch(1)},${ch(2)})`;
+}
+
+// Paint the per-window identity banner from the window's accent colour (name on the colour,
+// plus a faint tint on the navbar). No colour configured → banner stays hidden, chrome neutral.
+async function applyIdentity() {
+  const id = await invoke("window_identity");
+  const banner = document.getElementById("identity");
+  if (!id || !id.colour) {
+    banner.hidden = true;
+    return;
+  }
+  banner.textContent = id.title;
+  banner.style.background = id.colour;
+  banner.hidden = false;
+  document.getElementById("navbar").style.background = tintOverBase(id.colour, 0.1);
+}
+
 // Per-tab unread badge text, pushed from Rust via `service-badge`. Cached so a re-render
 // (config reload) keeps badges, and patched live without a full re-render.
 const badges = new Map();
@@ -164,6 +195,7 @@ async function select(label, el) {
 
 listen("config-reloaded", () => {
   document.getElementById("error-banner").hidden = true;
+  applyIdentity();
   render();
 });
 listen("config-error", (e) => {
@@ -179,4 +211,5 @@ listen("service-badge", (e) => {
 });
 
 initNav();
+applyIdentity();
 render();

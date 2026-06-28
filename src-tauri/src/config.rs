@@ -41,8 +41,20 @@ pub struct WindowConfig {
     pub session: Option<String>,
     #[serde(default)]
     pub open_on_launch: OpenOnLaunch,
+    /// Optional per-window accent colour (`#rgb` or `#rrggbb`). The chrome shows it as a
+    /// name banner + a faint tint, giving each window an at-a-glance identity. Omit → neutral.
+    #[serde(default)]
+    pub colour: Option<String>,
     #[serde(default, rename = "group")]
     pub groups: Vec<Group>,
+}
+
+/// True for a `#rgb` or `#rrggbb` hex colour — the forms the chrome banner accepts.
+fn is_hex_colour(s: &str) -> bool {
+    let Some(hex) = s.strip_prefix('#') else {
+        return false;
+    };
+    (hex.len() == 3 || hex.len() == 6) && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// The shared app-wide login store used by any tab that sets no `session` (and whose window
@@ -87,6 +99,7 @@ pub enum ConfigError {
     InvalidUrl { title: String, url: String },
     ZeroReload(String),
     InvalidWindowSize { width: u32, height: u32 },
+    InvalidColour { title: String, colour: String },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -102,6 +115,9 @@ impl std::fmt::Display for ConfigError {
             ConfigError::ZeroReload(title) => write!(f, "tab \"{title}\" reload_every must be > 0"),
             ConfigError::InvalidWindowSize { width, height } => {
                 write!(f, "window size must be positive, got {width}×{height}")
+            }
+            ConfigError::InvalidColour { title, colour } => {
+                write!(f, "window \"{title}\" has invalid colour: {colour}")
             }
         }
     }
@@ -122,6 +138,14 @@ pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
                 width: w.width,
                 height: w.height,
             });
+        }
+        if let Some(colour) = &w.colour {
+            if !is_hex_colour(colour) {
+                return Err(ConfigError::InvalidColour {
+                    title: w.title.clone(),
+                    colour: colour.clone(),
+                });
+            }
         }
         for group in &w.groups {
             if group.name.trim().is_empty() {
@@ -330,6 +354,21 @@ reload_every = 15
     fn rejects_zero_window_dimension() {
         let err = parse_and_validate(&with_window_keys("Comms", "width = 0")).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidWindowSize { .. }));
+    }
+
+    #[test]
+    fn accepts_valid_window_colour() {
+        let cfg = parse_and_validate(&with_window_keys("Comms", "colour = \"#0f8a8a\"")).unwrap();
+        assert_eq!(cfg.windows[0].colour.as_deref(), Some("#0f8a8a"));
+        // Short form is accepted too.
+        let cfg = parse_and_validate(&with_window_keys("Comms", "colour = \"#abc\"")).unwrap();
+        assert_eq!(cfg.windows[0].colour.as_deref(), Some("#abc"));
+    }
+
+    #[test]
+    fn rejects_invalid_window_colour() {
+        let err = parse_and_validate(&with_window_keys("Comms", "colour = \"teal\"")).unwrap_err();
+        assert!(matches!(err, ConfigError::InvalidColour { .. }));
     }
 
     #[test]

@@ -49,6 +49,16 @@ body { margin: 0; font: 13px -apple-system, sans-serif; height: 100vh; display: 
 
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
 
+/* Per-window identity banner: the window name on its accent colour. Gives each window an
+   at-a-glance identity (ported from warden's profile banner). Hidden when no colour is set. */
+#identity {
+  flex: none;
+  padding: 8px 12px;
+  font-size: 13px; font-weight: 700;
+  color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 .badge {
   flex: none;
   min-width: 18px;

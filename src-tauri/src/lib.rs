@@ -617,6 +617,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_tabs,
+            commands::window_identity,
             commands::select_tab,
             commands::reset_all,
             commands::reload_tab,
