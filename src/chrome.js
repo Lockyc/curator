@@ -24,12 +24,16 @@ async function applyIdentity() {
   const banner = document.getElementById("identity");
   if (!id || !id.colour) {
     banner.hidden = true;
+    document.body.style.removeProperty("--active-bg");
     return;
   }
   banner.textContent = id.title;
   banner.style.background = id.colour;
   banner.hidden = false;
   document.getElementById("navbar").style.background = tintOverBase(id.colour, 0.1);
+  // Tint the active-tab highlight with the same accent (a stronger blend than the navbar) so
+  // the selected row reads as part of this window's identity.
+  document.body.style.setProperty("--active-bg", tintOverBase(id.colour, 0.28));
 }
 
 // Per-tab unread badge text, pushed from Rust via `service-badge`. Cached so a re-render
@@ -212,6 +216,23 @@ listen("service-badge", (e) => {
   if (text) badges.set(label, text);
   else badges.delete(label);
   applyBadge(label, text);
+});
+
+// Keyboard tab navigation, driven by the Tabs menu (⌘⇧]/⌘⇧[ cycle, ⌘1–9 jump). Resolve the
+// target row from the rendered order and route through select() so a lazy tab still creates.
+function selectRow(row) {
+  if (row && !row.classList.contains("active")) select(row.dataset.label, row);
+}
+listen("nav-tab", (e) => {
+  const rows = [...document.querySelectorAll(".tab")];
+  if (!rows.length) return;
+  const dir = e.payload;
+  let i = rows.findIndex((r) => r.classList.contains("active"));
+  if (i < 0) i = dir > 0 ? -1 : 0;
+  selectRow(rows[(i + dir + rows.length) % rows.length]);
+});
+listen("jump-tab", (e) => {
+  selectRow([...document.querySelectorAll(".tab")][e.payload - 1]);
 });
 
 initNav();

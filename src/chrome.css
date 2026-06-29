@@ -16,7 +16,9 @@ body { margin: 0; font: 13px -apple-system, sans-serif; height: 100vh; display: 
 .group:first-child { margin-top: 0; border-top: none; padding-top: 12px; }
 .tab { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; font-size: 14px; color: #ddd; cursor: pointer; }
 .tab:hover { background: #2a2a2a; }
-.tab.active { background: #094771; color: #fff; }
+/* Active highlight tints with the window's accent colour (set as --active-bg from the
+   identity colour); falls back to a neutral blue when the window configures no colour. */
+.tab.active { background: var(--active-bg, #094771); color: #fff; }
 .tab-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .favicon {

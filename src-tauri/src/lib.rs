@@ -169,6 +169,19 @@ fn emit_to_all_chrome<S: serde::Serialize + Clone>(
     }
 }
 
+/// Emit an event to just the focused window's chrome sidebar. Used by the keyboard tab-nav
+/// menu items (⌘1–9 jump, ⌘⇧[ / ⌘⇧] cycle), which act on whichever window has key focus — the
+/// window label *is* the window id, so its chrome is `{id}:chrome`.
+fn emit_to_focused_chrome<S: serde::Serialize + Clone>(
+    app: &tauri::AppHandle,
+    event: &str,
+    payload: S,
+) {
+    if let Some(win) = app.get_focused_window() {
+        let _ = app.emit_to(identity::namespaced(win.label(), "chrome"), event, payload);
+    }
+}
+
 /// Clear a closed window's awareness contribution and stop its reload timers, then recompute and
 /// apply the aggregate dock badge. The `WindowRuntime` stays in the registry so its cfg survives
 /// for reopen from the Window menu — only the live state (unread, badging-authoritative set,
@@ -423,6 +436,27 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     let devtools = MenuItemBuilder::with_id("open_devtools", "Open Developer Tools")
         .accelerator("CmdOrCtrl+Alt+I")
         .build(manager)?;
+    // Keyboard tab navigation: ⌘⇧]/⌘⇧[ cycle to the next/previous tab, ⌘1–9 jump to a position.
+    // The handlers emit to the focused window's chrome, which resolves the target row and selects
+    // it through the normal click path (so lazy tabs still create on demand).
+    let tab_next = MenuItemBuilder::with_id("tab_next", "Next Tab")
+        .accelerator("CmdOrCtrl+Shift+BracketRight")
+        .build(manager)?;
+    let tab_prev = MenuItemBuilder::with_id("tab_prev", "Previous Tab")
+        .accelerator("CmdOrCtrl+Shift+BracketLeft")
+        .build(manager)?;
+    let mut tab_jumps = Vec::new();
+    for n in 1..=9 {
+        tab_jumps.push(
+            MenuItemBuilder::with_id(format!("tab_jump:{n}"), format!("Tab {n}"))
+                .accelerator(format!("CmdOrCtrl+{n}"))
+                .build(manager)?,
+        );
+    }
+    let tab_jump_refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = tab_jumps
+        .iter()
+        .map(|i| i as &dyn tauri::menu::IsMenuItem<R>)
+        .collect();
     let edit_cfg = MenuItemBuilder::with_id("edit_config", "Edit Config").build(manager)?;
     let reveal_cfg =
         MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(manager)?;
@@ -448,6 +482,10 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         .select_all()
         .build()?;
     let tabs_menu = SubmenuBuilder::new(manager, "Tabs")
+        .items(&[&tab_next, &tab_prev])
+        .separator()
+        .items(&tab_jump_refs)
+        .separator()
         .items(&[&reload_tab, &reset, &devtools])
         .build()?;
     let config_menu = SubmenuBuilder::new(manager, "Config")
@@ -623,6 +661,13 @@ pub fn run() {
                 }
                 "open_devtools" => {
                     commands::open_active_devtools(app);
+                }
+                "tab_next" => emit_to_focused_chrome(app, "nav-tab", 1i32),
+                "tab_prev" => emit_to_focused_chrome(app, "nav-tab", -1i32),
+                id if id.starts_with("tab_jump:") => {
+                    if let Ok(n) = id["tab_jump:".len()..].parse::<usize>() {
+                        emit_to_focused_chrome(app, "jump-tab", n);
+                    }
                 }
                 "edit_config" => {
                     let _ = std::process::Command::new("open").arg(&cfg_path).spawn();
