@@ -72,14 +72,22 @@ required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel wit
 page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
 sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
 
+**Native banners go through `UNUserNotificationCenter`, not `tauri-plugin-notification`**
+(`notification.rs`, objc2). The plugin's desktop backend (`notify-rust` → `mac-notification-sys`)
+posts via the deprecated `NSUserNotification` API, which is a **silent no-op on macOS 26** —
+`show()` returns `Ok`, nothing is delivered, and the app never registers in Notification Center.
+`notification::init` (called once in the Tauri setup hook) requests authorization and installs a
+`UNUserNotificationCenterDelegate` whose `willPresentNotification` returns `.banner`, so banners
+show even while curator is the frontmost app (the hidden-tab-in-focused-window case). It's
+gated on `!tauri::is_dev()` — `currentNotificationCenter` throws on a nil bundle id, so native
+banners only fire from the packaged `curator.app` (dev still badges). Don't reintroduce the
+plugin for banners. Because the plugin is gone, `withGlobalTauri` no longer injects a notification
+guest that probes `plugin:notification|is_permission_granted` over IPC, so content webviews need
+no `tauri-guard` shim anymore (it was removed with the plugin).
+
 **Loading is driven solely by per-tab `load_on_open`** — there are no per-window mode flags.
 Every content webview gets the full shim set (escape-click, visibility, notification, badge),
-so any *loaded* tab can fire native banners and report unread. It also gets a `tauri-guard`
-shim, injected first: `withGlobalTauri` leaks the notification plugin's guest init into remote
-pages, which eagerly probes `plugin:notification|is_permission_granted` over IPC — denied by ACL
-for content webviews — and the uncaught rejection trips a page's own error handler (Forgejo's
-crashes on it). The guard swallows exactly that rejection (capture phase, scoped to the command).
-`load_on_open` tabs are created
+so any *loaded* tab can fire native banners and report unread. `load_on_open` tabs are created
 at launch and kept live (never hidden — `apply_active` in `webviews.rs` shows them behind the
 active tab), so they keep syncing and notify in the background. Tabs without `load_on_open` are
 lazy (created on first click) and hidden when inactive (throttled → no background notifications,
@@ -88,12 +96,14 @@ active tab, keep `load_on_open` tabs shown, hide the rest.
 
 **Dock badge** aggregates the unread count across every window's loaded tabs.
 
-**Window menu** — a real **Window** submenu lets the user close a non-last window (⌘W)
-and reopen any closed window from the list. All configured windows open at launch; closed
-windows can be reopened from the Window menu. Both ⌘W and the native red button flow through
-`on_real_window_close`, which refuses to close the last window (no stranding) and, on close,
-wipes the window's unread/timers while keeping its `WindowRuntime` registered so its cfg
-survives for reopen. Config-reload window removal uses `destroy()` to bypass that guard.
+**Window menu** — a real **Window** submenu lets the user close a window (⌘W) and reopen any
+closed window from the list. All configured windows open at launch; closed windows can be
+reopened from the Window menu while the app is still running. Both ⌘W and the native red button
+flow through `on_real_window_close`, which wipes the closed window's unread/timers while keeping
+its `WindowRuntime` registered so its cfg survives for reopen — and **quits curator when the last
+window closes** (last-window-quit, matching warden), rather than lingering as a menu-bar-only app.
+Config-reload window removal uses `destroy()` (not the user-close path), so a reload that drops a
+window doesn't trip last-window-quit mid-reconcile.
 
 **App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must
 be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the

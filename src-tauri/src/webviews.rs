@@ -70,9 +70,6 @@ pub const TITLEBAR_H: f64 = 28.0;
 const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
-/// Swallows the unhandled notification-plugin ACL rejection that withGlobalTauri leaks into
-/// content webviews, before the page's own error handler can choke on it. See the file header.
-const TAURI_GUARD_JS: &str = include_str!("../../src/inject/tauri-guard.js");
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
 const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
 /// Drives WebKit's `visibilitychange`/`focus` so live services keep syncing while hidden.
@@ -140,15 +137,14 @@ fn layout_webviews(window: &Window, chrome_w: f64) {
     }
 }
 
-/// Clamp the window's sidebar width to its current size, store the clamped value back (the
-/// clamped width *is* the persisted value — there's no separate unclamped "desired", so shrinking
-/// a window past the 40% cap permanently narrows the sidebar; a later grow does not restore the
-/// pre-shrink width), re-lay-out, and return the applied width. Called on window resize and on a
-/// chrome resize-drag.
+/// Lay out for the window's *desired* sidebar width clamped to the current window size, and return
+/// the applied (clamped) width. The atomic holds the unclamped desired width and is left
+/// untouched, so shrinking a window past the 40% cap narrows the sidebar only for display — a
+/// later grow re-clamps the same desired and restores the pre-shrink width up to the new cap.
+/// Called on window resize and on a chrome resize-drag.
 pub fn relayout_with_width(window: &Window, chrome_w: &AtomicU64) -> f64 {
     let (w, _h) = logical_inner(window);
     let cw = clamp_chrome_w(f64::from_bits(chrome_w.load(Ordering::Relaxed)), w);
-    chrome_w.store(cw.to_bits(), Ordering::Relaxed);
     layout_webviews(window, cw);
     cw
 }
@@ -163,8 +159,9 @@ pub fn build_window(
     win_w: f64,
     win_h: f64,
 ) -> tauri::Result<(Window, Arc<AtomicU64>)> {
-    // Shared, lock-free sidebar width (f64 bits): captured by the resize closure below and stored
-    // in the window's runtime so the resize command and lazy-tab layout read the same value.
+    // Shared, lock-free *desired* sidebar width (f64 bits): captured by the resize closure below
+    // and stored in the window's runtime so the resize command and lazy-tab layout read the same
+    // value. It's the unclamped user intent — clamping to the window size happens at layout time.
     let chrome_w = Arc::new(AtomicU64::new(CHROME_W.to_bits()));
 
     let window = tauri::window::WindowBuilder::new(app, window_id)
@@ -221,9 +218,11 @@ pub fn build_window(
 /// banners and report unread — whether it notifies in the background is purely a function of
 /// whether it's kept live, which is what `load_on_open` controls (see `apply_active`).
 ///
-/// `chrome_w` is the window's current sidebar width, used to place the webview to its right. It's
-/// passed in (not read from `AppState` here) because callers already hold the `windows` lock when
-/// they create a tab — re-locking it inside would self-deadlock the non-reentrant mutex.
+/// `chrome_w` is the window's *desired* sidebar width (the value stored in the runtime atomic);
+/// it's clamped to the current window size here before positioning, the same way `layout_webviews`
+/// does, so a new tab lines up with the displayed sidebar. It's passed in (not read from
+/// `AppState` here) because callers already hold the `windows` lock when they create a tab —
+/// re-locking it inside would self-deadlock the non-reentrant mutex.
 pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
@@ -233,9 +232,7 @@ pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) ->
     let escape_js = ESCAPE_CLICK_JS.replace("__CURATOR_KEY__", &nonce);
     let notification_js = NOTIFICATION_JS.replace("__CURATOR_KEY__", &nonce);
     let badge_js = BADGE_JS.replace("__CURATOR_KEY__", &nonce);
-    let init = format!(
-        "{TAURI_GUARD_JS}\n;\n{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}"
-    );
+    let init = format!("{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}");
 
     let nav_app = window.app_handle().clone();
     let nav_label = view.label.clone();
@@ -283,7 +280,7 @@ pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) ->
                 if let Some(sig) = escape::badge_sentinel(url) {
                     crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
                 } else if let Some(p) = escape::notify_sentinel(url) {
-                    crate::notification::fire(&nav_app, &p.title, &p.body);
+                    crate::notification::fire(&p.title, &p.body);
                 } else if let Some(target) = escape::sentinel_target(url) {
                     escape::escape_to_default_browser(&target);
                 }
@@ -296,11 +293,8 @@ pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) ->
         });
 
     let (w, h) = logical_inner(window);
-    let webview = window.add_child(
-        builder,
-        content_position(chrome_w),
-        content_size(chrome_w, w, h),
-    )?;
+    let cw = clamp_chrome_w(chrome_w, w);
+    let webview = window.add_child(builder, content_position(cw), content_size(cw, w, h))?;
     #[cfg(target_os = "macos")]
     {
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));

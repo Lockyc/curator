@@ -20,7 +20,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["unstable", "devtools"] }
-tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -31,8 +30,18 @@ dirs = "5"
 # curator and warden — git dep so the build-from-source install flow needs no extra setup.
 config-core = { git = "https://github.com/Lockyc/config-core" }
 
-# For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate.
+# For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate, and
+# for posting native banners via UserNotifications (tauri-plugin-notification's NSUserNotification
+# backend is a silent no-op on macOS 26 — see notification.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = "0.3"
 block2 = "0.6"
+objc2-user-notifications = { version = "0.3", features = [
+    "UNUserNotificationCenter",
+    "UNNotification",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationTrigger",
+    "block2",
+] }

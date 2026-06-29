@@ -4,5 +4,5 @@
   "description": "Let each window's local chrome sidebar listen for config-reload/badge events. Scoped to chrome webviews only (labels end in ':chrome') — remote content webviews get no event access.",
   "windows": ["*"],
   "webviews": ["*:chrome"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "notification:default"]
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

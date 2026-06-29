@@ -36,8 +36,9 @@ pub struct WindowRuntime {
     /// Set true to stop this window's `reload_every` timer threads — on window close, removal,
     /// or when its tab set changes (a fresh generation is spawned with a new flag).
     pub reload_cancel: Arc<AtomicBool>,
-    /// Current sidebar width in logical px (f64 bits), shared with the window's resize closure.
-    /// Driven by the `set_sidebar_width` drag command and re-clamped on window resize.
+    /// Desired (unclamped) sidebar width in logical px (f64 bits), shared with the window's resize
+    /// closure. Driven by the `set_sidebar_width` drag command; clamped to the window size only at
+    /// layout time, so a window-grow restores the desired width up to the new cap.
     pub chrome_w: Arc<AtomicU64>,
 }
 
@@ -213,16 +214,16 @@ fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
     }
 }
 
-/// Handle a user-initiated close (native red button or ⌘W) of a real window. Returns `true` if
-/// the close should be *prevented*: we never close the last open window, which would strand the
-/// app with no visible UI and only the menu bar left. Otherwise it runs `cleanup_closed_window`
-/// and returns `false` to let the close proceed. (The fallback error window isn't built via
-/// `build_window`, so it never reaches here.)
+/// Handle a user-initiated close (native red button or ⌘W) of a real window. Always lets the
+/// close proceed (returns `false`); closing the **last** window quits curator
+/// (last-window-quit — matching warden), rather than lingering as a menu-bar-only app with no
+/// visible UI. Runs `cleanup_closed_window` first either way. (The fallback error window isn't
+/// built via `build_window`, so it never reaches here.)
 pub(crate) fn on_real_window_close(app: &tauri::AppHandle, window_id: &str) -> bool {
-    if app.windows().len() <= 1 {
-        return true;
-    }
     cleanup_closed_window(app, window_id);
+    if app.windows().len() <= 1 {
+        app.exit(0);
+    }
     false
 }
 
@@ -236,8 +237,9 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
     state.dark_mode.store(new_cfg.dark_mode, Ordering::Relaxed);
 
     // Closed windows: drop the window and its runtime, and stop its reload timers. Use
-    // `destroy()` (not `close()`) so this programmatic removal bypasses the user-close guard in
-    // `on_real_window_close` — that guard must only block the user closing their last window.
+    // `destroy()` (not `close()`) so this programmatic removal bypasses `on_real_window_close` —
+    // a reload that drops the last window must reconcile to the new config (error window or
+    // replacement), not trip last-window-quit and exit the app mid-reconcile.
     for id in &diff.removed {
         if let Some(win) = app.get_window(id) {
             let _ = win.destroy();
@@ -506,9 +508,9 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     let config_menu = SubmenuBuilder::new(manager, "Config")
         .items(&[&edit_cfg, &reveal_cfg])
         .build()?;
-    // Window menu — minimize / zoom / full screen; Close Window (⌘W) with a >1 guard so the
-    // last window can never be closed (prevents stranding the app); and one item per configured
-    // window so any closed window can be reopened.
+    // Window menu — minimize / zoom / full screen; Close Window (⌘W), where closing the last
+    // window quits curator (last-window-quit); and one item per configured window so any closed
+    // window can be reopened while the app is still running.
     let close_window = MenuItemBuilder::with_id("close_window", "Close Window")
         .accelerator("CmdOrCtrl+W")
         .build(manager)?;
@@ -614,8 +616,11 @@ pub fn fmt_cli(check: bool, path: Option<std::path::PathBuf>) -> i32 {
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
+            // Prime native banner notifications (authorization + presentation delegate). No-op in
+            // dev / off the packaged app; the badge/sentinel path is independent of this.
+            notification::init();
+
             let path = config::resolve_config_path();
             let (mut cfg, load_err) = match config::load_config(&path) {
                 Ok((c, warnings)) => {
@@ -678,6 +683,9 @@ pub fn run() {
                 if Watcher::watch(&mut watcher, dir, RecursiveMode::NonRecursive).is_err() {
                     return;
                 }
+                // The exact bytes of our own most recent format-on-save write, so we can swallow
+                // the watch event it triggers and reload exactly once per user save (see below).
+                let mut self_write: Option<String> = None;
                 for res in rx {
                     let Ok(event) = res else { continue };
                     if !event.paths.iter().any(|p| p == &watch_path) {
@@ -686,19 +694,30 @@ pub fn run() {
                     let Ok(src) = std::fs::read_to_string(&watch_path) else {
                         continue;
                     };
+                    // If this event is the echo of our own format write, consume it and skip — the
+                    // user save that prompted the rewrite already reloaded. `take()` clears the
+                    // marker either way, so at worst a missed echo costs one redundant no-op reload.
+                    if self_write.take().as_deref() == Some(src.as_str()) {
+                        continue;
+                    }
                     match watcher::reconcile(&src) {
                         Ok((new_cfg, warnings)) => {
                             for w in &warnings {
                                 eprintln!("config warning [{}]: {}", w.window, w.message);
                             }
                             // Format-on-save: rewrite in house style on a clean reload. The write
-                            // is diff-guarded, so an already-formatted file is a no-op; if it does
-                            // rewrite, the resulting watch event reconciles to the same config and
-                            // formats to a no-op — no loop. Formatting only touches whitespace, so
-                            // `new_cfg` (parsed pre-format) matches the formatted file's config.
+                            // is diff-guarded, so an already-formatted file is a no-op. When it does
+                            // rewrite, remember the formatted bytes as `self_write` so the watch
+                            // event the write triggers is swallowed above — one reload per user
+                            // save, not two. Formatting only touches whitespace, so `new_cfg`
+                            // (parsed pre-format) already matches the formatted file's config.
                             if new_cfg.format_on_save {
-                                if let Err(e) = config_core::format_file(&watch_path) {
-                                    eprintln!("config format error: {e}");
+                                let formatted = config_core::format_str(&src);
+                                if formatted != src {
+                                    match config_core::format_file(&watch_path) {
+                                        Ok(_) => self_write = Some(formatted),
+                                        Err(e) => eprintln!("config format error: {e}"),
+                                    }
                                 }
                             }
                             reload_windows(&app_handle, &cfg, &new_cfg);
@@ -749,9 +768,10 @@ pub fn run() {
                 }
                 "close_window" => {
                     // Close the focused window via `close()` so it flows through the same
-                    // `CloseRequested` path as the native red button: that handler keeps the
-                    // last window open and wipes the closed window's unread/timers (the runtime
-                    // stays registered so its cfg survives for reopen via the menu items below).
+                    // `CloseRequested` path as the native red button: that handler wipes the
+                    // closed window's unread/timers (the runtime stays registered so its cfg
+                    // survives for reopen via the menu items below) and quits curator if this was
+                    // the last window.
                     if let Some(win) = app.get_focused_window() {
                         let _ = win.close();
                     }
