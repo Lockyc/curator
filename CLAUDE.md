@@ -176,6 +176,16 @@ Every release gets a matching GitHub release — don't just push `main`. To cut 
 
 This is part of cutting a release, not a follow-up; do it without being asked.
 
+`just build` **signs with Developer ID and notarizes + staples automatically** when the
+Apple signing/notary env vars are present in the build environment — `APPLE_SIGNING_IDENTITY`
+pointing at a Developer ID Application cert, plus `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`
+(or `APPLE_API_KEY`/`APPLE_API_ISSUER`/`APPLE_API_KEY_PATH`); Tauri runs the signing and
+`notarytool` submission (with hardened runtime) during the bundle step. This is env-driven, not
+pinned in `tauri.conf.json`, so a build environment without those vars silently ships an
+ad-hoc/unsigned bundle that other Macs block under Gatekeeper — set them before cutting a release
+meant for distribution. Verify a release artifact with `spctl -a -vvv <app>` (expect `source=Notarized
+Developer ID`) and `xcrun stapler validate <app>`.
+
 ## Installer & the public repo
 
 `install.sh` and the `/curator:install` command install curator by `git clone`-ing
