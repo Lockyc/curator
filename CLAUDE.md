@@ -17,6 +17,11 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 `lib.rs`) loads + validates a config and prints the resolved window/tab tree (with each tab's
 cascaded session) plus any warnings. Exit 0 ok / 1 load error / 2 unknown command.
 
+`curator fmt [--check] [path]` (same dispatch → `fmt_cli`) reformats the config in the shared
+house style (`config_core::format_file`, atomic + diff-guarded): without `--check` it rewrites in
+place and prints what it did; with `--check` it writes nothing and exits 1 if the file would
+change (for pre-commit/CI). Exit 0 ok / 1 read or TOML error.
+
 ## Config schema
 
 A window's tabs may be **loose** (`[[window.tab]]`) or grouped (`[[window.group]]` →
@@ -25,6 +30,9 @@ required). `tab_views` flattens to one ordered list — loose tabs first as a he
 (`TabView.group = None`), then each group in file order (`Some(name)`) — and the chrome renders a
 section header only for `Some`. Per-tab fields: `title`, `url` (both required, non-empty),
 `load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `session`.
+App-global keys: `dark_mode`, `allow_insecure`, `session`, and `format_on_save` (bool, default
+false — reformat the file in house style on a clean hot-reload; see Deferred work → done below).
+Accent-colour validation delegates to `config_core::Colour::parse` (shared with warden).
 
 Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
 window title, zero window dimension, invalid colour, empty group name, dup group name within a
@@ -158,14 +166,25 @@ Because the repo is public, **every tracked file must be self-contained** — no
 to machine-local paths, scripts, or personal tooling. Clones, the build-from-source path,
 and any CI only have what's in the tree.
 
+## Shared config primitives: `config-core`
+
+curator and warden share the same `window → group → tab` config shape and house style, so the
+domain-free primitives live in the **`config-core`** crate
+(`https://github.com/Lockyc/config-core`) — a git dependency (cargo fetches it at build, so the
+build-from-source install needs no extra setup). curator uses two pieces:
+
+- **`fmt`** — the house-style formatter behind `curator fmt` and format-on-save. `format_file`
+  is atomic, diff-guarded, and symlink/mode-preserving, and a no-op on an already-formatted file,
+  so the reload-path formatter (run on a clean hot-reload when the new config sets
+  `format_on_save = true`) can't loop its own watcher.
+- **`colour`** — `Colour::parse` backs `is_hex_colour` (per-window accent validation).
+
+The crate is deliberately leaf-free: curator keeps its own model, validation, and session
+cascade; warden keeps its own. Only add to `config-core` what is genuinely identical and
+leaf-agnostic in *both* apps — don't grow it into a generic config framework.
+
 ## Deferred work
 
-- **Format-on-save (port from warden):** the sibling app warden formats its TOML config in
-  place on a clean hot-reload (opt-in via a `format_on_save` key, default false) and via a
-  `warden fmt [--check]` CLI. It embeds the `taplo` crate as a library with a fixed house
-  style (`indent_tables`, `indent_entries`, `align_entries`, `align_comments`,
-  `reorder_keys=false`) and rewrites the file diff-guarded (only if bytes change) + atomically
-  (temp file + rename), so the writer can't loop its own watcher; it only ever rewrites on a
-  clean parse. curator has the same watcher + config shape, and now also a CLI dispatch in
-  `main.rs` (`curator validate`), so a `curator fmt [--check]` subcommand could mirror warden's
-  alongside a reload-path formatter. **Not implemented yet.**
+- **Retrofit warden onto `config-core`:** warden still carries its own copy of the formatter and
+  colour parser (the originals these were lifted from). Re-point warden at the shared crate and
+  delete its duplicates to finish the convergence. **Not done yet.**

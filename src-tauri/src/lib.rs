@@ -558,6 +558,49 @@ pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
     }
 }
 
+/// `curator fmt [--check] [path]`: reformat the config file in curator's house style (shared with
+/// warden via `config_core`). Without `--check`, rewrites in place (atomic, diff-guarded — a
+/// no-op when already formatted) and prints what it did. With `--check`, writes nothing and exits
+/// 1 if the file would be reformatted (for pre-commit/CI). Exit 0 ok / 1 on read or TOML error.
+pub fn fmt_cli(check: bool, path: Option<std::path::PathBuf>) -> i32 {
+    let path = path.unwrap_or_else(config::resolve_config_path);
+    let src = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: cannot read {}: {e}", path.display());
+            return 1;
+        }
+    };
+    // Only format well-formed TOML: taplo error-recovers on malformed input and would otherwise
+    // silently return it unchanged, masking the breakage.
+    if let Err(e) = toml::from_str::<toml::Value>(&src) {
+        eprintln!("error: {} is not valid TOML: {e}", path.display());
+        return 1;
+    }
+    if check {
+        if config_core::format_str(&src) != src {
+            eprintln!("would reformat: {}", path.display());
+            return 1;
+        }
+        println!("ok: {} already formatted", path.display());
+        return 0;
+    }
+    match config_core::format_file(&path) {
+        Ok(true) => {
+            println!("formatted: {}", path.display());
+            0
+        }
+        Ok(false) => {
+            println!("ok: {} already formatted", path.display());
+            0
+        }
+        Err(e) => {
+            eprintln!("error: cannot format {}: {e}", path.display());
+            1
+        }
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -635,6 +678,16 @@ pub fn run() {
                         Ok((new_cfg, warnings)) => {
                             for w in &warnings {
                                 eprintln!("config warning [{}]: {}", w.window, w.message);
+                            }
+                            // Format-on-save: rewrite in house style on a clean reload. The write
+                            // is diff-guarded, so an already-formatted file is a no-op; if it does
+                            // rewrite, the resulting watch event reconciles to the same config and
+                            // formats to a no-op — no loop. Formatting only touches whitespace, so
+                            // `new_cfg` (parsed pre-format) matches the formatted file's config.
+                            if new_cfg.format_on_save {
+                                if let Err(e) = config_core::format_file(&watch_path) {
+                                    eprintln!("config format error: {e}");
+                                }
                             }
                             reload_windows(&app_handle, &cfg, &new_cfg);
                             cfg = new_cfg;

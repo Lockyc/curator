@@ -27,6 +27,9 @@ toml = "0.8"
 url = "2"
 notify = "6"
 dirs = "5"
+# Shared, domain-free TOML config primitives (house-style `fmt`, colour parsing) used by both
+# curator and warden — git dep so the build-from-source install flow needs no extra setup.
+config-core = { git = "https://github.com/Lockyc/config-core" }
 
 # For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate.
 [target.'cfg(target_os = "macos")'.dependencies]

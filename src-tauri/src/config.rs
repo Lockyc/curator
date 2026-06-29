@@ -20,6 +20,11 @@ pub struct Config {
     /// Force dark appearance app-wide (applied per window at setup). Omit/false = follow system.
     #[serde(default)]
     pub dark_mode: bool,
+    /// Reformat the config file in place (house style) on a clean hot-reload. Default false.
+    /// The rewrite is diff-guarded, so an already-formatted file is a no-op and the writer can't
+    /// loop its own watcher. Also available on demand via `curator fmt`.
+    #[serde(default)]
+    pub format_on_save: bool,
     /// Hosts whose self-signed/invalid TLS curator accepts. Process-wide (WebKit-global).
     #[serde(default)]
     pub allow_insecure: Vec<String>,
@@ -60,12 +65,10 @@ pub struct WindowConfig {
     pub groups: Vec<Group>,
 }
 
-/// True for a `#rgb` or `#rrggbb` hex colour — the forms the chrome banner accepts.
+/// True for a `#rgb` or `#rrggbb` hex colour — the forms the chrome banner accepts. Delegates to
+/// the shared `config_core` parser so curator and warden validate accent colours identically.
 fn is_hex_colour(s: &str) -> bool {
-    let Some(hex) = s.strip_prefix('#') else {
-        return false;
-    };
-    (hex.len() == 3 || hex.len() == 6) && hex.bytes().all(|b| b.is_ascii_hexdigit())
+    config_core::Colour::parse(s).is_ok()
 }
 
 /// The shared app-wide login store used by any tab that sets no `session` (and whose window

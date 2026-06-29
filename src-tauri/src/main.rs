@@ -6,8 +6,21 @@ fn main() {
         Some("validate") => std::process::exit(curator_lib::validate_cli(
             args.get(2).map(std::path::PathBuf::from),
         )),
+        Some("fmt") => {
+            let mut check = false;
+            let mut path = None;
+            for a in &args[2..] {
+                match a.as_str() {
+                    "--check" => check = true,
+                    p => path = Some(std::path::PathBuf::from(p)),
+                }
+            }
+            std::process::exit(curator_lib::fmt_cli(check, path));
+        }
         Some(other) => {
-            eprintln!("unknown command: {other}\nusage: curator [validate [path]]");
+            eprintln!(
+                "unknown command: {other}\nusage: curator [validate [path] | fmt [--check] [path]]"
+            );
             std::process::exit(2);
         }
         None => curator_lib::run(),
