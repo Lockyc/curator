@@ -1,19 +1,26 @@
 # Example curator config. Copy to ~/.config/curator/config.toml and edit.
-# Order of groups and tabs is the render order. Required per tab: title, url.
+# Order of tabs and groups is the render order. Required per tab: title, url.
 #
 # curator opens one window per [[window]] block.
 #
-# Loading & notifications: a tab marked `always_load` is loaded at launch and kept live, so it
-# keeps syncing and can fire native banners / report unread in the background. Tabs without it
-# are lazy (loaded on first click) and don't notify in the background until you open them. There
-# is no per-window switch — `always_load` is the only knob.
+# Tabs: a window's tabs may be loose (ungrouped) or organised into [[window.group]] sections.
+# Loose [[window.tab]] blocks render first, in a leading headerless section; each group then
+# renders under its name. A window can mix the two, or use only loose tabs. Tab titles are
+# unique window-wide (across loose + grouped); group names are unique within a window.
+#
+# Loading & notifications: a tab marked `load_on_open` is loaded when its window opens and kept
+# live, so it keeps syncing and can fire native banners / report unread in the background. Tabs
+# without it are lazy (loaded on first click) and don't notify in the background until you open
+# them. There is no per-window switch — `load_on_open` is the only knob.
 #
 # Logins: by default every tab shares one app-wide store, so signing into a provider covers
 # its related services (Gmail + Calendar share your Google login). To give a tab its own
 # account, set `session = "name"` on the tab; reuse the same name on other tabs (in any
-# window) to share that login. A window-level `session` is the default for its tabs. Resolution
-# is tab.session → window.session → shared default. Logins follow the session name, so renaming
-# a window or editing a URL never signs you out.
+# window) to share that login. A window-level `session` is the default for its tabs, and a
+# top-level `session` (below) is the app-wide default. Resolution is
+# tab.session → window.session → top-level session → built-in "default"; an empty `session = ""`
+# at any level opts out and falls through. Logins follow the session name, so renaming a window
+# or editing a URL never signs you out.
 #
 # `just dev` loads this file (via CURATOR_CONFIG) so you can try it without touching
 # your real ~/.config/curator/config.toml.
@@ -25,14 +32,22 @@
 # Applied at launch — restart to change.
 # allow_insecure = ["192.168.1.1"]
 
+# App-wide default login store (bottom of the session chain). Omit → built-in "default".
+# session = "personal"
+
 # ─── Window 1: Keepers ────────────────────────────────────────────────────────
 # Dashboards and docs. Tabs are lazy by default (loaded on first click); none are kept live,
-# so this window stays quiet.
+# so this window stays quiet. It opens with a loose tab above the grouped sections.
 
 [[window]]
 title           = "Keepers"
 colour          = "#0f8a8a"   # optional accent: name banner + faint navbar tint (per-window identity)
 open_on_launch  = "Grafana"   # open this tab on launch instead of the blank screen
+
+  # Loose (ungrouped) tab — renders first, in a headerless section above the groups below.
+  [[window.tab]]
+  title = "Start"
+  url   = "https://duckduckgo.com/"
 
   [[window.group]]
   name = "Dashboards"
@@ -40,7 +55,7 @@ open_on_launch  = "Grafana"   # open this tab on launch instead of the blank scr
     [[window.group.tab]]
     title        = "Grafana"
     url          = "https://play.grafana.org/"
-    always_load  = true   # preload + keep warm from launch (default false)
+    load_on_open = true   # preload + keep warm from window open (default false)
     reload_every = 5      # auto-refresh every 5 minutes
 
     [[window.group.tab]]
@@ -70,7 +85,7 @@ open_on_launch  = "Grafana"   # open this tab on launch instead of the blank scr
     url   = "https://tauri.app/"
 
 # ─── Window 2: Comms ──────────────────────────────────────────────────────────
-# Chat apps you want live: each is `always_load`, so it stays loaded in the background, fires
+# Chat apps you want live: each is `load_on_open`, so it stays loaded in the background, fires
 # native banners on new messages, and rolls its unread count up to the dock badge.
 
 [[window]]
@@ -80,14 +95,14 @@ title = "Comms"
   name = "Chat"
 
     [[window.group.tab]]
-    title       = "Mattermost"
-    url         = "https://community.mattermost.com/"
-    always_load = true   # keep live so it notifies even when it isn't the active tab
+    title        = "Mattermost"
+    url          = "https://community.mattermost.com/"
+    load_on_open = true   # keep live so it notifies even when it isn't the active tab
 
     [[window.group.tab]]
-    title       = "Slack"
-    url         = "https://app.slack.com/"
-    always_load = true
+    title        = "Slack"
+    url          = "https://app.slack.com/"
+    load_on_open = true
     # session = "work"   # give this tab its own login store (e.g. a separate account)
 
   [[window.group]]
@@ -96,6 +111,6 @@ title = "Comms"
     [[window.group.tab]]
     # ntfy.sh is an open-source push-notification service. Replace with your self-hosted
     # instance URL (e.g. https://ntfy.example.com/) — the tab renders the ntfy web UI.
-    title       = "ntfy"
-    url         = "https://ntfy.sh/app"
-    always_load = true
+    title        = "ntfy"
+    url          = "https://ntfy.sh/app"
+    load_on_open = true

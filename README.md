@@ -30,8 +30,9 @@ file-driven, everything else is ephemeral.
 ## Model
 
 - **`config.toml` is the source of truth** — each `[[window]]` block opens one window,
-  containing `[[window.group]]` and `[[window.group.tab]]` entries. No in-app pin/unpin;
-  you curate by editing the file (hot-reloaded on save).
+  containing loose `[[window.tab]]` entries and/or `[[window.group]]` sections of
+  `[[window.group.tab]]`s. No in-app pin/unpin; you curate by editing the file (hot-reloaded
+  on save).
 - **Multiple windows** — each `[[window]]` opens its own window with its own tab list. All
   open at launch; ⌘W closes any non-last window and the **Window** menu reopens it.
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
@@ -47,7 +48,7 @@ file-driven, everything else is ephemeral.
 - **Page-first chrome** — the active page fills the window edge-to-edge, painting under an
   overlay title bar; the native title bar (with traffic lights, draggable) is exposed only
   as a strip above the sidebar tab list.
-- **`always_load` keeps a tab live** — mark a chat/service `always_load` and it loads at
+- **`load_on_open` keeps a tab live** — mark a chat/service `load_on_open` and it loads at
   launch, stays live in the background, fires native banners, and rolls its unread count up
   to the dock badge. Tabs without it are lazy and stay quiet until you open them. That one
   per-tab flag is the only knob — no per-window modes.
@@ -106,12 +107,14 @@ manual / contributor flow.
 
 ## Config
 
-curator opens one window per `[[window]]` block. Each window inlines its groups and tabs:
+curator opens one window per `[[window]]` block. A window's tabs may be loose (ungrouped) or
+organised into groups; loose tabs render first in a headerless section, then each group:
 
 ```toml
 # App-global options
 # dark_mode     = true            # force dark appearance; omit = follow system
 # allow_insecure = ["192.168.1.1"] # accept self-signed TLS for these hosts
+# session       = "personal"      # app-wide default login store (bottom of the session chain)
 
 [[window]]
 title         = "Keepers"          # required; must be unique across windows
@@ -119,13 +122,18 @@ title         = "Keepers"          # required; must be unique across windows
 # height      = 1000
 # open_on_launch = "Grafana"       # true/false/"Tab Title"
 
+  # Loose (ungrouped) tab — renders first, in a headerless section above the groups.
+  [[window.tab]]
+  title = "Start"
+  url   = "https://duckduckgo.com/"
+
   [[window.group]]
   name = "Dashboards"
 
     [[window.group.tab]]
     title        = "Grafana"
     url          = "https://play.grafana.org/"
-    always_load  = true    # load at launch + keep live
+    load_on_open = true    # load at launch + keep live
     reload_every = 5       # auto-refresh every 5 minutes
 
 [[window]]
@@ -137,7 +145,7 @@ title = "Comms"
     [[window.group.tab]]
     title       = "Mattermost"
     url         = "https://community.mattermost.com/"
-    always_load = true     # kept live → fires banners + unread in the background
+    load_on_open = true     # kept live → fires banners + unread in the background
 ```
 
 ### Per-window options
@@ -151,13 +159,15 @@ title = "Comms"
 
 ### Per-tab options
 
-Each `[[window.group.tab]]` requires `title` and `url`. Optional:
+Each tab (loose `[[window.tab]]` or grouped `[[window.group.tab]]`) requires `title` and `url`.
+Tab titles must be unique window-wide (across loose + grouped); group names unique within a
+window. Optional:
 
 | Field          | Type         | Default | Meaning                                         |
 |----------------|--------------|---------|--------------------------------------------------|
-| `always_load`  | bool         | `false` | Load at launch and keep the tab live in the background, so it fires native banners and reports unread even when it isn't the active tab. |
+| `load_on_open` | bool         | `false` | Load when the window opens and keep the tab live in the background, so it fires native banners and reports unread even when it isn't the active tab. |
 | `reload_every` | positive int | none    | Auto-refresh the canonical URL every N minutes.  |
-| `session`      | string       | none    | Login store for this tab. Tabs sharing a value share a login (even across windows); distinct values are isolated accounts. Falls back to the window's `session`, then a shared app-wide store. A blank or whitespace-only value is treated as unset and falls through the chain. |
+| `session`      | string       | none    | Login store for this tab. Tabs sharing a value share a login (even across windows); distinct values are isolated accounts. Falls back to the window's `session`, then the app-wide top-level `session`, then the shared default. A blank or whitespace-only value is treated as unset and falls through the chain. |
 
 ### App-global options
 
@@ -165,6 +175,12 @@ Each `[[window.group.tab]]` requires `title` and `url`. Optional:
 |------------------|---------------|---------|-----------------------------------------------------------------------------------------------|
 | `dark_mode`      | bool          | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark.                  |
 | `allow_insecure` | list of hosts | `[]`    | Accept self-signed/invalid TLS certs for these hosts. Applied at launch (restart to change).  |
+| `session`        | string        | none    | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). |
+
+Run **`curator validate [path]`** to check a config without launching: it prints the resolved
+window/tab tree (each tab's cascaded session) and any non-fatal warnings (e.g. a URL repeated
+within a window), exiting non-zero on a parse/validation error. A bad config never crashes the
+app either — it keeps the last-good config running behind an error banner.
 
 Tabs are lazy by default: a webview is created on first activation and kept warm for the
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free

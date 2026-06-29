@@ -315,15 +315,11 @@ impl WindowConfig {
         // Loose tabs (group `None`) first, then each group's tabs (group `Some(name)`), all in
         // file order, sharing one url-label dedup map so duplicate URLs across the window still
         // get distinct labels.
-        let entries = self
-            .tabs
-            .iter()
-            .map(|t| (t, Option::<String>::None))
-            .chain(
-                self.groups
-                    .iter()
-                    .flat_map(|g| g.tabs.iter().map(move |t| (t, Some(g.name.clone())))),
-            );
+        let entries = self.tabs.iter().map(|t| (t, Option::<String>::None)).chain(
+            self.groups
+                .iter()
+                .flat_map(|g| g.tabs.iter().map(move |t| (t, Some(g.name.clone())))),
+        );
         for (tab, group) in entries {
             let base = url_label(&tab.url);
             let n = seen.entry(base.clone()).or_insert(0);
@@ -407,10 +403,9 @@ reload_every = 15
     fn per_window_size_defaults_and_overrides() {
         let cfg = parse_and_validate(VALID).unwrap().0;
         assert_eq!((cfg.windows[0].width, cfg.windows[0].height), (1500, 1000));
-        let cfg =
-            parse_and_validate(&with_window_keys("Comms", "width = 1680\nheight = 1120"))
-                .unwrap()
-                .0;
+        let cfg = parse_and_validate(&with_window_keys("Comms", "width = 1680\nheight = 1120"))
+            .unwrap()
+            .0;
         assert_eq!((cfg.windows[0].width, cfg.windows[0].height), (1680, 1120));
     }
 

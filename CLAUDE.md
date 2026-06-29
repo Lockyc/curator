@@ -13,6 +13,29 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 (`config::resolve_config_path`). `just dev` sets `CURATOR_CONFIG` to the repo's
 `examples/config.toml` so dev runs never touch a real user config.
 
+`curator validate [path]` (arg-dispatched in `main.rs` before Tauri starts → `validate_cli` in
+`lib.rs`) loads + validates a config and prints the resolved window/tab tree (with each tab's
+cascaded session) plus any warnings. Exit 0 ok / 1 load error / 2 unknown command.
+
+## Config schema
+
+A window's tabs may be **loose** (`[[window.tab]]`) or grouped (`[[window.group]]` →
+`[[window.group.tab]]`); a window can mix both or use only loose tabs (groups are no longer
+required). `tab_views` flattens to one ordered list — loose tabs first as a headerless section
+(`TabView.group = None`), then each group in file order (`Some(name)`) — and the chrome renders a
+section header only for `Some`. Per-tab fields: `title`, `url` (both required, non-empty),
+`load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `session`.
+
+Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
+window title, zero window dimension, invalid colour, empty group name, dup group name within a
+window, dup tab title window-wide (across loose + grouped), empty tab title/url, unparseable url,
+zero `reload_every`. It also returns a **warnings** channel (`Vec<Warning>`, non-fatal) — first
+producer: a URL repeated within a window (the URL-hash labels still disambiguate, so it loads but
+warns). `parse_and_validate`/`load_config` return `(Config, Vec<Warning>)`; warnings are
+`eprintln`'d on load/hot-reload and printed by `curator validate`. Tab identity stays the
+URL-hash label (`url_label`), not the title — titles are display labels (hence the new title
+uniqueness, which removes the silent `open_on_launch` first-match ambiguity).
+
 ## Architecture
 
 **Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
@@ -22,12 +45,16 @@ window id is purely a label key — run-ephemeral, nothing persistent tied to it
 window's `title` is harmless.
 
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
-resolved `session` string via the chain `tab.session → window.session → DEFAULT_SESSION`
-(`config.rs` builds `TabView::session`; `session::data_store_id` hashes it). Tabs sharing a
-session string share a login (even across windows); distinct strings are isolated accounts.
-With no `session` set anywhere, all tabs share one app-wide store, so SSO across related
-services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not the window or
-URL — renaming a window or editing a tab's URL never logs you out.
+resolved `session` string via the full cascade
+`tab.session → window.session → top-level Config.session → DEFAULT_SESSION`
+(`config.rs` builds `TabView::session` in `tab_views(global_session)`; `session::data_store_id`
+hashes it). An explicit `session = ""` at any level is treated as unset and falls through to the
+next. Tabs sharing a session string share a login (even across windows); distinct strings are
+isolated accounts. With no `session` set anywhere, all tabs share one app-wide store, so SSO
+across related services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not
+the window or URL — renaming a window or editing a tab's URL never logs you out. (The top-level
+`Config.session` is captured per window in `WindowRuntime.global_session` so commands and
+menu-reopen re-resolve the chain without the whole `Config`.)
 
 **Sentinels are key-gated.** The notification/badge/escape shims signal the Rust side by
 navigating to dead sentinel hosts (`curator.*.invalid`) that `on_navigation` intercepts — no
@@ -37,19 +64,19 @@ required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel wit
 page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
 sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
 
-**Loading is driven solely by per-tab `always_load`** — there are no per-window mode flags.
+**Loading is driven solely by per-tab `load_on_open`** — there are no per-window mode flags.
 Every content webview gets the full shim set (escape-click, visibility, notification, badge),
 so any *loaded* tab can fire native banners and report unread. It also gets a `tauri-guard`
 shim, injected first: `withGlobalTauri` leaks the notification plugin's guest init into remote
 pages, which eagerly probes `plugin:notification|is_permission_granted` over IPC — denied by ACL
 for content webviews — and the uncaught rejection trips a page's own error handler (Forgejo's
 crashes on it). The guard swallows exactly that rejection (capture phase, scoped to the command).
-`always_load` tabs are created
+`load_on_open` tabs are created
 at launch and kept live (never hidden — `apply_active` in `webviews.rs` shows them behind the
-active tab), so they keep syncing and notify in the background. Tabs without `always_load` are
+active tab), so they keep syncing and notify in the background. Tabs without `load_on_open` are
 lazy (created on first click) and hidden when inactive (throttled → no background notifications,
 by choice — same as unloading). `apply_active` is the single switch primitive: show+raise the
-active tab, keep `always_load` tabs shown, hide the rest.
+active tab, keep `load_on_open` tabs shown, hide the rest.
 
 **Dock badge** aggregates the unread count across every window's loaded tabs.
 
@@ -127,6 +154,6 @@ and any CI only have what's in the tree.
   style (`indent_tables`, `indent_entries`, `align_entries`, `align_comments`,
   `reorder_keys=false`) and rewrites the file diff-guarded (only if bytes change) + atomically
   (temp file + rename), so the writer can't loop its own watcher; it only ever rewrites on a
-  clean parse. curator has the same watcher + config shape but **no CLI binary** (it's
-  app-only), so the natural home here is the reload path alone — or grow a small bin. **Not
-  implemented yet.**
+  clean parse. curator has the same watcher + config shape, and now also a CLI dispatch in
+  `main.rs` (`curator validate`), so a `curator fmt [--check]` subcommand could mirror warden's
+  alongside a reload-path formatter. **Not implemented yet.**
