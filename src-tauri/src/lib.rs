@@ -76,6 +76,9 @@ fn spawn_reload_timers(window: &tauri::Window, views: &[config::TabView], cancel
 /// The whole app's window registry, keyed by window id (== window label == chrome prefix).
 pub struct AppState {
     pub windows: Mutex<HashMap<String, WindowRuntime>>,
+    /// Current app-wide `dark_mode`, kept live across hot-reload so Window-menu reopen themes a
+    /// window to match every other open window (not the stale launch-time value).
+    pub dark_mode: AtomicBool,
 }
 
 impl AppState {
@@ -229,6 +232,8 @@ pub(crate) fn on_real_window_close(app: &tauri::AppHandle, window_id: &str) -> b
 fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &config::Config) {
     let diff = watcher::diff_windows(old_cfg, new_cfg);
     let state = app.state::<AppState>();
+    // Keep the live dark_mode current so a later Window-menu reopen themes to match.
+    state.dark_mode.store(new_cfg.dark_mode, Ordering::Relaxed);
 
     // Closed windows: drop the window and its runtime, and stop its reload timers. Use
     // `destroy()` (not `close()`) so this programmatic removal bypasses the user-close guard in
@@ -636,6 +641,7 @@ pub fn run() {
             }
             app.manage(AppState {
                 windows: Mutex::new(runtimes),
+                dark_mode: AtomicBool::new(cfg.dark_mode),
             });
 
             // No windows opened — either the config failed to parse or it defines no
@@ -648,7 +654,7 @@ pub fn run() {
             }
 
             // Extract what we need from cfg before the watcher thread takes ownership of it.
-            let dark_mode = cfg.dark_mode;
+            // (dark_mode lives in AppState now so reopen reads the live value, not this snapshot.)
             let window_titles: Vec<(String, String)> = cfg
                 .windows
                 .iter()
@@ -767,6 +773,9 @@ pub fn run() {
                                 .map(|rt| (rt.cfg.clone(), rt.global_session.clone()))
                         };
                         if let Some((cfg, global_session)) = snapshot {
+                            // Read the live dark_mode (not the launch-time capture) so a reopened
+                            // window matches the theme of every other window after a config flip.
+                            let dark_mode = state.dark_mode.load(Ordering::Relaxed);
                             if let Ok((new_wid, rt)) =
                                 open_window(app, dark_mode, global_session.as_deref(), &cfg)
                             {
