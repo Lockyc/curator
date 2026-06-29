@@ -101,6 +101,8 @@ pub enum ConfigError {
     Parse(toml::de::Error),
     EmptyField(&'static str),
     DuplicateWindowTitle(String),
+    DuplicateTabTitle { window: String, title: String },
+    DuplicateGroupName { window: String, name: String },
     InvalidUrl { title: String, url: String },
     ZeroReload(String),
     InvalidWindowSize { width: u32, height: u32 },
@@ -114,6 +116,12 @@ impl std::fmt::Display for ConfigError {
             ConfigError::Parse(e) => write!(f, "invalid TOML: {e}"),
             ConfigError::EmptyField(field) => write!(f, "empty {field}"),
             ConfigError::DuplicateWindowTitle(t) => write!(f, "duplicate window title: {t}"),
+            ConfigError::DuplicateTabTitle { window, title } => {
+                write!(f, "window {window:?} has duplicate tab title: {title:?}")
+            }
+            ConfigError::DuplicateGroupName { window, name } => {
+                write!(f, "window {window:?} has duplicate group name: {name:?}")
+            }
             ConfigError::InvalidUrl { title, url } => {
                 write!(f, "tab \"{title}\" has invalid url: {url}")
             }
@@ -173,15 +181,37 @@ pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
                 });
             }
         }
+        // Uniqueness is window-wide for tab titles (across loose + grouped) and per-window for
+        // group names — both keep the URL-hash labels and the menu/CLI unambiguous.
+        let mut tab_titles = std::collections::HashSet::new();
+        let mut group_names = std::collections::HashSet::new();
         for tab in &w.tabs {
             validate_tab(tab)?;
+            if !tab_titles.insert(tab.title.clone()) {
+                return Err(ConfigError::DuplicateTabTitle {
+                    window: w.title.clone(),
+                    title: tab.title.clone(),
+                });
+            }
         }
         for group in &w.groups {
             if group.name.trim().is_empty() {
                 return Err(ConfigError::EmptyField("name"));
             }
+            if !group_names.insert(group.name.clone()) {
+                return Err(ConfigError::DuplicateGroupName {
+                    window: w.title.clone(),
+                    name: group.name.clone(),
+                });
+            }
             for tab in &group.tabs {
                 validate_tab(tab)?;
+                if !tab_titles.insert(tab.title.clone()) {
+                    return Err(ConfigError::DuplicateTabTitle {
+                        window: w.title.clone(),
+                        title: tab.title.clone(),
+                    });
+                }
             }
         }
     }
@@ -601,6 +631,48 @@ title = "W"
         assert!(matches!(
             parse_and_validate(src),
             Err(ConfigError::EmptyField("url"))
+        ));
+    }
+
+    #[test]
+    fn duplicate_tab_title_window_wide_errors() {
+        let src = r#"
+[[window]]
+title = "W"
+  [[window.tab]]
+  title = "Dup"
+  url = "https://a.test/"
+  [[window.group]]
+  name = "G"
+    [[window.group.tab]]
+    title = "Dup"
+    url = "https://b.test/"
+"#;
+        assert!(matches!(
+            parse_and_validate(src),
+            Err(ConfigError::DuplicateTabTitle { .. })
+        ));
+    }
+
+    #[test]
+    fn duplicate_group_name_errors() {
+        let src = r#"
+[[window]]
+title = "W"
+  [[window.group]]
+  name = "G"
+    [[window.group.tab]]
+    title = "A"
+    url = "https://a.test/"
+  [[window.group]]
+  name = "G"
+    [[window.group.tab]]
+    title = "B"
+    url = "https://b.test/"
+"#;
+        assert!(matches!(
+            parse_and_validate(src),
+            Err(ConfigError::DuplicateGroupName { .. })
         ));
     }
 
