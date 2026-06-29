@@ -23,6 +23,12 @@ pub struct Config {
     /// Hosts whose self-signed/invalid TLS curator accepts. Process-wide (WebKit-global).
     #[serde(default)]
     pub allow_insecure: Vec<String>,
+    /// App-wide default login store — the bottom of the session chain
+    /// (`tab.session → window.session → this → DEFAULT_SESSION`). Set it to make every tab that
+    /// doesn't override share one store. Omit → the built-in `DEFAULT_SESSION`. An explicit
+    /// `session = ""` is treated as unset and falls through to `DEFAULT_SESSION`.
+    #[serde(default)]
+    pub session: Option<String>,
     #[serde(default, rename = "window")]
     pub windows: Vec<WindowConfig>,
 }
@@ -595,6 +601,39 @@ reload_every = 15
             parse_and_validate(blank).unwrap().windows[0].tab_views(None)[0].session,
             DEFAULT_SESSION
         );
+    }
+
+    #[test]
+    fn session_cascades_from_global() {
+        let src = r#"
+session = "shared"
+[[window]]
+title = "W"
+  [[window.tab]]
+  title = "T"
+  url = "https://t.test/"
+"#;
+        let cfg = parse_and_validate(src).unwrap();
+        let views = cfg.windows[0].tab_views(cfg.session.as_deref());
+        assert_eq!(views[0].session, "shared");
+    }
+
+    #[test]
+    fn empty_session_opts_out_to_default() {
+        // Window session "" opts out of the global; the tab is unset → falls through the chain
+        // to the global "shared".
+        let src = r#"
+session = "shared"
+[[window]]
+title = "W"
+session = ""
+  [[window.tab]]
+  title = "T"
+  url = "https://t.test/"
+"#;
+        let cfg = parse_and_validate(src).unwrap();
+        let views = cfg.windows[0].tab_views(cfg.session.as_deref());
+        assert_eq!(views[0].session, "shared");
     }
 
     #[test]

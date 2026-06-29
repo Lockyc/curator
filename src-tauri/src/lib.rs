@@ -27,6 +27,9 @@ fn theme_for(dark_mode: bool) -> Option<Theme> {
 /// (per-tab unread + which tabs have gone Badging-authoritative) feeding the dock badge.
 pub struct WindowRuntime {
     pub cfg: config::WindowConfig,
+    /// App-wide session base (`Config.session`) captured for this window, so commands and reopen
+    /// can re-resolve the session chain without the whole `Config`. Kept in sync on hot-reload.
+    pub global_session: Option<String>,
     pub tabs: webviews::TabState,
     pub unread: HashMap<String, awareness::Unread>,
     pub badge_authoritative: HashSet<String>,
@@ -91,6 +94,7 @@ impl AppState {
 fn open_window(
     handle: &tauri::AppHandle,
     dark_mode: bool,
+    global_session: Option<&str>,
     win_cfg: &config::WindowConfig,
 ) -> tauri::Result<(String, WindowRuntime)> {
     let wid = identity::window_id(&win_cfg.title);
@@ -103,7 +107,7 @@ fn open_window(
     )?;
     window.set_theme(theme_for(dark_mode))?;
 
-    let views = win_cfg.tab_views(None);
+    let views = win_cfg.tab_views(global_session);
     let mut tabs = webviews::TabState::default();
 
     // Eager-create the `load_on_open` tabs: they load at launch and stay live (never hidden), so
@@ -115,7 +119,7 @@ fn open_window(
 
     // Active tab: whatever `open_on_launch` resolves to, else the first load_on_open tab (so a
     // window of background services opens showing one of them rather than the blank placeholder).
-    let active = win_cfg.startup_label(None).or_else(|| {
+    let active = win_cfg.startup_label(global_session).or_else(|| {
         views
             .iter()
             .find(|v| v.load_on_open)
@@ -142,6 +146,7 @@ fn open_window(
         wid,
         WindowRuntime {
             cfg: win_cfg.clone(),
+            global_session: global_session.map(str::to_string),
             tabs,
             unread: HashMap::new(),
             badge_authoritative: HashSet::new(),
@@ -224,7 +229,9 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
             .iter()
             .find(|w| &identity::window_id(&w.title) == id)
         {
-            if let Ok((wid, rt)) = open_window(app, new_cfg.dark_mode, win_cfg) {
+            if let Ok((wid, rt)) =
+                open_window(app, new_cfg.dark_mode, new_cfg.session.as_deref(), win_cfg)
+            {
                 state.windows.lock().unwrap().insert(wid, rt);
             }
         }
@@ -244,11 +251,12 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
             // so reopening it from the Window menu uses the latest config, not a stale snapshot.
             if let Some(rt) = state.windows.lock().unwrap().get_mut(id) {
                 rt.cfg = win_cfg.clone();
+                rt.global_session = new_cfg.session.clone();
             }
             continue;
         };
         let _ = window.set_theme(theme_for(new_cfg.dark_mode));
-        reconcile_window_tabs(&state, &window, id, win_cfg);
+        reconcile_window_tabs(&state, &window, id, new_cfg.session.as_deref(), win_cfg);
     }
 
     // Keep the fallback error window in sync with whether any real window exists: close it once
@@ -295,9 +303,10 @@ fn reconcile_window_tabs(
     state: &AppState,
     window: &tauri::Window,
     window_id: &str,
+    global_session: Option<&str>,
     win_cfg: &config::WindowConfig,
 ) {
-    let views = win_cfg.tab_views(None);
+    let views = win_cfg.tab_views(global_session);
     let keep: HashSet<String> = views.iter().map(|v| v.label.clone()).collect();
 
     // Decide everything under the lock, but perform the webview ops AFTER releasing it.
@@ -311,6 +320,7 @@ fn reconcile_window_tabs(
             return;
         };
         rt.cfg = win_cfg.clone();
+        rt.global_session = global_session.map(str::to_string);
 
         // Orphans: created tabs no longer in the config (removed, or URL/label changed). Forget
         // all their state; the webviews are closed after the lock is dropped.
@@ -490,7 +500,8 @@ pub fn run() {
             let handle = app.handle().clone();
             let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
             for win_cfg in &cfg.windows {
-                let (wid, rt) = open_window(&handle, cfg.dark_mode, win_cfg)?;
+                let (wid, rt) =
+                    open_window(&handle, cfg.dark_mode, cfg.session.as_deref(), win_cfg)?;
                 runtimes.insert(wid, rt);
             }
             app.manage(AppState {
@@ -599,12 +610,16 @@ pub fn run() {
                         // Clone the cfg and drop the lock before calling open_window to avoid
                         // holding the registry lock across webview construction.
                         let state = app.state::<AppState>();
-                        let win_cfg = {
+                        let snapshot = {
                             let windows = state.windows.lock().unwrap();
-                            windows.get(wid).map(|rt| rt.cfg.clone())
+                            windows
+                                .get(wid)
+                                .map(|rt| (rt.cfg.clone(), rt.global_session.clone()))
                         };
-                        if let Some(cfg) = win_cfg {
-                            if let Ok((new_wid, rt)) = open_window(app, dark_mode, &cfg) {
+                        if let Some((cfg, global_session)) = snapshot {
+                            if let Ok((new_wid, rt)) =
+                                open_window(app, dark_mode, global_session.as_deref(), &cfg)
+                            {
                                 state.windows.lock().unwrap().insert(new_wid, rt);
                             }
                         }
