@@ -94,7 +94,7 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     }
     rt.tabs.set_active(&label);
 
-    // Raise the selected tab; always_load tabs stay live behind it, others are hidden.
+    // Raise the selected tab; load_on_open tabs stay live behind it, others are hidden.
     webviews::apply_active(&window, Some(&label), &views).map_err(|e| e.to_string())
 }
 
@@ -177,9 +177,9 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     if let Some(wv) = window.get_webview(&label) {
         wv.close().map_err(|e| e.to_string())?;
     }
-    // Mark unloaded. If this was the active tab, promote an already-live `always_load` tab to
+    // Mark unloaded. If this was the active tab, promote an already-live `load_on_open` tab to
     // active (mirroring launch's active-resolution) and relayout after the lock drops — without
-    // this the content area would strand a still-shown `always_load` webview behind a sidebar
+    // this the content area would strand a still-shown `load_on_open` webview behind a sidebar
     // that highlights nothing. If it wasn't active, the layout is untouched.
     let relayout = {
         let mut windows = state.windows.lock().unwrap();
@@ -192,7 +192,7 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
             let views = rt.cfg.tab_views();
             let new_active = views
                 .iter()
-                .find(|v| v.always_load && v.label != label && rt.tabs.is_created(&v.label))
+                .find(|v| v.load_on_open && v.label != label && rt.tabs.is_created(&v.label))
                 .map(|v| v.label.clone());
             if let Some(a) = &new_active {
                 rt.tabs.set_active(a);

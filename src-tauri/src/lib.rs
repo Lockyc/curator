@@ -84,7 +84,7 @@ impl AppState {
     }
 }
 
-/// Build one window from its config: eager-create its `always_load` tabs (loaded at launch and
+/// Build one window from its config: eager-create its `load_on_open` tabs (loaded at launch and
 /// kept live), lazily defer the rest, lay them out around the active tab (`apply_active`), and
 /// start per-tab reload timers. Returns the window id and its fresh `WindowRuntime` for the
 /// caller to register. Shared by setup and hot-reload.
@@ -106,19 +106,19 @@ fn open_window(
     let views = win_cfg.tab_views();
     let mut tabs = webviews::TabState::default();
 
-    // Eager-create the `always_load` tabs: they load at launch and stay live (never hidden), so
+    // Eager-create the `load_on_open` tabs: they load at launch and stay live (never hidden), so
     // they keep syncing and can notify in the background. Everything else is lazy.
-    for v in views.iter().filter(|v| v.always_load) {
+    for v in views.iter().filter(|v| v.load_on_open) {
         webviews::create_content_webview(&window, v)?;
         tabs.mark_created(&v.label);
     }
 
-    // Active tab: whatever `open_on_launch` resolves to, else the first always_load tab (so a
+    // Active tab: whatever `open_on_launch` resolves to, else the first load_on_open tab (so a
     // window of background services opens showing one of them rather than the blank placeholder).
     let active = win_cfg.startup_label().or_else(|| {
         views
             .iter()
-            .find(|v| v.always_load)
+            .find(|v| v.load_on_open)
             .map(|v| v.label.clone())
     });
     if let Some(label) = &active {
@@ -289,7 +289,7 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
 }
 
 /// Reconcile one kept window's content webviews to its new config: eager-create newly-added
-/// always_load tabs (others stay lazy), close orphaned webviews and drop their
+/// load_on_open tabs (others stay lazy), close orphaned webviews and drop their
 /// unread/authoritative state, recompute the dock badge, then re-apply the active layout.
 fn reconcile_window_tabs(
     state: &AppState,
@@ -321,11 +321,11 @@ fn reconcile_window_tabs(
             rt.badge_authoritative.remove(label);
         }
 
-        // Eager-create newly-added always_load tabs so they're live immediately; others stay
+        // Eager-create newly-added load_on_open tabs so they're live immediately; others stay
         // lazy. Mark created here; build after the lock is dropped.
         let mut to_create: Vec<config::TabView> = Vec::new();
         for v in &views {
-            if v.always_load && !rt.tabs.is_created(&v.label) {
+            if v.load_on_open && !rt.tabs.is_created(&v.label) {
                 rt.tabs.mark_created(&v.label);
                 to_create.push(v.clone());
             }
@@ -333,7 +333,7 @@ fn reconcile_window_tabs(
 
         // Resolve the active tab: keep the current one if it survived (mark_unloaded already
         // cleared it if it was orphaned), else fall back to open_on_launch or the first
-        // always_load tab. Ensure it's created.
+        // load_on_open tab. Ensure it's created.
         let active = rt
             .tabs
             .active()
@@ -342,7 +342,7 @@ fn reconcile_window_tabs(
             .or_else(|| {
                 views
                     .iter()
-                    .find(|v| v.always_load)
+                    .find(|v| v.load_on_open)
                     .map(|v| v.label.clone())
             });
         if let Some(a) = &active {

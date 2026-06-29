@@ -80,7 +80,7 @@ pub struct Tab {
     pub title: String,
     pub url: String,
     #[serde(default)]
-    pub always_load: bool,
+    pub load_on_open: bool,
     #[serde(default)]
     pub reload_every: Option<u64>,
     /// This tab's login store (top link of the session chain). Tabs sharing a `session` string
@@ -206,7 +206,7 @@ pub struct TabView {
     pub group: String,
     pub title: String,
     pub url: String,
-    pub always_load: bool,
+    pub load_on_open: bool,
     pub reload_every: Option<u64>,
     /// Resolved login store: `tab.session → window.session → DEFAULT_SESSION`. Tabs with the
     /// same value share a WebKit data store (one login); distinct values are isolated. Not
@@ -260,7 +260,7 @@ impl WindowConfig {
                     group: group.name.clone(),
                     title: tab.title.clone(),
                     url: tab.url.clone(),
-                    always_load: tab.always_load,
+                    load_on_open: tab.load_on_open,
                     reload_every: tab.reload_every,
                     session,
                 });
@@ -300,7 +300,7 @@ url = "https://mail.google.com/"
 [[window.group.tab]]
 title = "Calendar"
 url = "https://calendar.google.com/"
-always_load = true
+load_on_open = true
 reload_every = 15
 "#;
 
@@ -396,7 +396,7 @@ reload_every = 15
         assert_eq!(views.len(), 2);
         assert_eq!(views[0].title, "Gmail");
         assert_ne!(views[0].label, views[1].label);
-        assert!(views[1].always_load);
+        assert!(views[1].load_on_open);
         assert_eq!(views[1].reload_every, Some(15));
     }
 

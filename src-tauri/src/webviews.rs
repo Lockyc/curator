@@ -180,7 +180,7 @@ pub fn build_window(
 /// resolved `view.session` (tabs sharing a session string share a login; the default is one
 /// shared app-wide store). Every tab gets the full shim set, so any loaded tab can fire native
 /// banners and report unread — whether it notifies in the background is purely a function of
-/// whether it's kept live, which is what `always_load` controls (see `apply_active`).
+/// whether it's kept live, which is what `load_on_open` controls (see `apply_active`).
 pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
@@ -208,7 +208,7 @@ pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<
         // drop (emits a `tauri://drag-drop` event and returns `true`), which stops WKWebView from
         // ever seeing it — curator listens for no such event, so disabling it is pure gain. The
         // drop lands on the active tab only: `apply_active` raises it to the front of the
-        // superview, occluding the live-but-background `always_load` tabs across the content rect.
+        // superview, occluding the live-but-background `load_on_open` tabs across the content rect.
         .disable_drag_drop_handler()
         .data_store_identifier(crate::session::data_store_id(&view.session))
         .user_agent(DESKTOP_UA)
@@ -336,13 +336,13 @@ pub fn raise(window: &Window, label: &str) -> tauri::Result<()> {
 }
 
 /// Lay out a window's created webviews around the `active` tab: the active tab is shown and
-/// raised to the front; `always_load` tabs stay shown (live behind it, so they keep syncing and
+/// raised to the front; `load_on_open` tabs stay shown (live behind it, so they keep syncing and
 /// can notify in the background); every other created tab is hidden (and thus throttled). This
-/// is the single switching primitive — `always_load` alone decides what stays live.
+/// is the single switching primitive — `load_on_open` alone decides what stays live.
 pub fn apply_active(window: &Window, active: Option<&str>, views: &[TabView]) -> tauri::Result<()> {
     for v in views {
         if let Some(wv) = window.get_webview(&v.label) {
-            if v.always_load || Some(v.label.as_str()) == active {
+            if v.load_on_open || Some(v.label.as_str()) == active {
                 wv.show()?;
             } else {
                 wv.hide()?;

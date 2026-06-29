@@ -171,7 +171,7 @@ async function render() {
         e.stopPropagation();
         if (!unload.classList.contains("loaded")) return;
         await invoke("unload_tab", { label: t.label });
-        // Unloading the active tab makes Rust promote an always_load tab to active (or clear
+        // Unloading the active tab makes Rust promote an load_on_open tab to active (or clear
         // it); re-render so the active highlight and loaded dots follow the new state.
         await render();
       });
