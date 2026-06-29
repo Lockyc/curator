@@ -1,6 +1,11 @@
 * { box-sizing: border-box; }
 html, body { background: #1e1e1e; }   /* dark overscroll/rubber-band, not white */
-body { margin: 0; font: 13px -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+body {
+  margin: 0; font: 13px -apple-system, sans-serif; height: 100vh;
+  display: flex; flex-direction: column;
+  /* The sidebar is app chrome (navigation), not content — never let its labels be text-selected. */
+  -webkit-user-select: none; user-select: none; cursor: default;
+}
 #sidebar { flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #ddd; }
 /* Sticky section headers with a separator line above each group (so groups read as
    distinct sections, and the current section stays visible while scrolling a long list). */

@@ -18,8 +18,10 @@ function tintOverBase(hex, ratio) {
 }
 
 // Per-window sidebar width persistence. The width itself is owned by Rust (the sidebar is a
-// fixed-width webview), so we persist the user's chosen width in localStorage keyed by window
-// title and restore it by pushing it back to Rust on load.
+// fixed-width webview), so we persist the user's chosen *desired* width in localStorage keyed by
+// window title and restore it by pushing it back to Rust on load. We persist the desired width
+// (what the user dragged to), not the clamped width Rust applies for the current window size, so
+// growing the window later restores the intent up to the new cap.
 let widthKey = null;
 function saveSidebarWidth(w) {
   if (widthKey && w > 0) localStorage.setItem(widthKey, String(Math.round(w)));
@@ -33,7 +35,8 @@ function restoreSidebarWidth(title) {
 
 // Wire the right-edge resize grip: a drag pushes the target width (= pointer x within the sidebar
 // webview, whose left edge is the window's left edge) to Rust, coalesced to one call per frame;
-// double-click resets to the default. Rust clamps and echoes back the applied width to persist.
+// double-click resets to the default. Rust clamps for the current window size when it lays out,
+// but keeps the desired width, so we persist the desired (sent) value here for grow-recovery.
 // Keep in sync with `CHROME_W` in src-tauri/src/webviews.rs (the launch default Rust uses).
 const DEFAULT_SIDEBAR_W = 240;
 function initResize() {
@@ -41,8 +44,11 @@ function initResize() {
   let dragging = false;
   let pendingX = null;
   let raf = 0;
-  const setWidth = (w) =>
-    invoke("set_sidebar_width", { width: Math.round(w) }).then(saveSidebarWidth).catch(() => {});
+  const setWidth = (w) => {
+    // Persist the desired width we sent (not Rust's clamped echo) so window-grow recovers intent.
+    saveSidebarWidth(w);
+    invoke("set_sidebar_width", { width: Math.round(w) }).catch(() => {});
+  };
   const flush = () => {
     raf = 0;
     if (pendingX != null) {
@@ -251,9 +257,21 @@ async function render() {
 }
 
 async function select(label, el) {
-  await invoke("select_tab", { label });
-  for (const b of document.querySelectorAll(".tab")) b.classList.remove("active");
-  el.classList.add("active");
+  // Move the highlight optimistically (before the await) so held-key cycling (⌘]/⌘[) reads the
+  // new selection immediately instead of recomputing the same index until the IPC resolves.
+  const prev = [...document.querySelectorAll(".tab.active")];
+  if (!el.classList.contains("active")) {
+    for (const b of prev) b.classList.remove("active");
+    el.classList.add("active");
+  }
+  try {
+    await invoke("select_tab", { label });
+  } catch {
+    // Backend select failed — roll the highlight back to where it was.
+    el.classList.remove("active");
+    for (const b of prev) b.classList.add("active");
+    return;
+  }
   const u = el.querySelector(".unload"); // now warm
   if (u) setLoaded(u, true);
   updateNav();
