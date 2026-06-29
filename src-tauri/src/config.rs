@@ -16,6 +16,7 @@ impl Default for OpenOnLaunch {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Force dark appearance app-wide (applied per window at setup). Omit/false = follow system.
     #[serde(default)]
@@ -39,6 +40,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct WindowConfig {
     pub title: String,
     #[serde(default = "default_window_width")]
@@ -83,6 +85,7 @@ fn default_window_height() -> u32 {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Group {
     pub name: String,
     #[serde(default, rename = "tab")]
@@ -90,6 +93,7 @@ pub struct Group {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Tab {
     pub title: String,
     pub url: String,
@@ -285,7 +289,8 @@ pub struct TabView {
     pub url: String,
     pub load_on_open: bool,
     pub reload_every: Option<u64>,
-    /// Resolved login store: `tab.session → window.session → DEFAULT_SESSION`. Tabs with the
+    /// Resolved login store: `tab.session → window.session → Config.session → DEFAULT_SESSION`.
+    /// Tabs with the
     /// same value share a WebKit data store (one login); distinct values are isolated. Not
     /// serialized to the chrome sidebar — it's a backend concern, not UI.
     #[serde(skip)]
@@ -447,6 +452,18 @@ reload_every = 15
     fn rejects_zero_window_dimension() {
         let err = parse_and_validate(&with_window_keys("Comms", "width = 0")).unwrap_err();
         assert!(matches!(err, ConfigError::InvalidWindowSize { .. }));
+    }
+
+    #[test]
+    fn rejects_unknown_tab_key() {
+        // The removed `always_load` (renamed to `load_on_open`) and any typo'd key must fail
+        // loudly via `deny_unknown_fields` rather than being silently ignored — otherwise an
+        // eager tab would be quietly demoted to lazy with no signal.
+        let src = format!("{VALID}\n[[window.tab]]\ntitle = \"X\"\nurl = \"https://x.test/\"\nalways_load = true\n");
+        assert!(matches!(
+            parse_and_validate(&src).unwrap_err(),
+            ConfigError::Parse(_)
+        ));
     }
 
     #[test]

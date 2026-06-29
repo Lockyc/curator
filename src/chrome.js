@@ -23,6 +23,12 @@ function tintOverBase(hex, ratio) {
 // (what the user dragged to), not the clamped width Rust applies for the current window size, so
 // growing the window later restores the intent up to the new cap.
 let widthKey = null;
+// Rust owns the default sidebar width (CHROME_W); window_identity delivers it as `default_width`
+// so the double-press reset doesn't duplicate the literal here. Null until the first identity load.
+let defaultSidebarW = null;
+// The width restore pushes a width to Rust (a full relayout); it's a one-time-at-load action, so
+// guard it from re-running on every config reload.
+let widthRestored = false;
 function saveSidebarWidth(w) {
   if (widthKey && w > 0) localStorage.setItem(widthKey, String(Math.round(w)));
 }
@@ -35,15 +41,16 @@ function restoreSidebarWidth(title) {
 
 // Wire the right-edge resize grip: a drag pushes the target width (= pointer x within the sidebar
 // webview, whose left edge is the window's left edge) to Rust, coalesced to one call per frame;
-// double-click resets to the default. Rust clamps for the current window size when it lays out,
-// but keeps the desired width, so we persist the desired (sent) value here for grow-recovery.
-// Keep in sync with `CHROME_W` in src-tauri/src/webviews.rs (the launch default Rust uses).
-const DEFAULT_SIDEBAR_W = 240;
+// a quick double-press resets to Rust's default width (`defaultSidebarW`, delivered by
+// window_identity so the literal isn't duplicated here). Rust clamps for the current window size
+// when it lays out but keeps the desired width, so we persist the desired (sent) value here for
+// grow-recovery.
 function initResize() {
   const handle = document.getElementById("resize-handle");
   let dragging = false;
   let pendingX = null;
   let raf = 0;
+  let lastDown = 0;
   const setWidth = (w) => {
     // Persist the desired width we sent (not Rust's clamped echo) so window-grow recovers intent.
     saveSidebarWidth(w);
@@ -57,6 +64,14 @@ function initResize() {
     }
   };
   handle.addEventListener("pointerdown", (e) => {
+    // preventDefault below suppresses the synthetic dblclick event, so detect a quick second
+    // press here to handle the "double-click to reset" affordance ourselves.
+    if (e.timeStamp - lastDown < 300) {
+      lastDown = 0;
+      if (defaultSidebarW != null) setWidth(defaultSidebarW);
+      return;
+    }
+    lastDown = e.timeStamp;
     dragging = true;
     handle.classList.add("dragging");
     handle.setPointerCapture(e.pointerId);
@@ -77,18 +92,25 @@ function initResize() {
   };
   handle.addEventListener("pointerup", end);
   handle.addEventListener("pointercancel", end);
-  handle.addEventListener("dblclick", () => setWidth(DEFAULT_SIDEBAR_W));
 }
 
 // Paint the per-window identity banner from the window's accent colour (name on the colour,
 // plus a faint tint on the navbar). No colour configured → banner stays hidden, chrome neutral.
 async function applyIdentity() {
   const id = await invoke("window_identity");
-  restoreSidebarWidth(id && id.title);
+  if (id) defaultSidebarW = id.default_width;
+  // The width restore is a one-time relayout at load, not a per-reload action.
+  if (!widthRestored) {
+    restoreSidebarWidth(id && id.title);
+    widthRestored = true;
+  }
   const banner = document.getElementById("identity");
   if (!id || !id.colour) {
     banner.hidden = true;
     document.body.style.removeProperty("--active-bg");
+    // Clear any accent tint left from a previous colour, so removing `colour` on hot-reload
+    // fully reverts the navbar instead of stranding the old tint until restart.
+    document.getElementById("navbar").style.removeProperty("background");
     return;
   }
   banner.textContent = id.title;
@@ -256,9 +278,11 @@ async function render() {
   updateNav();
 }
 
+let selectGen = 0;
 async function select(label, el) {
   // Move the highlight optimistically (before the await) so held-key cycling (⌘]/⌘[) reads the
   // new selection immediately instead of recomputing the same index until the IPC resolves.
+  const gen = ++selectGen;
   const prev = [...document.querySelectorAll(".tab.active")];
   if (!el.classList.contains("active")) {
     for (const b of prev) b.classList.remove("active");
@@ -267,9 +291,12 @@ async function select(label, el) {
   try {
     await invoke("select_tab", { label });
   } catch {
-    // Backend select failed — roll the highlight back to where it was.
-    el.classList.remove("active");
-    for (const b of prev) b.classList.add("active");
+    // Backend select failed — roll the highlight back, but only if no newer select() has since
+    // moved it; otherwise we'd re-add this call's stale `prev` rows and paint two tabs active.
+    if (gen === selectGen) {
+      el.classList.remove("active");
+      for (const b of prev) b.classList.add("active");
+    }
     return;
   }
   const u = el.querySelector(".unload"); // now warm

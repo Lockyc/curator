@@ -94,7 +94,7 @@ absent. Use AskUserQuestion to offer to open it for editing now:
 - **Skip** — leave it for later.
 
 Briefly note the format: each `[[group]]` has a `name` and `[[group.tab]]` entries requiring
-`title` and `url`, with optional `always_load` (preload + keep warm) and `reload_every`
+`title` and `url`, with optional `load_on_open` (preload + keep warm) and `reload_every`
 (auto-refresh minutes). The app also has a **Tabs** menu (Reload Tab, Reset All Tabs) and a
 **Config** menu (Edit Config, Reveal Config in Finder).
 

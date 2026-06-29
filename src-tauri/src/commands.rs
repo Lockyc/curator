@@ -29,11 +29,13 @@ fn calling_window(webview: &Webview) -> Result<(Window, String), String> {
     Ok((window, wid))
 }
 
-/// The invoking window's identity for the chrome banner: its title and optional accent colour.
+/// The invoking window's identity for the chrome banner: its title and optional accent colour,
+/// plus the default sidebar width so the chrome's double-press reset doesn't hardcode `CHROME_W`.
 #[derive(Serialize)]
 pub struct WindowIdentity {
     title: String,
     colour: Option<String>,
+    default_width: f64,
 }
 
 /// Return the calling window's title + accent colour so the chrome can paint a per-window
@@ -46,10 +48,12 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
         Some(rt) => WindowIdentity {
             title: rt.cfg.title.clone(),
             colour: rt.cfg.colour.clone(),
+            default_width: webviews::CHROME_W,
         },
         None => WindowIdentity {
             title: String::new(),
             colour: None,
+            default_width: webviews::CHROME_W,
         },
     }
 }
@@ -103,21 +107,23 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
 }
 
 /// Set the calling window's sidebar width from a chrome resize-drag (logical px). Stores the
-/// desired width, then clamps it Rust-side (range + ≤40% of the window), re-lays-out the chrome
-/// and content webviews, and returns the applied width so the chrome can persist the real value.
+/// desired width, then clamps it Rust-side (range + ≤40% of the window) and re-lays-out the chrome
+/// and content webviews. The chrome owns persistence — it stores the desired width it sent (for
+/// grow-recovery), not Rust's clamped value — so nothing is returned here.
 #[tauri::command]
 pub fn set_sidebar_width(
     width: f64,
     webview: Webview,
     state: State<AppState>,
-) -> Result<f64, String> {
+) -> Result<(), String> {
     let (window, wid) = calling_window(&webview)?;
     let chrome_w = {
         let windows = state.windows.lock().unwrap();
         windows.get(&wid).ok_or("no such window")?.chrome_w.clone()
     };
     chrome_w.store(width.to_bits(), Ordering::Relaxed);
-    Ok(webviews::relayout_with_width(&window, &chrome_w))
+    webviews::relayout_with_width(&window, &chrome_w);
+    Ok(())
 }
 
 /// Reload every already-created content webview in `wid`'s window back to its canonical URL.

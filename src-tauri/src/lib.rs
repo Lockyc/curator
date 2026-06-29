@@ -168,6 +168,14 @@ fn open_window(
 
 /// Emit an event to every open window's chrome sidebar. Used for `config-error` (which all
 /// windows surface) and per-window `config-reloaded` fan-out.
+/// Print config-load warnings to stderr — shared by the initial load and the hot-reload path so
+/// the format stays in one place.
+fn log_config_warnings(warnings: &[config::Warning]) {
+    for w in warnings {
+        eprintln!("config warning [{}]: {}", w.window, w.message);
+    }
+}
+
 fn emit_to_all_chrome<S: serde::Serialize + Clone>(
     app: &tauri::AppHandle,
     event: &str,
@@ -624,9 +632,7 @@ pub fn run() {
             let path = config::resolve_config_path();
             let (mut cfg, load_err) = match config::load_config(&path) {
                 Ok((c, warnings)) => {
-                    for w in &warnings {
-                        eprintln!("config warning [{}]: {}", w.window, w.message);
-                    }
+                    log_config_warnings(&warnings);
                     (c, None)
                 }
                 Err(e) => {
@@ -702,9 +708,7 @@ pub fn run() {
                     }
                     match watcher::reconcile(&src) {
                         Ok((new_cfg, warnings)) => {
-                            for w in &warnings {
-                                eprintln!("config warning [{}]: {}", w.window, w.message);
-                            }
+                            log_config_warnings(&warnings);
                             // Format-on-save: rewrite in house style on a clean reload. The write
                             // is diff-guarded, so an already-formatted file is a no-op. When it does
                             // rewrite, remember the formatted bytes as `self_write` so the watch

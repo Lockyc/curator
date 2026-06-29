@@ -34,7 +34,8 @@ file-driven, everything else is ephemeral.
   `[[window.group.tab]]`s. No in-app pin/unpin; you curate by editing the file (hot-reloaded
   on save).
 - **Multiple windows** — each `[[window]]` opens its own window with its own tab list. All
-  open at launch; ⌘W closes any non-last window and the **Window** menu reopens it.
+  open at launch; ⌘W (or the red button) closes a window and the **Window** menu reopens it.
+  Closing the last open window quits curator.
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.
@@ -54,8 +55,8 @@ file-driven, everything else is ephemeral.
   per-tab flag is the only knob — no per-window modes.
 - **Dock badge aggregates across windows** — the badge total sums unread across every
   window's loaded tabs.
-- **Window menu** — close a non-last window (⌘W); reopen any closed window from the
-  Window menu.
+- **Window menu** — close a window (⌘W); reopen any closed window from the Window menu.
+  Closing the last open window quits curator.
 
 ## Quick install
 
