@@ -37,7 +37,10 @@ Accent-colour validation delegates to `config_core::Colour::parse` (shared with 
 Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
 window title, zero window dimension, invalid colour, empty group name, dup group name within a
 window, dup tab title window-wide (across loose + grouped), empty tab title/url, unparseable url,
-zero `reload_every`. It also returns a **warnings** channel (`Vec<Warning>`, non-fatal) — first
+zero `reload_every`, and any **unrecognized key** on `Config`/`WindowConfig`/`Group`/`Tab` (all
+`#[serde(deny_unknown_fields)]`) — so a removed/renamed key such as the old `always_load` (now
+`load_on_open`) or a plain typo fails loudly rather than being silently ignored. It also returns a
+**warnings** channel (`Vec<Warning>`, non-fatal) — first
 producer: a URL repeated within a window (the URL-hash labels still disambiguate, so it loads but
 warns). `parse_and_validate`/`load_config` return `(Config, Vec<Warning>)`; warnings are
 `eprintln`'d on load/hot-reload and printed by `curator validate`. Tab identity stays the
