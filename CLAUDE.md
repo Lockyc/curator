@@ -92,10 +92,22 @@ be re-added by hand. The **Edit** submenu is load-bearing: its predefined items 
 clipboard accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content
 webviews. Keep Edit (and Window/Hide) when touching the menu.
 
-The **Tabs** submenu's "Open Developer Tools" (⌥⌘I) opens the WebKit inspector on the focused
-window's active content tab. It works in release builds because `tauri`'s `devtools` feature is
-enabled in `Cargo.toml` — that's deliberate (this is an operator console, not a sandboxed
-consumer app), not a debug leftover; don't strip the feature.
+The **Tabs** submenu also carries keyboard tab navigation: **⌘1–9** jump to a tab position and
+**⌘⇧]** / **⌘⇧[** cycle next/previous. The handlers `emit_to_focused_chrome` a `nav-tab` /
+`jump-tab` event; the focused window's chrome resolves the target row and routes it through the
+normal `select()` path (so a lazy tab still creates on demand). The submenu's "Open Developer
+Tools" (⌥⌘I) opens the WebKit inspector on the focused window's active content tab. It works in
+release builds because `tauri`'s `devtools` feature is enabled in `Cargo.toml` — that's
+deliberate (this is an operator console, not a sandboxed consumer app), not a debug leftover;
+don't strip the feature.
+
+**Resizable sidebar.** The sidebar is a fixed-width child webview (default `CHROME_W`) with the
+content webviews Rust-positioned beside it, so width can't be pure CSS. Each window's width lives
+in a `WindowRuntime.chrome_w` (`Arc<AtomicU64>`, f64 bits) shared with its resize closure; a
+right-edge drag in the chrome invokes `set_sidebar_width`, which clamps Rust-side (`clamp_chrome_w`:
+160–520px and ≤40% of the window) and `relayout_with_width`s the chrome + content. The window
+re-clamps on resize; the chosen width persists in `localStorage` per window title. The active-tab
+highlight tints with the window's accent colour (`--active-bg`), falling back to neutral blue.
 
 ## Non-goals / parked: browser extensions (Bitwarden etc.)
 
