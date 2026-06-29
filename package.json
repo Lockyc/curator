@@ -1,6 +1,6 @@
 {
   "name": "curator",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A dedicated, always-findable home for the handful of browser tabs you can't afford to lose. macOS only.",
   "license": "MIT",
   "repository": {
