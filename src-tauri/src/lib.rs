@@ -103,7 +103,7 @@ fn open_window(
     )?;
     window.set_theme(theme_for(dark_mode))?;
 
-    let views = win_cfg.tab_views();
+    let views = win_cfg.tab_views(None);
     let mut tabs = webviews::TabState::default();
 
     // Eager-create the `load_on_open` tabs: they load at launch and stay live (never hidden), so
@@ -115,7 +115,7 @@ fn open_window(
 
     // Active tab: whatever `open_on_launch` resolves to, else the first load_on_open tab (so a
     // window of background services opens showing one of them rather than the blank placeholder).
-    let active = win_cfg.startup_label().or_else(|| {
+    let active = win_cfg.startup_label(None).or_else(|| {
         views
             .iter()
             .find(|v| v.load_on_open)
@@ -297,7 +297,7 @@ fn reconcile_window_tabs(
     window_id: &str,
     win_cfg: &config::WindowConfig,
 ) {
-    let views = win_cfg.tab_views();
+    let views = win_cfg.tab_views(None);
     let keep: HashSet<String> = views.iter().map(|v| v.label.clone()).collect();
 
     // Decide everything under the lock, but perform the webview ops AFTER releasing it.
@@ -338,7 +338,7 @@ fn reconcile_window_tabs(
             .tabs
             .active()
             .map(str::to_string)
-            .or_else(|| win_cfg.startup_label())
+            .or_else(|| win_cfg.startup_label(None))
             .or_else(|| {
                 views
                     .iter()

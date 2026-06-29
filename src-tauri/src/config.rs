@@ -45,6 +45,11 @@ pub struct WindowConfig {
     /// name banner + a faint tint, giving each window an at-a-glance identity. Omit → neutral.
     #[serde(default)]
     pub colour: Option<String>,
+    /// Loose (ungrouped) tabs. They render in a leading headerless section, before any group.
+    /// Curator no longer requires groups — a window can mix loose tabs and groups, or use only
+    /// loose tabs.
+    #[serde(default, rename = "tab")]
+    pub tabs: Vec<Tab>,
     #[serde(default, rename = "group")]
     pub groups: Vec<Group>,
 }
@@ -123,6 +128,27 @@ impl std::fmt::Display for ConfigError {
     }
 }
 
+/// Per-tab field validation shared by loose and grouped tabs: non-empty title + url, a parseable
+/// url, and a positive `reload_every`.
+fn validate_tab(tab: &Tab) -> Result<(), ConfigError> {
+    if tab.title.trim().is_empty() {
+        return Err(ConfigError::EmptyField("title"));
+    }
+    if tab.url.trim().is_empty() {
+        return Err(ConfigError::EmptyField("url"));
+    }
+    if url::Url::parse(&tab.url).is_err() {
+        return Err(ConfigError::InvalidUrl {
+            title: tab.title.clone(),
+            url: tab.url.clone(),
+        });
+    }
+    if matches!(tab.reload_every, Some(0)) {
+        return Err(ConfigError::ZeroReload(tab.title.clone()));
+    }
+    Ok(())
+}
+
 pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
     let cfg: Config = toml::from_str(src).map_err(ConfigError::Parse)?;
     let mut seen_titles = std::collections::HashSet::new();
@@ -147,26 +173,15 @@ pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
                 });
             }
         }
+        for tab in &w.tabs {
+            validate_tab(tab)?;
+        }
         for group in &w.groups {
             if group.name.trim().is_empty() {
                 return Err(ConfigError::EmptyField("name"));
             }
             for tab in &group.tabs {
-                if tab.title.trim().is_empty() {
-                    return Err(ConfigError::EmptyField("title"));
-                }
-                if tab.url.trim().is_empty() {
-                    return Err(ConfigError::EmptyField("url"));
-                }
-                if url::Url::parse(&tab.url).is_err() {
-                    return Err(ConfigError::InvalidUrl {
-                        title: tab.title.clone(),
-                        url: tab.url.clone(),
-                    });
-                }
-                if matches!(tab.reload_every, Some(0)) {
-                    return Err(ConfigError::ZeroReload(tab.title.clone()));
-                }
+                validate_tab(tab)?;
             }
         }
     }
@@ -203,7 +218,9 @@ pub fn default_config_path() -> std::path::PathBuf {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct TabView {
     pub label: String,
-    pub group: String,
+    /// The group this tab renders under, or `None` for a loose (ungrouped) tab — the chrome
+    /// shows a section header only for `Some(name)`. Serialized to the sidebar as `null` for loose.
+    pub group: Option<String>,
     pub title: String,
     pub url: String,
     pub load_on_open: bool,
@@ -235,43 +252,61 @@ fn normalized_session(s: &Option<String>) -> Option<String> {
 }
 
 impl WindowConfig {
-    /// Flatten this window's groups → ordered tabs with stable labels (file order).
-    pub fn tab_views(&self) -> Vec<TabView> {
+    /// Flatten this window's loose tabs + groups → ordered tabs with stable labels (file order:
+    /// loose tabs first as a headerless section, then each group). `global_session` is the
+    /// app-wide session base (the bottom of the cascade); pass `None` for no global default.
+    pub fn tab_views(&self, global_session: Option<&str>) -> Vec<TabView> {
         let wid = crate::identity::window_id(&self.title);
         let mut views = Vec::new();
         let mut seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-        for group in &self.groups {
-            for tab in &group.tabs {
-                let base = url_label(&tab.url);
-                let n = seen.entry(base.clone()).or_insert(0);
-                let within = if *n == 0 {
-                    base.clone()
-                } else {
-                    format!("{base}-{n}")
-                };
-                *n += 1;
-                // Session chain: the tab's own store, else the window's, else the shared default
-                // (blank values are treated as unset and fall through).
-                let session = normalized_session(&tab.session)
-                    .or_else(|| normalized_session(&self.session))
-                    .unwrap_or_else(|| DEFAULT_SESSION.to_string());
-                views.push(TabView {
-                    label: crate::identity::namespaced(&wid, &within),
-                    group: group.name.clone(),
-                    title: tab.title.clone(),
-                    url: tab.url.clone(),
-                    load_on_open: tab.load_on_open,
-                    reload_every: tab.reload_every,
-                    session,
-                });
-            }
+        // Loose tabs (group `None`) first, then each group's tabs (group `Some(name)`), all in
+        // file order, sharing one url-label dedup map so duplicate URLs across the window still
+        // get distinct labels.
+        let entries = self
+            .tabs
+            .iter()
+            .map(|t| (t, Option::<String>::None))
+            .chain(
+                self.groups
+                    .iter()
+                    .flat_map(|g| g.tabs.iter().map(move |t| (t, Some(g.name.clone())))),
+            );
+        for (tab, group) in entries {
+            let base = url_label(&tab.url);
+            let n = seen.entry(base.clone()).or_insert(0);
+            let within = if *n == 0 {
+                base.clone()
+            } else {
+                format!("{base}-{n}")
+            };
+            *n += 1;
+            // Session chain: the tab's own store, else the window's, else the app-wide global,
+            // else the shared default (blank values are treated as unset and fall through).
+            let session = normalized_session(&tab.session)
+                .or_else(|| normalized_session(&self.session))
+                .or_else(|| {
+                    global_session
+                        .map(str::trim)
+                        .filter(|t| !t.is_empty())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| DEFAULT_SESSION.to_string());
+            views.push(TabView {
+                label: crate::identity::namespaced(&wid, &within),
+                group,
+                title: tab.title.clone(),
+                url: tab.url.clone(),
+                load_on_open: tab.load_on_open,
+                reload_every: tab.reload_every,
+                session,
+            });
         }
         views
     }
 
     /// Label of the tab to open on launch (per `open_on_launch`). `None` = blank.
-    pub fn startup_label(&self) -> Option<String> {
-        let views = self.tab_views();
+    pub fn startup_label(&self, global_session: Option<&str>) -> Option<String> {
+        let views = self.tab_views(global_session);
         match &self.open_on_launch {
             OpenOnLaunch::Toggle(false) => None,
             OpenOnLaunch::Toggle(true) => views.first().map(|v| v.label.clone()),
@@ -392,7 +427,7 @@ reload_every = 15
     #[test]
     fn flattens_to_ordered_tabviews_per_window() {
         let cfg = parse_and_validate(VALID).unwrap();
-        let views = cfg.windows[0].tab_views();
+        let views = cfg.windows[0].tab_views(None);
         assert_eq!(views.len(), 2);
         assert_eq!(views[0].title, "Gmail");
         assert_ne!(views[0].label, views[1].label);
@@ -403,29 +438,29 @@ reload_every = 15
     #[test]
     fn startup_label_resolves_per_window() {
         let cfg = parse_and_validate(VALID).unwrap();
-        assert_eq!(cfg.windows[0].startup_label(), None);
+        assert_eq!(cfg.windows[0].startup_label(None), None);
         let cfg = parse_and_validate(&with_window_keys("Comms", "open_on_launch = true")).unwrap();
         assert_eq!(
-            cfg.windows[0].startup_label(),
-            Some(cfg.windows[0].tab_views()[0].label.clone())
+            cfg.windows[0].startup_label(None),
+            Some(cfg.windows[0].tab_views(None)[0].label.clone())
         );
 
         // named tab → that tab
         let named = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = \"Calendar\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\n";
         let cfg = parse_and_validate(named).unwrap();
         let cal = cfg.windows[0]
-            .tab_views()
+            .tab_views(None)
             .into_iter()
             .find(|v| v.title == "Calendar")
             .unwrap();
-        assert_eq!(cfg.windows[0].startup_label(), Some(cal.label));
+        assert_eq!(cfg.windows[0].startup_label(None), Some(cal.label));
 
         // unknown name → falls back to first
         let unknown = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = \"Nope\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\n";
         let cfg = parse_and_validate(unknown).unwrap();
         assert_eq!(
-            cfg.windows[0].startup_label(),
-            Some(cfg.windows[0].tab_views()[0].label.clone())
+            cfg.windows[0].startup_label(None),
+            Some(cfg.windows[0].tab_views(None)[0].label.clone())
         );
     }
 
@@ -460,7 +495,7 @@ reload_every = 15
     fn label_is_stable_when_a_tab_is_inserted_before_it() {
         let base = parse_and_validate(VALID).unwrap();
         let gmail_label = base.windows[0]
-            .tab_views()
+            .tab_views(None)
             .into_iter()
             .find(|t| t.url == "https://mail.google.com/")
             .unwrap()
@@ -469,7 +504,7 @@ reload_every = 15
         let src = "[[window]]\ntitle = \"Comms\"\n[[window.group]]\nname = \"New\"\n[[window.group.tab]]\ntitle = \"X\"\nurl = \"https://x.test/\"\n[[window.group]]\nname = \"Chat\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n";
         let inserted = parse_and_validate(src).unwrap();
         let gmail = inserted.windows[0]
-            .tab_views()
+            .tab_views(None)
             .into_iter()
             .find(|t| t.url == "https://mail.google.com/")
             .unwrap();
@@ -483,7 +518,7 @@ reload_every = 15
     fn duplicate_urls_get_distinct_labels() {
         let src = "[[window]]\ntitle = \"W\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"A\"\nurl = \"https://same.test/\"\n[[window.group.tab]]\ntitle = \"B\"\nurl = \"https://same.test/\"\n";
         let cfg = parse_and_validate(src).unwrap();
-        let views = cfg.windows[0].tab_views();
+        let views = cfg.windows[0].tab_views(None);
         assert_ne!(views[0].label, views[1].label);
     }
 
@@ -491,7 +526,7 @@ reload_every = 15
     fn tab_labels_are_window_namespaced() {
         let cfg = parse_and_validate(VALID).unwrap();
         let wid = crate::identity::window_id("Comms");
-        assert!(cfg.windows[0].tab_views()[0]
+        assert!(cfg.windows[0].tab_views(None)[0]
             .label
             .starts_with(&format!("{wid}:")));
     }
@@ -513,23 +548,60 @@ reload_every = 15
     fn session_chain_resolves_tab_then_window_then_default() {
         // Window sets a session; first tab inherits it, second overrides with its own.
         let src = "[[window]]\ntitle = \"W\"\nsession = \"win\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Inherits\"\nurl = \"https://a.test/\"\n[[window.group.tab]]\ntitle = \"Own\"\nurl = \"https://b.test/\"\nsession = \"tabown\"\n";
-        let views = parse_and_validate(src).unwrap().windows[0].tab_views();
+        let views = parse_and_validate(src).unwrap().windows[0].tab_views(None);
         assert_eq!(views[0].session, "win");
         assert_eq!(views[1].session, "tabown");
 
         // Neither tab nor window sets a session → the shared app-wide default.
         let bare = "[[window]]\ntitle = \"X\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
         assert_eq!(
-            parse_and_validate(bare).unwrap().windows[0].tab_views()[0].session,
+            parse_and_validate(bare).unwrap().windows[0].tab_views(None)[0].session,
             DEFAULT_SESSION
         );
 
         // A blank session is treated as unset and falls through to the default.
         let blank = "[[window]]\ntitle = \"Y\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\nsession = \"  \"\n";
         assert_eq!(
-            parse_and_validate(blank).unwrap().windows[0].tab_views()[0].session,
+            parse_and_validate(blank).unwrap().windows[0].tab_views(None)[0].session,
             DEFAULT_SESSION
         );
+    }
+
+    #[test]
+    fn loose_tabs_resolve_before_groups_with_none_group() {
+        let src = r#"
+[[window]]
+title = "W"
+  [[window.tab]]
+  title = "Loose"
+  url = "https://loose.test/"
+  [[window.group]]
+  name = "G"
+    [[window.group.tab]]
+    title = "Grouped"
+    url = "https://grouped.test/"
+"#;
+        let cfg = parse_and_validate(src).unwrap();
+        let views = cfg.windows[0].tab_views(None);
+        assert_eq!(views[0].title, "Loose");
+        assert_eq!(views[0].group, None);
+        assert_eq!(views[1].title, "Grouped");
+        assert_eq!(views[1].group.as_deref(), Some("G"));
+    }
+
+    #[test]
+    fn loose_tab_with_empty_url_errors() {
+        let src = r#"
+[[window]]
+title = "W"
+  [[window.tab]]
+  title = "Loose"
+  url = "  "
+"#;
+        assert!(matches!(
+            parse_and_validate(src),
+            Err(ConfigError::EmptyField("url"))
+        ));
     }
 
     // Test helpers: build a one-window config with the given extra window-level keys.

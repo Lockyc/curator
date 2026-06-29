@@ -122,10 +122,14 @@ async function render() {
     byGroup.get(t.group).push(t);
   }
   for (const [group, items] of byGroup) {
-    const h = document.createElement("div");
-    h.className = "group";
-    h.textContent = group;
-    sidebar.appendChild(h);
+    // Loose tabs (group `null`) render as a leading headerless section; only real groups
+    // get a section header.
+    if (group) {
+      const h = document.createElement("div");
+      h.className = "group";
+      h.textContent = group;
+      sidebar.appendChild(h);
+    }
     for (const t of items) {
       const row = document.createElement("div");
       row.className = "tab";

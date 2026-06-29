@@ -62,7 +62,7 @@ pub fn get_tabs(webview: Webview, state: State<AppState>) -> Vec<TabItem> {
     };
     let active = rt.tabs.active().map(str::to_string);
     rt.cfg
-        .tab_views()
+        .tab_views(None)
         .into_iter()
         .map(|view| {
             let loaded = rt.tabs.is_created(&view.label);
@@ -81,7 +81,7 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     let (window, wid) = calling_window(&webview)?;
     let mut windows = state.windows.lock().unwrap();
     let rt = windows.get_mut(&wid).ok_or("no such window")?;
-    let views = rt.cfg.tab_views();
+    let views = rt.cfg.tab_views(None);
     let target = views
         .iter()
         .find(|v| v.label == label)
@@ -104,7 +104,7 @@ fn reset_window_tabs(app: &AppHandle, wid: &str) -> Result<(), String> {
     let window = app.get_window(wid).ok_or("no such window")?;
     let windows = state.windows.lock().unwrap();
     let rt = windows.get(wid).ok_or("no such window")?;
-    for v in &rt.cfg.tab_views() {
+    for v in &rt.cfg.tab_views(None) {
         if rt.tabs.is_created(&v.label) {
             webviews::reload_canonical(&window, &v.label, &v.url).map_err(|e| e.to_string())?;
         }
@@ -138,7 +138,7 @@ pub fn home_tab(label: String, webview: Webview, state: State<AppState>) -> Resu
         let windows = state.windows.lock().unwrap();
         let rt = windows.get(&wid).ok_or("no such window")?;
         rt.cfg
-            .tab_views()
+            .tab_views(None)
             .into_iter()
             .find(|v| v.label == label)
             .ok_or("unknown tab")?
@@ -189,7 +189,7 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
             if !was_active {
                 return None;
             }
-            let views = rt.cfg.tab_views();
+            let views = rt.cfg.tab_views(None);
             let new_active = views
                 .iter()
                 .find(|v| v.load_on_open && v.label != label && rt.tabs.is_created(&v.label))
