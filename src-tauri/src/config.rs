@@ -142,6 +142,14 @@ impl std::fmt::Display for ConfigError {
     }
 }
 
+/// A non-fatal config issue surfaced to the user (logged on load, printed by `curator validate`)
+/// without rejecting the config. First producer: a URL repeated within a window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Warning {
+    pub window: String,
+    pub message: String,
+}
+
 /// Per-tab field validation shared by loose and grouped tabs: non-empty title + url, a parseable
 /// url, and a positive `reload_every`.
 fn validate_tab(tab: &Tab) -> Result<(), ConfigError> {
@@ -163,9 +171,10 @@ fn validate_tab(tab: &Tab) -> Result<(), ConfigError> {
     Ok(())
 }
 
-pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
+pub fn parse_and_validate(src: &str) -> Result<(Config, Vec<Warning>), ConfigError> {
     let cfg: Config = toml::from_str(src).map_err(ConfigError::Parse)?;
     let mut seen_titles = std::collections::HashSet::new();
+    let mut warnings: Vec<Warning> = Vec::new();
     for w in &cfg.windows {
         if w.title.trim().is_empty() {
             return Err(ConfigError::EmptyField("title"));
@@ -188,17 +197,31 @@ pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
             }
         }
         // Uniqueness is window-wide for tab titles (across loose + grouped) and per-window for
-        // group names — both keep the URL-hash labels and the menu/CLI unambiguous.
+        // group names — both keep the URL-hash labels and the menu/CLI unambiguous. A URL
+        // repeated within a window is non-fatal (the labels still disambiguate) but warned once.
         let mut tab_titles = std::collections::HashSet::new();
         let mut group_names = std::collections::HashSet::new();
-        for tab in &w.tabs {
+        let mut seen_urls = std::collections::HashSet::new();
+        let mut warned_urls = std::collections::HashSet::new();
+        let window_title = w.title.clone();
+        let mut check_tab = |tab: &Tab| -> Result<(), ConfigError> {
             validate_tab(tab)?;
             if !tab_titles.insert(tab.title.clone()) {
                 return Err(ConfigError::DuplicateTabTitle {
-                    window: w.title.clone(),
+                    window: window_title.clone(),
                     title: tab.title.clone(),
                 });
             }
+            if !seen_urls.insert(tab.url.clone()) && warned_urls.insert(tab.url.clone()) {
+                warnings.push(Warning {
+                    window: window_title.clone(),
+                    message: format!("duplicate url: {}", tab.url),
+                });
+            }
+            Ok(())
+        };
+        for tab in &w.tabs {
+            check_tab(tab)?;
         }
         for group in &w.groups {
             if group.name.trim().is_empty() {
@@ -211,20 +234,14 @@ pub fn parse_and_validate(src: &str) -> Result<Config, ConfigError> {
                 });
             }
             for tab in &group.tabs {
-                validate_tab(tab)?;
-                if !tab_titles.insert(tab.title.clone()) {
-                    return Err(ConfigError::DuplicateTabTitle {
-                        window: w.title.clone(),
-                        title: tab.title.clone(),
-                    });
-                }
+                check_tab(tab)?;
             }
         }
     }
-    Ok(cfg)
+    Ok((cfg, warnings))
 }
 
-pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
+pub fn load_config(path: &Path) -> Result<(Config, Vec<Warning>), ConfigError> {
     let src = std::fs::read_to_string(path).map_err(ConfigError::Io)?;
     parse_and_validate(&src)
 }
@@ -377,7 +394,7 @@ reload_every = 15
 
     #[test]
     fn parses_windows_groups_tabs_in_order() {
-        let cfg = parse_and_validate(VALID).unwrap();
+        let cfg = parse_and_validate(VALID).unwrap().0;
         assert_eq!(cfg.windows.len(), 1);
         let w = &cfg.windows[0];
         assert_eq!(w.title, "Comms");
@@ -388,10 +405,12 @@ reload_every = 15
 
     #[test]
     fn per_window_size_defaults_and_overrides() {
-        let cfg = parse_and_validate(VALID).unwrap();
+        let cfg = parse_and_validate(VALID).unwrap().0;
         assert_eq!((cfg.windows[0].width, cfg.windows[0].height), (1500, 1000));
         let cfg =
-            parse_and_validate(&with_window_keys("Comms", "width = 1680\nheight = 1120")).unwrap();
+            parse_and_validate(&with_window_keys("Comms", "width = 1680\nheight = 1120"))
+                .unwrap()
+                .0;
         assert_eq!((cfg.windows[0].width, cfg.windows[0].height), (1680, 1120));
     }
 
@@ -400,7 +419,8 @@ reload_every = 15
         let cfg = parse_and_validate(&format!(
             "dark_mode = true\nallow_insecure = [\"10.0.0.1\"]\n{VALID}"
         ))
-        .unwrap();
+        .unwrap()
+        .0;
         assert!(cfg.dark_mode);
         assert_eq!(cfg.allow_insecure, vec!["10.0.0.1".to_string()]);
     }
@@ -429,10 +449,14 @@ reload_every = 15
 
     #[test]
     fn accepts_valid_window_colour() {
-        let cfg = parse_and_validate(&with_window_keys("Comms", "colour = \"#0f8a8a\"")).unwrap();
+        let cfg = parse_and_validate(&with_window_keys("Comms", "colour = \"#0f8a8a\""))
+            .unwrap()
+            .0;
         assert_eq!(cfg.windows[0].colour.as_deref(), Some("#0f8a8a"));
         // Short form is accepted too.
-        let cfg = parse_and_validate(&with_window_keys("Comms", "colour = \"#abc\"")).unwrap();
+        let cfg = parse_and_validate(&with_window_keys("Comms", "colour = \"#abc\""))
+            .unwrap()
+            .0;
         assert_eq!(cfg.windows[0].colour.as_deref(), Some("#abc"));
     }
 
@@ -462,7 +486,7 @@ reload_every = 15
 
     #[test]
     fn flattens_to_ordered_tabviews_per_window() {
-        let cfg = parse_and_validate(VALID).unwrap();
+        let cfg = parse_and_validate(VALID).unwrap().0;
         let views = cfg.windows[0].tab_views(None);
         assert_eq!(views.len(), 2);
         assert_eq!(views[0].title, "Gmail");
@@ -473,9 +497,11 @@ reload_every = 15
 
     #[test]
     fn startup_label_resolves_per_window() {
-        let cfg = parse_and_validate(VALID).unwrap();
+        let cfg = parse_and_validate(VALID).unwrap().0;
         assert_eq!(cfg.windows[0].startup_label(None), None);
-        let cfg = parse_and_validate(&with_window_keys("Comms", "open_on_launch = true")).unwrap();
+        let cfg = parse_and_validate(&with_window_keys("Comms", "open_on_launch = true"))
+            .unwrap()
+            .0;
         assert_eq!(
             cfg.windows[0].startup_label(None),
             Some(cfg.windows[0].tab_views(None)[0].label.clone())
@@ -483,7 +509,7 @@ reload_every = 15
 
         // named tab → that tab
         let named = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = \"Calendar\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\n";
-        let cfg = parse_and_validate(named).unwrap();
+        let cfg = parse_and_validate(named).unwrap().0;
         let cal = cfg.windows[0]
             .tab_views(None)
             .into_iter()
@@ -493,7 +519,7 @@ reload_every = 15
 
         // unknown name → falls back to first
         let unknown = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = \"Nope\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\n";
-        let cfg = parse_and_validate(unknown).unwrap();
+        let cfg = parse_and_validate(unknown).unwrap().0;
         assert_eq!(
             cfg.windows[0].startup_label(None),
             Some(cfg.windows[0].tab_views(None)[0].label.clone())
@@ -529,7 +555,7 @@ reload_every = 15
 
     #[test]
     fn label_is_stable_when_a_tab_is_inserted_before_it() {
-        let base = parse_and_validate(VALID).unwrap();
+        let base = parse_and_validate(VALID).unwrap().0;
         let gmail_label = base.windows[0]
             .tab_views(None)
             .into_iter()
@@ -538,7 +564,7 @@ reload_every = 15
             .label;
         // Insert a new tab ahead of Gmail in the same window; Gmail's label must not move.
         let src = "[[window]]\ntitle = \"Comms\"\n[[window.group]]\nname = \"New\"\n[[window.group.tab]]\ntitle = \"X\"\nurl = \"https://x.test/\"\n[[window.group]]\nname = \"Chat\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n";
-        let inserted = parse_and_validate(src).unwrap();
+        let inserted = parse_and_validate(src).unwrap().0;
         let gmail = inserted.windows[0]
             .tab_views(None)
             .into_iter()
@@ -553,14 +579,14 @@ reload_every = 15
     #[test]
     fn duplicate_urls_get_distinct_labels() {
         let src = "[[window]]\ntitle = \"W\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"A\"\nurl = \"https://same.test/\"\n[[window.group.tab]]\ntitle = \"B\"\nurl = \"https://same.test/\"\n";
-        let cfg = parse_and_validate(src).unwrap();
+        let cfg = parse_and_validate(src).unwrap().0;
         let views = cfg.windows[0].tab_views(None);
         assert_ne!(views[0].label, views[1].label);
     }
 
     #[test]
     fn tab_labels_are_window_namespaced() {
-        let cfg = parse_and_validate(VALID).unwrap();
+        let cfg = parse_and_validate(VALID).unwrap().0;
         let wid = crate::identity::window_id("Comms");
         assert!(cfg.windows[0].tab_views(None)[0]
             .label
@@ -584,21 +610,21 @@ reload_every = 15
     fn session_chain_resolves_tab_then_window_then_default() {
         // Window sets a session; first tab inherits it, second overrides with its own.
         let src = "[[window]]\ntitle = \"W\"\nsession = \"win\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Inherits\"\nurl = \"https://a.test/\"\n[[window.group.tab]]\ntitle = \"Own\"\nurl = \"https://b.test/\"\nsession = \"tabown\"\n";
-        let views = parse_and_validate(src).unwrap().windows[0].tab_views(None);
+        let views = parse_and_validate(src).unwrap().0.windows[0].tab_views(None);
         assert_eq!(views[0].session, "win");
         assert_eq!(views[1].session, "tabown");
 
         // Neither tab nor window sets a session → the shared app-wide default.
         let bare = "[[window]]\ntitle = \"X\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
         assert_eq!(
-            parse_and_validate(bare).unwrap().windows[0].tab_views(None)[0].session,
+            parse_and_validate(bare).unwrap().0.windows[0].tab_views(None)[0].session,
             DEFAULT_SESSION
         );
 
         // A blank session is treated as unset and falls through to the default.
         let blank = "[[window]]\ntitle = \"Y\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\nsession = \"  \"\n";
         assert_eq!(
-            parse_and_validate(blank).unwrap().windows[0].tab_views(None)[0].session,
+            parse_and_validate(blank).unwrap().0.windows[0].tab_views(None)[0].session,
             DEFAULT_SESSION
         );
     }
@@ -613,7 +639,7 @@ title = "W"
   title = "T"
   url = "https://t.test/"
 "#;
-        let cfg = parse_and_validate(src).unwrap();
+        let cfg = parse_and_validate(src).unwrap().0;
         let views = cfg.windows[0].tab_views(cfg.session.as_deref());
         assert_eq!(views[0].session, "shared");
     }
@@ -631,7 +657,7 @@ session = ""
   title = "T"
   url = "https://t.test/"
 "#;
-        let cfg = parse_and_validate(src).unwrap();
+        let cfg = parse_and_validate(src).unwrap().0;
         let views = cfg.windows[0].tab_views(cfg.session.as_deref());
         assert_eq!(views[0].session, "shared");
     }
@@ -650,7 +676,7 @@ title = "W"
     title = "Grouped"
     url = "https://grouped.test/"
 "#;
-        let cfg = parse_and_validate(src).unwrap();
+        let cfg = parse_and_validate(src).unwrap().0;
         let views = cfg.windows[0].tab_views(None);
         assert_eq!(views[0].title, "Loose");
         assert_eq!(views[0].group, None);
@@ -671,6 +697,24 @@ title = "W"
             parse_and_validate(src),
             Err(ConfigError::EmptyField("url"))
         ));
+    }
+
+    #[test]
+    fn duplicate_url_within_window_warns() {
+        let src = r#"
+[[window]]
+title = "W"
+  [[window.tab]]
+  title = "A"
+  url = "https://same.test/"
+  [[window.tab]]
+  title = "B"
+  url = "https://same.test/"
+"#;
+        let (_cfg, warnings) = parse_and_validate(src).unwrap();
+        assert!(warnings
+            .iter()
+            .any(|w| w.window == "W" && w.message.contains("duplicate url")));
     }
 
     #[test]

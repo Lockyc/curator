@@ -1,9 +1,10 @@
-use crate::config::{parse_and_validate, Config};
+use crate::config::{parse_and_validate, Config, Warning};
 use crate::identity::window_id;
 
-/// Parse `src`; on success return the new whole config, on failure return a message. The
-/// caller keeps its last-good `Config` on error (the last-good-on-failure contract).
-pub fn reconcile(new_src: &str) -> Result<Config, String> {
+/// Parse `src`; on success return the new whole config plus any non-fatal warnings, on failure
+/// return a message. The caller keeps its last-good `Config` on error (the last-good-on-failure
+/// contract).
+pub fn reconcile(new_src: &str) -> Result<(Config, Vec<Warning>), String> {
     parse_and_validate(new_src).map_err(|e| e.to_string())
 }
 
@@ -37,7 +38,7 @@ mod tests {
         for t in titles {
             s.push_str(&format!("[[window]]\ntitle = \"{t}\"\n[[window.group]]\nname=\"G\"\n[[window.group.tab]]\ntitle=\"T\"\nurl=\"https://x.test/\"\n"));
         }
-        parse_and_validate(&s).unwrap()
+        parse_and_validate(&s).unwrap().0
     }
 
     #[test]
@@ -54,7 +55,7 @@ mod tests {
     #[test]
     fn valid_new_source_replaces() {
         let src = "[[window]]\ntitle = \"W2\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"T\"\nurl = \"https://x.test/\"\n";
-        let res = reconcile(src).unwrap();
+        let (res, _warnings) = reconcile(src).unwrap();
         assert_eq!(res.windows.len(), 1);
         assert_eq!(res.windows[0].title, "W2");
     }

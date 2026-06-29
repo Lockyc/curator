@@ -488,7 +488,12 @@ pub fn run() {
         .setup(move |app| {
             let path = config::resolve_config_path();
             let (mut cfg, load_err) = match config::load_config(&path) {
-                Ok(c) => (c, None),
+                Ok((c, warnings)) => {
+                    for w in &warnings {
+                        eprintln!("config warning [{}]: {}", w.window, w.message);
+                    }
+                    (c, None)
+                }
                 Err(e) => {
                     eprintln!("config error: {e}");
                     (config::Config::default(), Some(e.to_string()))
@@ -551,7 +556,10 @@ pub fn run() {
                         continue;
                     };
                     match watcher::reconcile(&src) {
-                        Ok(new_cfg) => {
+                        Ok((new_cfg, warnings)) => {
+                            for w in &warnings {
+                                eprintln!("config warning [{}]: {}", w.window, w.message);
+                            }
                             reload_windows(&app_handle, &cfg, &new_cfg);
                             cfg = new_cfg;
                         }
