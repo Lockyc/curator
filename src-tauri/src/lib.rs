@@ -482,6 +482,40 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         .build()
 }
 
+/// `curator validate [path]`: load + validate a config and print its resolved window/tab tree
+/// (with the cascaded session per tab) plus any non-fatal warnings. Exit 0 on success, 1 on a
+/// load/parse/validation error. Mirrors `warden validate`.
+pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
+    let path = path.unwrap_or_else(config::resolve_config_path);
+    match config::load_config(&path) {
+        Ok((cfg, warnings)) => {
+            println!("ok: {} ({} window(s))", path.display(), cfg.windows.len());
+            for w in &cfg.windows {
+                println!("  window {:?}", w.title);
+                for v in w.tab_views(cfg.session.as_deref()) {
+                    let group = v
+                        .group
+                        .as_deref()
+                        .map(|g| format!(" group={g:?}"))
+                        .unwrap_or_default();
+                    println!(
+                        "    tab {:?} url={} load_on_open={} session={:?}{}",
+                        v.title, v.url, v.load_on_open, v.session, group
+                    );
+                }
+            }
+            for warn in &warnings {
+                eprintln!("warning [{}]: {}", warn.window, warn.message);
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            1
+        }
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
