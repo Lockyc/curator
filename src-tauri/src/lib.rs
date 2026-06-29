@@ -348,7 +348,7 @@ fn reconcile_window_tabs(
             .tabs
             .active()
             .map(str::to_string)
-            .or_else(|| win_cfg.startup_label(None))
+            .or_else(|| win_cfg.startup_label(global_session))
             .or_else(|| {
                 views
                     .iter()

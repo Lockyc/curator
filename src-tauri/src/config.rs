@@ -640,9 +640,9 @@ title = "W"
     }
 
     #[test]
-    fn empty_session_opts_out_to_default() {
-        // Window session "" opts out of the global; the tab is unset → falls through the chain
-        // to the global "shared".
+    fn empty_window_session_falls_through_to_global() {
+        // Window session "" opts out of being the window default; the tab is unset → falls
+        // through the chain to the global "shared" (empty = unset, not "force default").
         let src = r#"
 session = "shared"
 [[window]]
