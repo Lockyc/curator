@@ -179,12 +179,8 @@ build-from-source install needs no extra setup). curator uses two pieces:
   `format_on_save = true`) can't loop its own watcher.
 - **`colour`** — `Colour::parse` backs `is_hex_colour` (per-window accent validation).
 
-The crate is deliberately leaf-free: curator keeps its own model, validation, and session
-cascade; warden keeps its own. Only add to `config-core` what is genuinely identical and
-leaf-agnostic in *both* apps — don't grow it into a generic config framework.
-
-## Deferred work
-
-- **Retrofit warden onto `config-core`:** warden still carries its own copy of the formatter and
-  colour parser (the originals these were lifted from). Re-point warden at the shared crate and
-  delete its duplicates to finish the convergence. **Not done yet.**
+Both curator and warden consume `config-core` (warden is where `fmt`/`colour` originated, since
+retrofitted onto the shared crate — there's one implementation, not a copy per app). The crate is
+deliberately leaf-free: each app keeps its own model, validation, and session/shell cascade. Only
+add to `config-core` what is genuinely identical and leaf-agnostic in *both* apps — don't grow it
+into a generic config framework.
