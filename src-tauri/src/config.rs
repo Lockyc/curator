@@ -202,6 +202,10 @@ pub fn parse_and_validate(src: &str) -> Result<(Config, Vec<Warning>), ConfigErr
         // Uniqueness is window-wide for tab titles (across loose + grouped) and per-window for
         // group names — both keep the URL-hash labels and the menu/CLI unambiguous. A URL
         // repeated within a window is non-fatal (the labels still disambiguate) but warned once.
+        // The URL warning is intentionally per-window, not global: it guards against URL-hash
+        // label collisions, and labels are namespaced per window (`{window_id}:{tab_hash}`), so
+        // the same URL in two windows is no collision — and it's a supported multi-account
+        // pattern (same service, two windows, two sessions).
         let mut tab_titles = std::collections::HashSet::new();
         let mut group_names = std::collections::HashSet::new();
         let mut seen_urls = std::collections::HashSet::new();
@@ -209,7 +213,7 @@ pub fn parse_and_validate(src: &str) -> Result<(Config, Vec<Warning>), ConfigErr
         let window_title = w.title.clone();
         let mut check_tab = |tab: &Tab| -> Result<(), ConfigError> {
             validate_tab(tab)?;
-            if !tab_titles.insert(tab.title.clone()) {
+            if !tab_titles.insert(tab.title.trim().to_string()) {
                 return Err(ConfigError::DuplicateTabTitle {
                     window: window_title.clone(),
                     title: tab.title.clone(),
@@ -230,7 +234,7 @@ pub fn parse_and_validate(src: &str) -> Result<(Config, Vec<Warning>), ConfigErr
             if group.name.trim().is_empty() {
                 return Err(ConfigError::EmptyField("name"));
             }
-            if !group_names.insert(group.name.clone()) {
+            if !group_names.insert(group.name.trim().to_string()) {
                 return Err(ConfigError::DuplicateGroupName {
                     window: w.title.clone(),
                     name: group.name.clone(),

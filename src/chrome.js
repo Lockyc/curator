@@ -34,6 +34,7 @@ function restoreSidebarWidth(title) {
 // Wire the right-edge resize grip: a drag pushes the target width (= pointer x within the sidebar
 // webview, whose left edge is the window's left edge) to Rust, coalesced to one call per frame;
 // double-click resets to the default. Rust clamps and echoes back the applied width to persist.
+// Keep in sync with `CHROME_W` in src-tauri/src/webviews.rs (the launch default Rust uses).
 const DEFAULT_SIDEBAR_W = 240;
 function initResize() {
   const handle = document.getElementById("resize-handle");

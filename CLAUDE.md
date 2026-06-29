@@ -117,6 +117,17 @@ right-edge drag in the chrome invokes `set_sidebar_width`, which clamps Rust-sid
 re-clamps on resize; the chosen width persists in `localStorage` per window title. The active-tab
 highlight tints with the window's accent colour (`--active-bg`), falling back to neutral blue.
 
+**Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
+Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across
+webview ops (`add_child`/show/hide/raise/navigate). That's deadlock-free *only* because sync Tauri
+commands run on the main thread, so those ops execute inline and the watcher thread (which always
+drops the lock before marshaling a webview op to main) can't deadlock against them. **Do not make
+any command that holds `windows` `async`** — it would then run off-main, hold the lock, and block
+on a main-thread-marshaled webview op while a `windows`-locking main-thread callback waits, which
+deadlocks. If a command must become async, drop the `windows` guard before any webview op. (This
+is the class the "sidebar-width re-lock" fix closed by passing `chrome_w` by value instead of
+re-locking inside `create_content_webview`.)
+
 ## Non-goals / parked: browser extensions (Bitwarden etc.)
 
 curator does **not** support browser/Safari web extensions, and there is no password-manager

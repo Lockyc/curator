@@ -140,9 +140,11 @@ fn layout_webviews(window: &Window, chrome_w: f64) {
     }
 }
 
-/// Clamp the window's desired sidebar width to its current size, store the clamped value back
-/// (so a later window-grow restores the user's intent up to the new cap), re-lay-out, and return
-/// the applied width. Called on window resize and on a chrome resize-drag.
+/// Clamp the window's sidebar width to its current size, store the clamped value back (the
+/// clamped width *is* the persisted value — there's no separate unclamped "desired", so shrinking
+/// a window past the 40% cap permanently narrows the sidebar; a later grow does not restore the
+/// pre-shrink width), re-lay-out, and return the applied width. Called on window resize and on a
+/// chrome resize-drag.
 pub fn relayout_with_width(window: &Window, chrome_w: &AtomicU64) -> f64 {
     let (w, _h) = logical_inner(window);
     let cw = clamp_chrome_w(f64::from_bits(chrome_w.load(Ordering::Relaxed)), w);
