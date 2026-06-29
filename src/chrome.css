@@ -49,6 +49,15 @@ body { margin: 0; font: 13px -apple-system, sans-serif; height: 100vh; display: 
 .unload.loaded:hover .dot { display: none; }
 .unload.loaded:hover .cross { display: block; }
 
+/* Sidebar resize grip pinned to the chrome's right edge. The sidebar is its own fixed-width
+   webview, so the drag reports the target width to Rust (set_sidebar_width), which resizes this
+   webview and repositions the content webviews. Invisible until hover/drag. */
+#resize-handle {
+  position: fixed; top: 0; right: 0; width: 6px; height: 100vh;
+  cursor: col-resize; z-index: 10;
+}
+#resize-handle:hover, #resize-handle.dragging { background: rgba(255, 255, 255, 0.14); }
+
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
 
 /* Per-window identity banner: the window name on its accent colour. Gives each window an

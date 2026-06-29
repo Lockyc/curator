@@ -1,5 +1,6 @@
 use crate::{config::TabView, webviews, AppState, WindowRuntime};
 use serde::Serialize;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State, Webview, Window};
 
 /// A tab plus its runtime state: whether its content webview is warm, and whether it's the
@@ -96,6 +97,24 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
 
     // Raise the selected tab; load_on_open tabs stay live behind it, others are hidden.
     webviews::apply_active(&window, Some(&label), &views).map_err(|e| e.to_string())
+}
+
+/// Set the calling window's sidebar width from a chrome resize-drag (logical px). Stores the
+/// desired width, then clamps it Rust-side (range + ≤40% of the window), re-lays-out the chrome
+/// and content webviews, and returns the applied width so the chrome can persist the real value.
+#[tauri::command]
+pub fn set_sidebar_width(
+    width: f64,
+    webview: Webview,
+    state: State<AppState>,
+) -> Result<f64, String> {
+    let (window, wid) = calling_window(&webview)?;
+    let chrome_w = {
+        let windows = state.windows.lock().unwrap();
+        windows.get(&wid).ok_or("no such window")?.chrome_w.clone()
+    };
+    chrome_w.store(width.to_bits(), Ordering::Relaxed);
+    Ok(webviews::relayout_with_width(&window, &chrome_w))
 }
 
 /// Reload every already-created content webview in `wid`'s window back to its canonical URL.

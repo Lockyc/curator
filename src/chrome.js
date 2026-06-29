@@ -17,10 +17,67 @@ function tintOverBase(hex, ratio) {
   return `rgb(${ch(0)},${ch(1)},${ch(2)})`;
 }
 
+// Per-window sidebar width persistence. The width itself is owned by Rust (the sidebar is a
+// fixed-width webview), so we persist the user's chosen width in localStorage keyed by window
+// title and restore it by pushing it back to Rust on load.
+let widthKey = null;
+function saveSidebarWidth(w) {
+  if (widthKey && w > 0) localStorage.setItem(widthKey, String(Math.round(w)));
+}
+function restoreSidebarWidth(title) {
+  if (!title) return;
+  widthKey = "curator:sidebar-width:" + title;
+  const saved = parseFloat(localStorage.getItem(widthKey));
+  if (saved > 0) invoke("set_sidebar_width", { width: Math.round(saved) }).catch(() => {});
+}
+
+// Wire the right-edge resize grip: a drag pushes the target width (= pointer x within the sidebar
+// webview, whose left edge is the window's left edge) to Rust, coalesced to one call per frame;
+// double-click resets to the default. Rust clamps and echoes back the applied width to persist.
+const DEFAULT_SIDEBAR_W = 240;
+function initResize() {
+  const handle = document.getElementById("resize-handle");
+  let dragging = false;
+  let pendingX = null;
+  let raf = 0;
+  const setWidth = (w) =>
+    invoke("set_sidebar_width", { width: Math.round(w) }).then(saveSidebarWidth).catch(() => {});
+  const flush = () => {
+    raf = 0;
+    if (pendingX != null) {
+      setWidth(pendingX);
+      pendingX = null;
+    }
+  };
+  handle.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    handle.classList.add("dragging");
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    pendingX = e.clientX;
+    if (!raf) raf = requestAnimationFrame(flush);
+  });
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("dragging");
+    try {
+      handle.releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+  handle.addEventListener("dblclick", () => setWidth(DEFAULT_SIDEBAR_W));
+}
+
 // Paint the per-window identity banner from the window's accent colour (name on the colour,
 // plus a faint tint on the navbar). No colour configured → banner stays hidden, chrome neutral.
 async function applyIdentity() {
   const id = await invoke("window_identity");
+  restoreSidebarWidth(id && id.title);
   const banner = document.getElementById("identity");
   if (!id || !id.colour) {
     banner.hidden = true;
@@ -236,5 +293,6 @@ listen("jump-tab", (e) => {
 });
 
 initNav();
+initResize();
 applyIdentity();
 render();

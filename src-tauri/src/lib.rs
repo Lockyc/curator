@@ -14,7 +14,7 @@ mod webviews;
 mod zorder;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, Theme};
 
@@ -36,6 +36,9 @@ pub struct WindowRuntime {
     /// Set true to stop this window's `reload_every` timer threads — on window close, removal,
     /// or when its tab set changes (a fresh generation is spawned with a new flag).
     pub reload_cancel: Arc<AtomicBool>,
+    /// Current sidebar width in logical px (f64 bits), shared with the window's resize closure.
+    /// Driven by the `set_sidebar_width` drag command and re-clamped on window resize.
+    pub chrome_w: Arc<AtomicU64>,
 }
 
 /// Spawn one background thread per `reload_every` tab that reloads it on schedule until
@@ -98,7 +101,7 @@ fn open_window(
     win_cfg: &config::WindowConfig,
 ) -> tauri::Result<(String, WindowRuntime)> {
     let wid = identity::window_id(&win_cfg.title);
-    let window = webviews::build_window(
+    let (window, chrome_w) = webviews::build_window(
         handle,
         &wid,
         &win_cfg.title,
@@ -151,6 +154,7 @@ fn open_window(
             unread: HashMap::new(),
             badge_authoritative: HashSet::new(),
             reload_cancel,
+            chrome_w,
         },
     ))
 }
@@ -726,7 +730,8 @@ pub fn run() {
             commands::unload_tab,
             commands::home_tab,
             commands::nav_back,
-            commands::nav_forward
+            commands::nav_forward,
+            commands::set_sidebar_width
         ])
         .run(tauri::generate_context!())
         .expect("error while running curator");

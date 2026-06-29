@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// Pure bookkeeping for which content webviews have been created (lazy-load tracking)
 /// and which is active. Webview side-effects live in the Tauri-aware code below.
@@ -55,7 +57,12 @@ pub const WINDOW_ERROR: &str = "curator-error";
 /// Webview label inside the error window (so we can refresh its message on a later failure).
 const ERROR_VIEW: &str = "curator-error-view";
 
+/// Default sidebar width and the bounds a user drag may resize it to (logical px). The width is
+/// additionally capped at 40% of the window in [`clamp_chrome_w`] so the sidebar can never crowd
+/// out the content area.
 pub const CHROME_W: f64 = 240.0;
+const MIN_CHROME_W: f64 = 160.0;
+const MAX_CHROME_W: f64 = 520.0;
 /// macOS title-bar height. The title bar is an overlay (transparent, floating traffic
 /// lights); the content webview paints over it full-height while the chrome sidebar is
 /// inset by this much, leaving the native title-bar strip exposed only above the tab list.
@@ -96,33 +103,65 @@ fn logical_inner(window: &Window) -> (f64, f64) {
     (size.width as f64 / scale, size.height as f64 / scale)
 }
 
-/// Position of a content webview within the window (right of the chrome sidebar).
-fn content_position() -> LogicalPosition<f64> {
-    LogicalPosition::new(CHROME_W, 0.0)
+/// Position of a content webview within the window (right of the `chrome_w`-wide sidebar).
+fn content_position(chrome_w: f64) -> LogicalPosition<f64> {
+    LogicalPosition::new(chrome_w, 0.0)
 }
 
-/// Size of a content webview for the given window dimensions.
-fn content_size(w: f64, h: f64) -> LogicalSize<f64> {
-    LogicalSize::new((w - CHROME_W).max(0.0), h)
+/// Size of a content webview filling the window to the right of a `chrome_w`-wide sidebar.
+fn content_size(chrome_w: f64, w: f64, h: f64) -> LogicalSize<f64> {
+    LogicalSize::new((w - chrome_w).max(0.0), h)
 }
 
-/// Re-lay-out the chrome (fixed-width sidebar) and every content webview (filling the rest)
-/// to the window's current size. Called on every window resize.
-fn layout_webviews(window: &Window) {
+/// Clamp a desired sidebar width to `[MIN_CHROME_W, MAX_CHROME_W]` and to ≤40% of a window of
+/// logical width `win_w`, so a drag (or a stale persisted width on a now-smaller window) can
+/// never starve the content area.
+fn clamp_chrome_w(desired: f64, win_w: f64) -> f64 {
+    let upper = (win_w * 0.4).clamp(MIN_CHROME_W, MAX_CHROME_W);
+    desired.clamp(MIN_CHROME_W, upper)
+}
+
+/// The window's current sidebar width, read from its runtime. Falls back to the default before
+/// the runtime is registered (i.e. during launch-time webview creation, when it's the default
+/// anyway), so lazily-created content tabs land at the right offset after a resize.
+fn current_chrome_w(window: &Window) -> f64 {
+    let app = window.app_handle();
+    if let Some(state) = app.try_state::<crate::AppState>() {
+        if let Some(rt) = state.windows.lock().unwrap().get(window.label()) {
+            return f64::from_bits(rt.chrome_w.load(Ordering::Relaxed));
+        }
+    }
+    CHROME_W
+}
+
+/// Lay out the chrome (sidebar) and every content webview (filling the rest) for the given
+/// sidebar width and the window's current size.
+fn layout_webviews(window: &Window, chrome_w: f64) {
     let (w, h) = logical_inner(window);
     for wv in window.webviews() {
         let is_chrome = wv.label().ends_with(":chrome");
         let (pos, size) = if is_chrome {
             (
                 LogicalPosition::new(0.0, TITLEBAR_H),
-                LogicalSize::new(CHROME_W, (h - TITLEBAR_H).max(0.0)),
+                LogicalSize::new(chrome_w, (h - TITLEBAR_H).max(0.0)),
             )
         } else {
-            (content_position(), content_size(w, h))
+            (content_position(chrome_w), content_size(chrome_w, w, h))
         };
         let _ = wv.set_position(pos);
         let _ = wv.set_size(size);
     }
+}
+
+/// Clamp the window's desired sidebar width to its current size, store the clamped value back
+/// (so a later window-grow restores the user's intent up to the new cap), re-lay-out, and return
+/// the applied width. Called on window resize and on a chrome resize-drag.
+pub fn relayout_with_width(window: &Window, chrome_w: &AtomicU64) -> f64 {
+    let (w, _h) = logical_inner(window);
+    let cw = clamp_chrome_w(f64::from_bits(chrome_w.load(Ordering::Relaxed)), w);
+    chrome_w.store(cw.to_bits(), Ordering::Relaxed);
+    layout_webviews(window, cw);
+    cw
 }
 
 /// Build a window and its chrome (sidebar) webview, and wire window-resize relayout.
@@ -134,7 +173,11 @@ pub fn build_window(
     title: &str,
     win_w: f64,
     win_h: f64,
-) -> tauri::Result<Window> {
+) -> tauri::Result<(Window, Arc<AtomicU64>)> {
+    // Shared, lock-free sidebar width (f64 bits): captured by the resize closure below and stored
+    // in the window's runtime so the resize command and lazy-tab layout read the same value.
+    let chrome_w = Arc::new(AtomicU64::new(CHROME_W.to_bits()));
+
     let window = tauri::window::WindowBuilder::new(app, window_id)
         .title(title)
         .inner_size(win_w, win_h)
@@ -154,17 +197,24 @@ pub fn build_window(
     // when a tab is open; it shows through when nothing is selected.
     let ph_label = crate::identity::namespaced(window_id, "placeholder");
     let placeholder = WebviewBuilder::new(&ph_label, WebviewUrl::App("placeholder.html".into()));
-    window.add_child(placeholder, content_position(), content_size(win_w, win_h))?;
+    window.add_child(
+        placeholder,
+        content_position(CHROME_W),
+        content_size(CHROME_W, win_w, win_h),
+    )?;
 
     // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler
     // queries webviews() live, so content webviews created later are covered too. The same
     // handler routes a user close (native red button or ⌘W) through the shared close logic so
     // it can't strand the app and doesn't leak the window's unread/timers (see lib.rs).
     let win = window.clone();
+    let layout_w = chrome_w.clone();
     let close_app = app.clone();
     let close_wid = window_id.to_string();
     window.on_window_event(move |event| match event {
-        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => layout_webviews(&win),
+        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+            relayout_with_width(&win, &layout_w);
+        }
         WindowEvent::CloseRequested { api, .. }
             if crate::on_real_window_close(&close_app, &close_wid) =>
         {
@@ -173,7 +223,7 @@ pub fn build_window(
         _ => {}
     });
 
-    Ok(window)
+    Ok((window, chrome_w))
 }
 
 /// Create a content webview for `view` in the given window. Its login store is keyed on the
@@ -253,7 +303,8 @@ pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<
         });
 
     let (w, h) = logical_inner(window);
-    let webview = window.add_child(builder, content_position(), content_size(w, h))?;
+    let cw = current_chrome_w(window);
+    let webview = window.add_child(builder, content_position(cw), content_size(cw, w, h))?;
     #[cfg(target_os = "macos")]
     {
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
@@ -389,6 +440,19 @@ mod tests {
         s.mark_unloaded("tab-0");
         assert!(!s.is_created("tab-0"));
         assert_eq!(s.active(), Some("tab-1"));
+    }
+
+    #[test]
+    fn clamp_chrome_w_respects_bounds_and_window_cap() {
+        // Comfortably within range on a wide window — untouched.
+        assert_eq!(clamp_chrome_w(300.0, 1500.0), 300.0);
+        // Below the minimum snaps up; above the hard max snaps down.
+        assert_eq!(clamp_chrome_w(50.0, 1500.0), MIN_CHROME_W);
+        assert_eq!(clamp_chrome_w(900.0, 2000.0), MAX_CHROME_W);
+        // Capped at 40% of a narrower window.
+        assert_eq!(clamp_chrome_w(500.0, 1000.0), 400.0);
+        // Tiny window: the 40% cap would dip below the minimum, so the minimum wins.
+        assert_eq!(clamp_chrome_w(300.0, 300.0), MIN_CHROME_W);
     }
 
     #[test]
