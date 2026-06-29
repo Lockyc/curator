@@ -121,19 +121,6 @@ fn clamp_chrome_w(desired: f64, win_w: f64) -> f64 {
     desired.clamp(MIN_CHROME_W, upper)
 }
 
-/// The window's current sidebar width, read from its runtime. Falls back to the default before
-/// the runtime is registered (i.e. during launch-time webview creation, when it's the default
-/// anyway), so lazily-created content tabs land at the right offset after a resize.
-fn current_chrome_w(window: &Window) -> f64 {
-    let app = window.app_handle();
-    if let Some(state) = app.try_state::<crate::AppState>() {
-        if let Some(rt) = state.windows.lock().unwrap().get(window.label()) {
-            return f64::from_bits(rt.chrome_w.load(Ordering::Relaxed));
-        }
-    }
-    CHROME_W
-}
-
 /// Lay out the chrome (sidebar) and every content webview (filling the rest) for the given
 /// sidebar width and the window's current size.
 fn layout_webviews(window: &Window, chrome_w: f64) {
@@ -231,7 +218,11 @@ pub fn build_window(
 /// shared app-wide store). Every tab gets the full shim set, so any loaded tab can fire native
 /// banners and report unread — whether it notifies in the background is purely a function of
 /// whether it's kept live, which is what `load_on_open` controls (see `apply_active`).
-pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<()> {
+///
+/// `chrome_w` is the window's current sidebar width, used to place the webview to its right. It's
+/// passed in (not read from `AppState` here) because callers already hold the `windows` lock when
+/// they create a tab — re-locking it inside would self-deadlock the non-reentrant mutex.
+pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
     // Per-webview secret keying the sentinel handlers; substituted into the shims that emit
@@ -303,8 +294,11 @@ pub fn create_content_webview(window: &Window, view: &TabView) -> tauri::Result<
         });
 
     let (w, h) = logical_inner(window);
-    let cw = current_chrome_w(window);
-    let webview = window.add_child(builder, content_position(cw), content_size(cw, w, h))?;
+    let webview = window.add_child(
+        builder,
+        content_position(chrome_w),
+        content_size(chrome_w, w, h),
+    )?;
     #[cfg(target_os = "macos")]
     {
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));

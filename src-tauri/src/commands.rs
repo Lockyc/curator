@@ -90,7 +90,10 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
         .clone();
 
     if !rt.tabs.is_created(&label) {
-        webviews::create_content_webview(&window, &target).map_err(|e| e.to_string())?;
+        // Pass the current sidebar width (read under this held lock); create_content_webview must
+        // not re-lock `windows` itself — that would self-deadlock the non-reentrant mutex.
+        let cw = f64::from_bits(rt.chrome_w.load(Ordering::Relaxed));
+        webviews::create_content_webview(&window, &target, cw).map_err(|e| e.to_string())?;
         rt.tabs.mark_created(&label);
     }
     rt.tabs.set_active(&label);

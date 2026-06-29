@@ -109,6 +109,9 @@ fn open_window(
         win_cfg.height as f64,
     )?;
     window.set_theme(theme_for(dark_mode))?;
+    // Sidebar width is the default at launch (resize comes later); read it from the shared cell
+    // so new tabs are placed consistently with `apply_active`.
+    let cw = f64::from_bits(chrome_w.load(Ordering::Relaxed));
 
     let views = win_cfg.tab_views(global_session);
     let mut tabs = webviews::TabState::default();
@@ -116,7 +119,7 @@ fn open_window(
     // Eager-create the `load_on_open` tabs: they load at launch and stay live (never hidden), so
     // they keep syncing and can notify in the background. Everything else is lazy.
     for v in views.iter().filter(|v| v.load_on_open) {
-        webviews::create_content_webview(&window, v)?;
+        webviews::create_content_webview(&window, v, cw)?;
         tabs.mark_created(&v.label);
     }
 
@@ -131,7 +134,7 @@ fn open_window(
     if let Some(label) = &active {
         if let Some(v) = views.iter().find(|v| &v.label == label) {
             if !tabs.is_created(label) {
-                webviews::create_content_webview(&window, v)?;
+                webviews::create_content_webview(&window, v, cw)?;
                 tabs.mark_created(label);
             }
             tabs.set_active(label);
@@ -331,13 +334,16 @@ fn reconcile_window_tabs(
     // the main thread, which may itself be waiting on this same lock (e.g. in on_title_changed)
     // — holding the lock across them would deadlock. So we compute the orphan/create lists,
     // active tab, dock total, and a fresh reload-timer generation under the lock, then act.
-    let (orphans, to_create, active, dock_total, reload_cancel) = {
+    let (orphans, to_create, active, dock_total, reload_cancel, cw) = {
         let mut windows = state.windows.lock().unwrap();
         let Some(rt) = windows.get_mut(window_id) else {
             return;
         };
         rt.cfg = win_cfg.clone();
         rt.global_session = global_session.map(str::to_string);
+        // Read the sidebar width under the lock to pass to create below (re-locking inside
+        // create_content_webview would self-deadlock the non-reentrant mutex).
+        let cw = f64::from_bits(rt.chrome_w.load(Ordering::Relaxed));
 
         // Orphans: created tabs no longer in the config (removed, or URL/label changed). Forget
         // all their state; the webviews are closed after the lock is dropped.
@@ -395,7 +401,7 @@ fn reconcile_window_tabs(
                 .flat_map(|w| w.unread.values().copied())
                 .collect::<Vec<_>>(),
         );
-        (orphans, to_create, active, dock_total, reload_cancel)
+        (orphans, to_create, active, dock_total, reload_cancel, cw)
     };
 
     // Webview side-effects, lock released.
@@ -405,7 +411,7 @@ fn reconcile_window_tabs(
         }
     }
     for v in &to_create {
-        let _ = webviews::create_content_webview(window, v);
+        let _ = webviews::create_content_webview(window, v, cw);
     }
     spawn_reload_timers(window, &views, reload_cancel);
     if let Some(win) = window.app_handle().get_window(window_id) {
