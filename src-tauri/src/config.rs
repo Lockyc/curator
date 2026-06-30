@@ -418,7 +418,10 @@ reload_every = 15
 
     #[test]
     fn density_defaults_comfortable_and_parses_compact() {
-        assert_eq!(parse_and_validate(VALID).unwrap().0.density, Density::Comfortable);
+        assert_eq!(
+            parse_and_validate(VALID).unwrap().0.density,
+            Density::Comfortable
+        );
         let cfg = parse_and_validate(&format!("density = \"compact\"\n{VALID}"))
             .unwrap()
             .0;
