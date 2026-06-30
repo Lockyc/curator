@@ -238,6 +238,98 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     Ok(())
 }
 
+/// Build the ordered TOML field list for a new tab: required `title`/`url` first, then only the
+/// advanced fields the user actually set (so the written table stays minimal). Leaf list — must
+/// match curator's `Tab` shape; config_core::add_tab is otherwise leaf-agnostic.
+fn tab_fields(tab: &crate::config::Tab) -> Vec<(&'static str, config_core::toml_edit::Value)> {
+    let mut f: Vec<(&'static str, config_core::toml_edit::Value)> = vec![
+        ("title", tab.title.clone().into()),
+        ("url", tab.url.clone().into()),
+    ];
+    if tab.load_on_open {
+        f.push(("load_on_open", true.into()));
+    }
+    if let Some(n) = tab.reload_every {
+        f.push(("reload_every", (n as i64).into()));
+    }
+    if let Some(s) = &tab.session {
+        if !s.trim().is_empty() {
+            f.push(("session", s.clone().into()));
+        }
+    }
+    f
+}
+
+/// Clone `base` with `tab` inserted into its loose tabs (`group = None`) or the named group's
+/// tabs. Errors if `group` names a group the window doesn't have (mirrors config_core::add_tab).
+fn build_candidate_window(
+    base: &crate::config::WindowConfig,
+    group: Option<&str>,
+    tab: crate::config::Tab,
+) -> Result<crate::config::WindowConfig, String> {
+    let mut win = base.clone();
+    match group {
+        None => win.tabs.push(tab),
+        Some(g) => {
+            let grp = win
+                .groups
+                .iter_mut()
+                .find(|gr| gr.name == g)
+                .ok_or_else(|| format!("no group named {g:?}"))?;
+            grp.tabs.push(tab);
+        }
+    }
+    Ok(win)
+}
+
+/// Add a new tab to the calling window. Validates the candidate config in memory (the same checks
+/// as load), and only on success appends it to the config file via `config_core::add_tab`; the
+/// file watcher then drives the reload that re-renders the sidebar. Returns an error string the
+/// chrome shows inline in the add-tab form. `group = None`/`""` → the loose section.
+#[allow(clippy::too_many_arguments)] // Tauri IPC commands can't wrap args in a struct at this layer
+#[tauri::command]
+pub fn add_tab(
+    title: String,
+    url: String,
+    group: Option<String>,
+    load_on_open: bool,
+    reload_every: Option<u64>,
+    session: Option<String>,
+    webview: Webview,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let wid = calling_window_id(&webview);
+    let group = group.filter(|g| !g.trim().is_empty());
+
+    // Snapshot the window's config under the lock, then drop it before any file IO.
+    let base = {
+        let windows = state.windows.lock().unwrap();
+        windows.get(&wid).ok_or("no such window")?.cfg.clone()
+    };
+
+    let tab = crate::config::Tab {
+        title: title.trim().to_string(),
+        url: url.trim().to_string(),
+        load_on_open,
+        reload_every,
+        session: session.filter(|s| !s.trim().is_empty()),
+    };
+
+    // Validate the candidate (window-wide checks are all per-window, so a one-window Config is
+    // sufficient and runs the identical load-time validation).
+    let candidate = build_candidate_window(&base, group.as_deref(), tab.clone())?;
+    let cfg = crate::config::Config {
+        windows: vec![candidate],
+        ..Default::default()
+    };
+    crate::config::validate_config(&cfg).map_err(|e| e.to_string())?;
+
+    // Write — the watcher reload makes the new tab appear.
+    let path = crate::config::resolve_config_path();
+    config_core::add_tab(&path, &base.title, group.as_deref(), &tab_fields(&tab))
+        .map_err(|e| e.to_string())
+}
+
 /// Window id to drive from a menu command: the focused window (menu items act on whichever
 /// window has key focus).
 fn focused_window_id(app: &AppHandle) -> Option<String> {
@@ -290,4 +382,66 @@ pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     };
     reset_window_tabs(app, &wid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{parse_and_validate, validate_config, Tab};
+
+    fn comms() -> crate::config::WindowConfig {
+        parse_and_validate("[[window]]\ntitle = \"Comms\"\n[[window.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n")
+            .unwrap()
+            .0
+            .windows
+            .remove(0)
+    }
+
+    #[test]
+    fn tab_fields_emits_set_fields_in_canonical_order() {
+        let tab = Tab {
+            title: "Cal".into(),
+            url: "https://cal.test/".into(),
+            load_on_open: true,
+            reload_every: Some(15),
+            session: Some("work".into()),
+        };
+        let f = tab_fields(&tab);
+        let keys: Vec<_> = f.iter().map(|(k, _)| *k).collect();
+        assert_eq!(
+            keys,
+            ["title", "url", "load_on_open", "reload_every", "session"]
+        );
+    }
+
+    #[test]
+    fn tab_fields_omits_unset_optionals() {
+        let tab = Tab {
+            title: "Cal".into(),
+            url: "https://cal.test/".into(),
+            load_on_open: false,
+            reload_every: None,
+            session: None,
+        };
+        let keys: Vec<_> = tab_fields(&tab).iter().map(|(k, _)| *k).collect();
+        assert_eq!(keys, ["title", "url"]); // load_on_open=false, no reload, no session → omitted
+    }
+
+    #[test]
+    fn candidate_with_duplicate_title_is_rejected() {
+        let base = comms();
+        let dup = Tab {
+            title: "Gmail".into(),
+            url: "https://x.test/".into(),
+            load_on_open: false,
+            reload_every: None,
+            session: None,
+        };
+        let win = build_candidate_window(&base, None, dup).unwrap();
+        let cfg = crate::config::Config {
+            windows: vec![win],
+            ..Default::default()
+        };
+        assert!(validate_config(&cfg).is_err());
+    }
 }

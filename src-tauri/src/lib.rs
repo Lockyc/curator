@@ -823,7 +823,8 @@ pub fn run() {
             commands::home_tab,
             commands::nav_back,
             commands::nav_forward,
-            commands::set_sidebar_width
+            commands::set_sidebar_width,
+            commands::add_tab
         ])
         .run(tauri::generate_context!())
         .expect("error while running curator");
