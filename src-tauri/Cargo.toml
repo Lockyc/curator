@@ -26,6 +26,8 @@ toml = "0.8"
 url = "2"
 notify = "6"
 dirs = "5"
+# Persist each window's size + position (+ maximized) across launches, keyed by Tauri label.
+tauri-plugin-window-state = "2"
 # Shared, domain-free TOML config primitives (house-style `fmt`, colour parsing) used by both
 # curator and warden — git dep so the build-from-source install flow needs no extra setup.
 # Pinned by rev (same as warden's pin): the shared house formatter must format identically in

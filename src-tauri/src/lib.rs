@@ -628,8 +628,39 @@ pub fn fmt_cli(check: bool, path: Option<std::path::PathBuf>) -> i32 {
     }
 }
 
+/// Filename for the window-state plugin's saved bounds, scoped per config file. The plugin keys
+/// window state by Tauri label *within one file*; two different configs can reuse a window title,
+/// so scope the filename by a stable hash of the (canonicalized) config path to keep their bounds
+/// separate. Deterministic across runs — `DefaultHasher` uses fixed seeds. Moving/renaming the
+/// config orphans its saved bounds (acceptable; the path is otherwise stable). Mirrors warden.
+fn window_state_filename() -> String {
+    use std::hash::{Hash, Hasher};
+    let path = config::resolve_config_path();
+    let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    canonical.hash(&mut h);
+    format!(".window-state-{:016x}.json", h.finish())
+}
+
 pub fn run() {
     tauri::Builder::default()
+        // Persist each window's size + position (+ maximized) across launches, keyed by Tauri
+        // label within a per-config state file (window_state_filename) so two configs that share a
+        // window title don't share bounds. Saving is automatic (on close/exit); restore is
+        // triggered explicitly in webviews::build_window, since curator's windows are built at
+        // runtime (not declared in tauri.conf.json) so the plugin's auto-restore never fires. The
+        // transient error window is excluded — its throwaway bounds must not seed a real window.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .skip_initial_state(webviews::WINDOW_ERROR)
+                .with_filename(window_state_filename())
+                .build(),
+        )
         .setup(move |app| {
             // Prime native banner notifications (authorization + presentation delegate). No-op in
             // dev / off the packaged app; the badge/sentinel path is independent of this.

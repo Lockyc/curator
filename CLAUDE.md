@@ -148,6 +148,17 @@ right-edge drag in the chrome invokes `set_sidebar_width`, which clamps Rust-sid
 re-clamps on resize; the chosen width persists in `localStorage` per window title. The active-tab
 highlight tints with the window's accent colour (`--active-bg`), falling back to neutral blue.
 
+**Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION
+| MAXIMIZED). curator builds every window at runtime (not from `tauri.conf.json`), so the plugin's
+*automatic* restore never fires — `webviews::build_window` must call `window.restore_state(...)`
+itself right after `.build()`; don't drop it expecting auto-restore. State is keyed by Tauri label
+(== `window_id`, derived from the title, stable across launches) *within a per-config state file*
+(`window_state_filename` hashes the config path) so two configs that reuse a window title don't
+share bounds. The config `width`/`height` is only the first-run default — saved bounds override it
+once present. The transient error window is `skip_initial_state`-excluded. Renaming a window's
+`title` changes its id/label, so it restores fresh default bounds (consistent with the title also
+being the session/identity key). Sidebar width is separate (per-title `localStorage`, above).
+
 **Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
 Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across
 webview ops (`add_child`/show/hide/raise/navigate). That's deadlock-free *only* because sync Tauri

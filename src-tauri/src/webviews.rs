@@ -176,6 +176,16 @@ pub fn build_window(
         .title_bar_style(TitleBarStyle::Overlay)
         .build()?;
 
+    // Windows are built at runtime (not declared in tauri.conf.json), so the window-state plugin's
+    // automatic restore doesn't apply — trigger it explicitly. Saved bounds (keyed by the window
+    // label, which is the stable window_id) override the config-resolved inner_size above; first
+    // launch (no saved state) keeps it. The plugin saves on close/exit; see lib.rs for setup.
+    {
+        use tauri_plugin_window_state::{StateFlags, WindowExt};
+        let _ =
+            window.restore_state(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED);
+    }
+
     let chrome_label = crate::identity::namespaced(window_id, "chrome");
     let chrome = WebviewBuilder::new(&chrome_label, WebviewUrl::App("index.html".into()));
     window.add_child(
