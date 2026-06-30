@@ -116,6 +116,7 @@ organised into groups; loose tabs render first in a headerless section, then eac
 # dark_mode     = true            # force dark appearance; omit = follow system
 # allow_insecure = ["192.168.1.1"] # accept self-signed TLS for these hosts
 # session       = "personal"      # app-wide default login store (bottom of the session chain)
+# density       = "compact"       # "comfortable" (default) or "compact" (condensed chrome)
 
 [[window]]
 title         = "Keepers"          # required; must be unique across windows
@@ -178,6 +179,7 @@ window. Optional:
 | `dark_mode`      | bool          | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark.                  |
 | `allow_insecure` | list of hosts | `[]`    | Accept self-signed/invalid TLS certs for these hosts. Applied at launch (restart to change).  |
 | `session`        | string        | none    | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). |
+| `density`        | string        | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down proportionally for denser tab lists). Hot-reloads. |
 
 Run **`curator validate [path]`** to check a config without launching: it prints the resolved
 window/tab tree (each tab's cascaded session) and any non-fatal warnings (e.g. a URL repeated

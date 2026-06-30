@@ -35,6 +35,9 @@
 # App-wide default login store (bottom of the session chain). Omit → built-in "default".
 # session = "personal"
 
+# Chrome sizing: "comfortable" (default) or "compact" (type + spacing condensed). Hot-reloads.
+# density = "compact"
+
 # ─── Window 1: Keepers ────────────────────────────────────────────────────────
 # Dashboards and docs. Tabs are lazy by default (loaded on first click); none are kept live,
 # so this window stays quiet. It opens with a loose tab above the grouped sections.

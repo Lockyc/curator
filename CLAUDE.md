@@ -30,8 +30,14 @@ required). `tab_views` flattens to one ordered list — loose tabs first as a he
 (`TabView.group = None`), then each group in file order (`Some(name)`) — and the chrome renders a
 section header only for `Some`. Per-tab fields: `title`, `url` (both required, non-empty),
 `load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `session`.
-App-global keys: `dark_mode`, `allow_insecure`, `session`, and `format_on_save` (bool, default
-false — reformat the file in house style on a clean hot-reload; see Deferred work → done below).
+App-global keys: `dark_mode`, `allow_insecure`, `session`, `format_on_save` (bool, default
+false — reformat the file in house style on a clean hot-reload; see Deferred work → done below),
+and `density` (`comfortable` default / `compact`). Density is kept live in `AppState` across
+hot-reload (like `dark_mode`); `window_identity` returns it (plus a density-aware default sidebar
+width — compact is narrower) and the chrome sets `data-density` on `<html>`, swapping a block of
+CSS sizing variables (`--row-font`/`--title-font`/`--tile-size`/`--dot-svg`/… in `chrome.css`).
+`compact` is a proportional ~0.85× scale of the comfortable set. **Warden mirrors this** (same key,
+`data-density`, CSS-variable mechanism) — keep the two apps' chrome in step when touching either.
 Accent-colour validation delegates to `config_core::Colour::parse` (shared with warden).
 
 Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
