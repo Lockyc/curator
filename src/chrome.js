@@ -1,7 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-// Opaque dark base the navbar tint composites over — matches #1e1e1e in chrome.css.
+// Opaque dark base the active-tab tint composites over — matches #1e1e1e in chrome.css.
 const TINT_BASE = [30, 30, 30];
 
 function hexToRgb(hex) {
@@ -94,8 +94,9 @@ function initResize() {
   handle.addEventListener("pointercancel", end);
 }
 
-// Paint the per-window identity banner from the window's accent colour (name on the colour,
-// plus a faint tint on the navbar). No colour configured → banner stays hidden, chrome neutral.
+// Paint the per-window identity from the window's accent colour: the whole title bar (nav pill
+// + name) takes the colour, with the name shown after the pill. No colour configured → name
+// hidden, title bar neutral (the pill stays).
 async function applyIdentity() {
   const id = await invoke("window_identity");
   if (id) defaultSidebarW = id.default_width;
@@ -105,19 +106,20 @@ async function applyIdentity() {
     widthRestored = true;
   }
   const banner = document.getElementById("identity");
+  const titlebar = document.getElementById("titlebar");
   if (!id || !id.colour) {
     banner.hidden = true;
     document.body.style.removeProperty("--active-bg");
-    // Clear any accent tint left from a previous colour, so removing `colour` on hot-reload
-    // fully reverts the navbar instead of stranding the old tint until restart.
-    document.getElementById("navbar").style.removeProperty("background");
+    // Clear any accent left from a previous colour, so removing `colour` on hot-reload
+    // fully reverts the title bar to neutral instead of stranding the old colour until restart.
+    titlebar.style.removeProperty("background");
     return;
   }
   banner.textContent = id.title;
-  banner.style.background = id.colour;
   banner.hidden = false;
-  document.getElementById("navbar").style.background = tintOverBase(id.colour, 0.1);
-  // Tint the active-tab highlight with the same accent (a stronger blend than the navbar) so
+  // The whole title bar carries the window's accent colour — the name reads on it directly.
+  titlebar.style.background = id.colour;
+  // Tint the active-tab highlight with the same accent (a stronger blend than the bar) so
   // the selected row reads as part of this window's identity.
   document.body.style.setProperty("--active-bg", tintOverBase(id.colour, 0.28));
 }

@@ -156,7 +156,7 @@ title = "Comms"
 | `title`           | string                   | **required**  | Window title; must be unique across all windows.                           |
 | `width`/`height`  | int                      | `1500`/`1000` | Initial window size in logical pixels. Applied at launch (restart to change). |
 | `open_on_launch`  | bool \| tab title string | `false`       | `true` opens the first tab; a string opens the named tab; `false` = blank screen. |
-| `colour`          | `#rgb` / `#rrggbb` hex    | none          | Accent colour for this window — tints the name banner and the navbar, giving each window a distinct identity. |
+| `colour`          | `#rgb` / `#rrggbb` hex    | none          | Accent colour for this window — colours the title bar (nav pill + window name), giving each window a distinct identity. |
 | `session`         | string                   | none          | Default login store for this window's tabs (overridden per tab). See sessions below. |
 
 ### Per-tab options

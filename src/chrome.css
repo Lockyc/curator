@@ -15,7 +15,7 @@ body {
   margin-top: 6px;
   padding: 14px 12px 6px;
   border-top: 1px solid #313640;
-  font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+  font-size: 14px; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase; color: #9aa4b2;
 }
 .group:first-child { margin-top: 0; border-top: none; padding-top: 12px; }
@@ -65,12 +65,14 @@ body {
 
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
 
-/* Per-window identity banner: the window name on its accent colour. Gives each window an
-   at-a-glance identity (ported from warden's profile banner). Hidden when no colour is set. */
+/* Per-window identity: the window name sitting in the title bar after the nav pill, trimmed
+   with an ellipsis when the sidebar is too narrow. The whole #titlebar carries the accent
+   colour (set by chrome.js), giving each window an at-a-glance identity. Hidden (no name) when
+   no colour is set — the pill stays. */
 #identity {
-  flex: none;
-  padding: 8px 12px;
-  font-size: 13px; font-weight: 700;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 16px; font-weight: 700;
   color: #fff;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -90,11 +92,18 @@ body {
   justify-content: center;
 }
 
-/* Navigation pill pinned at the top of the sidebar (below the overlay traffic lights),
-   acting on the active tab. Buttons reuse the inline-SVG + centered-box idiom of the
-   per-row controls so icons align exactly. */
-#navbar { flex: none; padding: 6px 10px; background: #1e1e1e; border-bottom: 1px solid #313640; }
-.nav-pill { display: inline-flex; align-items: center; gap: 2px; background: #2a2a2a; border-radius: 8px; padding: 2px; }
+/* Window title bar pinned at the top of the sidebar (below the overlay traffic lights — the
+   chrome webview itself starts at TITLEBAR_H, so there's no collision). One row: the nav pill
+   first, the window name (#identity) after it. The bar carries the window's accent colour (set
+   by chrome.js); neutral base when no colour is configured. */
+#titlebar {
+  flex: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #313640;
+}
+.nav-pill { flex: none; display: inline-flex; align-items: center; gap: 2px; background: #2a2a2a; border-radius: 8px; padding: 2px; }
 .nav-btn {
   flex: none;
   display: inline-flex; align-items: center; justify-content: center;
