@@ -63,6 +63,30 @@ body {
 }
 #resize-handle:hover, #resize-handle.dragging { background: rgba(255, 255, 255, 0.14); }
 
+/* Add-tab affordance pinned below the tab list. The trigger is always visible (discoverability);
+   clicking it expands an inline form that pushes the list up, matching the dark chrome palette. */
+#add-tab { flex: none; border-top: 1px solid #313640; background: #1e1e1e; }
+#add-tab-toggle {
+  width: 100%; text-align: left; padding: 10px 12px;
+  background: none; border: none; color: #9aa4b2; font-size: 13px; cursor: pointer;
+}
+#add-tab-toggle:hover { background: #2a2a2a; color: #ddd; }
+#add-tab-form { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 12px; }
+#add-tab-form input[type="text"], #add-tab-form input[type="number"], #add-tab-form select {
+  width: 100%; padding: 6px 8px; font-size: 13px;
+  background: #2a2a2a; border: 1px solid #3a3f47; border-radius: 6px; color: #ddd;
+}
+#add-tab-form summary { cursor: pointer; color: #9aa4b2; font-size: 12px; padding: 2px 0; }
+#at-advanced { display: flex; flex-direction: column; gap: 6px; }
+#at-advanced label { color: #ddd; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.add-tab-actions { display: flex; gap: 6px; }
+.add-tab-actions button {
+  flex: 1 1 auto; padding: 6px 8px; font-size: 13px; border-radius: 6px; cursor: pointer;
+  border: 1px solid #3a3f47; background: #2a2a2a; color: #ddd;
+}
+#at-save { background: #094771; border-color: #0a5a8f; color: #fff; }
+#add-tab-error { background: #5a1d1d; color: #fff; padding: 6px 8px; font-size: 12px; border-radius: 6px; }
+
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
 
 /* Per-window identity banner: the window name on its accent colour. Gives each window an

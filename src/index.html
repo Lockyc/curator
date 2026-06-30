@@ -17,6 +17,25 @@
       </div>
     </div>
     <nav id="sidebar"></nav>
+    <div id="add-tab">
+      <button id="add-tab-toggle" type="button">+ Add tab</button>
+      <form id="add-tab-form" hidden>
+        <div id="add-tab-error" hidden></div>
+        <input id="at-title" type="text" placeholder="Title" autocomplete="off" />
+        <input id="at-url" type="text" placeholder="https://…" autocomplete="off" />
+        <select id="at-group"></select>
+        <details id="at-advanced">
+          <summary>Advanced</summary>
+          <label><input id="at-load" type="checkbox" /> Load on open</label>
+          <input id="at-reload" type="number" min="1" placeholder="Reload every (min)" />
+          <input id="at-session" type="text" placeholder="Session (blank = inherit)" autocomplete="off" />
+        </details>
+        <div class="add-tab-actions">
+          <button id="at-save" type="submit">Add</button>
+          <button id="at-cancel" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
     <div id="resize-handle" title="Drag to resize · double-click to reset"></div>
     <script type="module" src="chrome.js"></script>
   </body>

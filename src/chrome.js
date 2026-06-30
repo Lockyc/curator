@@ -338,7 +338,73 @@ listen("jump-tab", (e) => {
   selectRow([...document.querySelectorAll(".tab")][e.payload - 1]);
 });
 
+// Populate the group <select> from the currently-rendered tabs (distinct non-null groups, in
+// first-seen order) plus the leading loose option. Called on each open so it tracks config reloads.
+function fillGroupOptions(sel) {
+  const groups = [];
+  for (const row of document.querySelectorAll(".group")) {
+    const name = row.textContent;
+    if (name && !groups.includes(name)) groups.push(name);
+  }
+  sel.innerHTML = "";
+  const loose = document.createElement("option");
+  loose.value = "";
+  loose.textContent = "— none (loose) —";
+  sel.appendChild(loose);
+  for (const g of groups) {
+    const o = document.createElement("option");
+    o.value = g;
+    o.textContent = g;
+    sel.appendChild(o);
+  }
+}
+
+function initAddTab() {
+  const toggle = document.getElementById("add-tab-toggle");
+  const form = document.getElementById("add-tab-form");
+  const err = document.getElementById("add-tab-error");
+  const sel = document.getElementById("at-group");
+  const open = () => {
+    fillGroupOptions(sel);
+    err.hidden = true;
+    form.hidden = false;
+    toggle.hidden = true;
+    document.getElementById("at-title").focus();
+  };
+  const close = () => {
+    form.reset();
+    err.hidden = true;
+    form.hidden = true;
+    toggle.hidden = false;
+  };
+  toggle.addEventListener("click", open);
+  document.getElementById("at-cancel").addEventListener("click", close);
+  form.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") close();
+  });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const reloadRaw = document.getElementById("at-reload").value.trim();
+    const args = {
+      title: document.getElementById("at-title").value,
+      url: document.getElementById("at-url").value,
+      group: document.getElementById("at-group").value || null,
+      loadOnOpen: document.getElementById("at-load").checked,
+      reloadEvery: reloadRaw ? parseInt(reloadRaw, 10) : null,
+      session: document.getElementById("at-session").value || null,
+    };
+    try {
+      await invoke("add_tab", args);
+      close(); // the config-reloaded listener re-renders with the new tab
+    } catch (msg) {
+      err.textContent = String(msg);
+      err.hidden = false;
+    }
+  });
+}
+
 initNav();
 initResize();
+initAddTab();
 applyIdentity();
 render();
