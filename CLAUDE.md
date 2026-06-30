@@ -106,6 +106,18 @@ plugin for banners. Because the plugin is gone, `withGlobalTauri` no longer inje
 guest that probes `plugin:notification|is_permission_granted` over IPC, so content webviews need
 no `tauri-guard` shim anymore (it was removed with the plugin).
 
+Banners are **click-routable**: `fire` takes the originating `(window_id, tab label)` (threaded
+from the `on_navigation` notify-sentinel handler in `webviews.rs`, which knows both) and stamps
+them into the request's `userInfo`; the same delegate's `didReceiveNotificationResponse` reads
+them back on a tap (the *default* action only — dismiss is ignored), raises that window
+(`set_focus`, which also activates curator from the background), and emits `focus-tab` to that
+window's chrome (`{window_id}:chrome`) so the sidebar selects the tab. `init` captures the
+`AppHandle` the delegate needs. The event targets the precise chrome webview label, so it reaches
+only the originating window (no per-window leak — unlike warden, whose `emit_to` leaks to siblings
+and so carries a label to filter). This surfaces curator's *own* tab; it does **not** invoke the
+web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
+`src/inject/notification.js`).
+
 **Loading is driven solely by per-tab `load_on_open`** — there are no per-window mode flags.
 Every content webview gets the full shim set (escape-click, visibility, notification, badge),
 so any *loaded* tab can fire native banners and report unread. `load_on_open` tabs are created

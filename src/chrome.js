@@ -354,6 +354,16 @@ listen("jump-tab", (e) => {
   selectRow([...document.querySelectorAll(".tab")][e.payload - 1]);
 });
 
+// A desktop-notification banner was clicked: the native layer already raised this window (it's
+// emitted only to the originating window's chrome), so select the tab that fired it. Best-effort —
+// a stale label (tab since unloaded/removed, or its URL edited so the label moved) has no row, so
+// leave the active tab as-is and just surface the window.
+listen("focus-tab", (e) => {
+  const label = e.payload && e.payload.label;
+  if (!label) return;
+  selectRow(document.querySelector(`.tab[data-label="${CSS.escape(label)}"]`));
+});
+
 initNav();
 initResize();
 applyIdentity();

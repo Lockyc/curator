@@ -662,9 +662,10 @@ pub fn run() {
                 .build(),
         )
         .setup(move |app| {
-            // Prime native banner notifications (authorization + presentation delegate). No-op in
-            // dev / off the packaged app; the badge/sentinel path is independent of this.
-            notification::init();
+            // Prime native banner notifications (authorization + presentation/click delegate) and
+            // capture the app handle the click delegate uses to surface a tab. The banner path is a
+            // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
+            notification::init(app.handle().clone());
 
             let path = config::resolve_config_path();
             let (mut cfg, load_err) = match config::load_config(&path) {

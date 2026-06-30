@@ -252,6 +252,9 @@ pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) ->
 
     let nav_app = window.app_handle().clone();
     let nav_label = view.label.clone();
+    // The owning window's id (== label), so a notification can route a banner click back to this
+    // window's chrome to surface the tab that fired it (see notification::fire / did_receive).
+    let nav_window_id = window.label().to_string();
     let nav_nonce = nonce;
     // Captured separately for the new-window handler (the above are moved into on_navigation).
     let open_app = window.app_handle().clone();
@@ -296,7 +299,7 @@ pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) ->
                 if let Some(sig) = escape::badge_sentinel(url) {
                     crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
                 } else if let Some(p) = escape::notify_sentinel(url) {
-                    crate::notification::fire(&p.title, &p.body);
+                    crate::notification::fire(&p.title, &p.body, &nav_window_id, &nav_label);
                 } else if let Some(target) = escape::sentinel_target(url) {
                     escape::escape_to_default_browser(&target);
                 }
