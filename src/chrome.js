@@ -384,10 +384,11 @@ function initAddTab() {
   });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    err.hidden = true; // clear any prior error so a corrected re-submit doesn't show stale text
     const reloadRaw = document.getElementById("at-reload").value.trim();
     const args = {
-      title: document.getElementById("at-title").value,
-      url: document.getElementById("at-url").value,
+      title: document.getElementById("at-title").value.trim(),
+      url: document.getElementById("at-url").value.trim(),
       group: document.getElementById("at-group").value || null,
       loadOnOpen: document.getElementById("at-load").checked,
       reloadEvery: reloadRaw ? parseInt(reloadRaw, 10) : null,
