@@ -180,6 +180,11 @@ fn validate_tab(tab: &Tab) -> Result<(), ConfigError> {
 
 pub fn parse_and_validate(src: &str) -> Result<(Config, Vec<Warning>), ConfigError> {
     let cfg: Config = toml::from_str(src).map_err(ConfigError::Parse)?;
+    let warnings = validate_config(&cfg)?;
+    Ok((cfg, warnings))
+}
+
+pub fn validate_config(cfg: &Config) -> Result<Vec<Warning>, ConfigError> {
     let mut seen_titles = std::collections::HashSet::new();
     let mut warnings: Vec<Warning> = Vec::new();
     for w in &cfg.windows {
@@ -249,7 +254,7 @@ pub fn parse_and_validate(src: &str) -> Result<(Config, Vec<Warning>), ConfigErr
             }
         }
     }
-    Ok((cfg, warnings))
+    Ok(warnings)
 }
 
 pub fn load_config(path: &Path) -> Result<(Config, Vec<Warning>), ConfigError> {
@@ -775,6 +780,45 @@ title = "W"
         assert!(matches!(
             parse_and_validate(src),
             Err(ConfigError::DuplicateGroupName { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_config_accepts_good_candidate() {
+        let cfg = parse_and_validate(VALID).unwrap().0;
+        assert!(validate_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn validate_config_rejects_duplicate_tab_title() {
+        // Build a config, then push a second tab with a title already used in the window.
+        let mut cfg = parse_and_validate(VALID).unwrap().0;
+        cfg.windows[0].tabs.push(Tab {
+            title: "Gmail".into(), // already a grouped tab title in VALID
+            url: "https://dup.test/".into(),
+            load_on_open: false,
+            reload_every: None,
+            session: None,
+        });
+        assert!(matches!(
+            validate_config(&cfg),
+            Err(ConfigError::DuplicateTabTitle { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_config_rejects_bad_url() {
+        let mut cfg = parse_and_validate(VALID).unwrap().0;
+        cfg.windows[0].tabs.push(Tab {
+            title: "Bad".into(),
+            url: "not a url".into(),
+            load_on_open: false,
+            reload_every: None,
+            session: None,
+        });
+        assert!(matches!(
+            validate_config(&cfg),
+            Err(ConfigError::InvalidUrl { .. })
         ));
     }
 
