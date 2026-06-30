@@ -19,11 +19,13 @@ body {
   text-transform: uppercase; color: #9aa4b2;
 }
 .group:first-child { margin-top: 0; border-top: none; padding-top: 12px; }
-.tab { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; font-size: 14px; color: #ddd; cursor: pointer; }
+/* Rows inset themselves (margin) and round their corners to read as chips; group headers
+   below run full-bleed so their separator spans the sidebar. */
+.tab { display: flex; align-items: center; gap: 10px; margin: 0 6px; padding: 9px 12px; border-radius: 5px; font-size: 14px; color: #ddd; cursor: pointer; }
 .tab:hover { background: #2a2a2a; }
 /* Active highlight tints with the window's accent colour (set as --active-bg from the
    identity colour); falls back to a neutral blue when the window configures no colour. */
-.tab.active { background: var(--active-bg, #094771); color: #fff; }
+.tab.active { background: var(--active-bg, #094771); color: #fff; font-weight: 600; }
 .tab-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .favicon {
@@ -66,9 +68,9 @@ body {
 #error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
 
 /* Per-window identity: the window name sitting in the title bar after the nav pill, trimmed
-   with an ellipsis when the sidebar is too narrow. The whole #titlebar carries the accent
-   colour (set by chrome.js), giving each window an at-a-glance identity. Hidden (no name) when
-   no colour is set — the pill stays. */
+   with an ellipsis when the sidebar is too narrow. The whole #titlebar carries a tint of the
+   accent colour (set by chrome.js), giving each window an at-a-glance identity. Hidden (no name)
+   when no colour is set — the pill stays. */
 #identity {
   flex: 1 1 auto;
   min-width: 0;
@@ -94,8 +96,8 @@ body {
 
 /* Window title bar pinned at the top of the sidebar (below the overlay traffic lights — the
    chrome webview itself starts at TITLEBAR_H, so there's no collision). One row: the nav pill
-   first, the window name (#identity) after it. The bar carries the window's accent colour (set
-   by chrome.js); neutral base when no colour is configured. */
+   first, the window name (#identity) after it. The bar carries a tint of the window's accent
+   colour (set by chrome.js); neutral base when no colour is configured. */
 #titlebar {
   flex: none;
   display: flex; align-items: center; gap: 10px;

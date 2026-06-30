@@ -95,8 +95,8 @@ function initResize() {
 }
 
 // Paint the per-window identity from the window's accent colour: the whole title bar (nav pill
-// + name) takes the colour, with the name shown after the pill. No colour configured → name
-// hidden, title bar neutral (the pill stays).
+// + name) takes a tint of the colour, with the name shown after the pill. No colour configured →
+// name hidden, title bar neutral (the pill stays).
 async function applyIdentity() {
   const id = await invoke("window_identity");
   if (id) defaultSidebarW = id.default_width;
@@ -117,8 +117,9 @@ async function applyIdentity() {
   }
   banner.textContent = id.title;
   banner.hidden = false;
-  // The whole title bar carries the window's accent colour — the name reads on it directly.
-  titlebar.style.background = id.colour;
+  // The whole title bar carries a tint of the window's accent colour (lighter than the full
+  // colour so the dark nav pill + white name read cleanly); the active-tab tint is stronger.
+  titlebar.style.background = tintOverBase(id.colour, 0.18);
   // Tint the active-tab highlight with the same accent (a stronger blend than the bar) so
   // the selected row reads as part of this window's identity.
   document.body.style.setProperty("--active-bg", tintOverBase(id.colour, 0.28));
