@@ -31,7 +31,7 @@ required). `tab_views` flattens to one ordered list — loose tabs first as a he
 section header only for `Some`. Per-tab fields: `title`, `url` (both required, non-empty),
 `load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `session`.
 App-global keys: `dark_mode`, `allow_insecure`, `session`, `format_on_save` (bool, default
-false — reformat the file in house style on a clean hot-reload; see Deferred work → done below),
+false — reformat the file in house style on a clean hot-reload),
 and `density` (`comfortable` default / `compact`). Density is kept live in `AppState` across
 hot-reload (like `dark_mode`); `window_identity` returns it (plus a density-aware default sidebar
 width — compact is narrower) and the chrome sets `data-density` on `<html>`, swapping a block of
@@ -74,12 +74,24 @@ the window or URL — renaming a window or editing a tab's URL never logs you ou
 menu-reopen re-resolve the chain without the whole `Config`.)
 
 **Sentinels are key-gated.** The notification/badge/escape shims signal the Rust side by
-navigating to dead sentinel hosts (`curator.*.invalid`) that `on_navigation` intercepts — no
-command/IPC is exposed to remote pages. Each content webview gets a random per-load key,
+navigating to dead sentinel hosts (`curator.*.invalid`) that `on_navigation` intercepts — the
+sentinel path itself exposes no command/IPC. Each content webview gets a random per-load key,
 substituted into its shims at injection (a function-local literal, never on `window`) and
 required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel without it, so a
 page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
 sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
+
+**Commands are `:chrome`-gated — `withGlobalTauri` does inject the IPC bridge into content
+webviews.** `tauri.conf.json` sets `withGlobalTauri: true`, so `window.__TAURI__` (and the
+underlying invoke channel) reaches *every* webview, remote content tabs included — and
+app-defined `#[tauri::command]`s are **not** ACL/capability-gated (the capability in
+`capabilities/default.json` only grants `core:event` to `*:chrome`; the commands work regardless).
+The only thing stopping a remote page from invoking the whole command surface (reading sibling
+tabs' URLs via `get_tabs`, driving `select_tab`/`unload_tab`/`reset_all`/`set_sidebar_width`) is
+the `require_chrome`/`is_chrome_caller` guard at the top of every command in `commands.rs`, which
+rejects callers whose webview label doesn't end in `:chrome`. **Every new `#[tauri::command]` that
+takes a `Webview` must call `require_chrome` first** (or, for the non-`Result` ones, early-return a
+safe empty value) — dropping the guard silently re-exposes the command to remote pages.
 
 **Native banners go through `UNUserNotificationCenter`, not `tauri-plugin-notification`**
 (`notification.rs`, objc2). The plugin's desktop backend (`notify-rust` → `mac-notification-sys`)

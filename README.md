@@ -180,6 +180,7 @@ window. Optional:
 | `allow_insecure` | list of hosts | `[]`    | Accept self-signed/invalid TLS certs for these hosts. Applied at launch (restart to change).  |
 | `session`        | string        | none    | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). |
 | `density`        | string        | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down proportionally for denser tab lists). Hot-reloads. |
+| `format_on_save` | bool          | `false` | Reformat `config.toml` in curator's house style on a clean hot-reload (same formatting as `curator fmt`). Leaves the file untouched if a reload fails to parse. |
 
 Run **`curator validate [path]`** to check a config without launching: it prints the resolved
 window/tab tree (each tab's cascaded session) and any non-fatal warnings (e.g. a URL repeated

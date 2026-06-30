@@ -169,8 +169,6 @@ fn open_window(
     ))
 }
 
-/// Emit an event to every open window's chrome sidebar. Used for `config-error` (which all
-/// windows surface) and per-window `config-reloaded` fan-out.
 /// Print config-load warnings to stderr — shared by the initial load and the hot-reload path so
 /// the format stays in one place.
 fn log_config_warnings(warnings: &[config::Warning]) {
@@ -179,6 +177,8 @@ fn log_config_warnings(warnings: &[config::Warning]) {
     }
 }
 
+/// Emit an event to every open window's chrome sidebar. Used for `config-error` (which all
+/// windows surface) and per-window `config-reloaded` fan-out.
 fn emit_to_all_chrome<S: serde::Serialize + Clone>(
     app: &tauri::AppHandle,
     event: &str,

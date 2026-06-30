@@ -1,4 +1,4 @@
-use crate::{config::Density, config::TabView, webviews, AppState, WindowRuntime};
+use crate::{config::Density, config::TabView, webviews, AppState};
 use serde::Serialize;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State, Webview, Window};
@@ -17,6 +17,33 @@ pub struct TabItem {
 /// window's chrome sidebar, whose parent window's label *is* the window id.
 fn calling_window_id(webview: &Webview) -> String {
     webview.window().label().to_string()
+}
+
+/// True only when the caller is a window's trusted `:chrome` sidebar webview. `withGlobalTauri`
+/// injects the IPC bridge into *every* webview (including remote `External` content tabs) and
+/// app commands aren't ACL-gated, so without this gate a remote page could invoke the whole
+/// command surface — read sibling tabs' URLs via `get_tabs`, force-reload/unload/select tabs,
+/// etc. Chrome webviews are labelled `{window_id}:chrome`; content webviews are
+/// `{window_id}:tab-<hash>`, so the `:chrome` suffix is unique to the sidebar (the same check
+/// `layout_webviews` relies on).
+fn is_chrome_caller(webview: &Webview) -> bool {
+    label_is_chrome(webview.label())
+}
+
+/// Pure predicate behind [`is_chrome_caller`]: a chrome sidebar's label is `{window_id}:chrome`,
+/// content labels are `{window_id}:tab-<hash>` (`url_label` always prefixes `tab-`), so the
+/// `:chrome` suffix is exclusive to the sidebar.
+fn label_is_chrome(label: &str) -> bool {
+    label.ends_with(":chrome")
+}
+
+/// Reject a command call that didn't originate from the trusted chrome sidebar.
+fn require_chrome(webview: &Webview) -> Result<(), String> {
+    if is_chrome_caller(webview) {
+        Ok(())
+    } else {
+        Err("forbidden: not a chrome caller".into())
+    }
 }
 
 /// Resolve the invoking webview's window handle plus a closure-friendly window id.
@@ -52,6 +79,14 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
         Density::Compact => webviews::COMPACT_CHROME_W,
         Density::Comfortable => webviews::CHROME_W,
     };
+    if !is_chrome_caller(&webview) {
+        return WindowIdentity {
+            title: String::new(),
+            colour: None,
+            default_width,
+            density,
+        };
+    }
     let windows = state.windows.lock().unwrap();
     match windows.get(&wid) {
         Some(rt) => WindowIdentity {
@@ -71,6 +106,9 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
 
 #[tauri::command]
 pub fn get_tabs(webview: Webview, state: State<AppState>) -> Vec<TabItem> {
+    if !is_chrome_caller(&webview) {
+        return Vec::new();
+    }
     let wid = calling_window_id(&webview);
     let windows = state.windows.lock().unwrap();
     let Some(rt) = windows.get(&wid) else {
@@ -94,6 +132,7 @@ pub fn get_tabs(webview: Webview, state: State<AppState>) -> Vec<TabItem> {
 
 #[tauri::command]
 pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
+    require_chrome(&webview)?;
     let (window, wid) = calling_window(&webview)?;
     let mut windows = state.windows.lock().unwrap();
     let rt = windows.get_mut(&wid).ok_or("no such window")?;
@@ -127,6 +166,10 @@ pub fn set_sidebar_width(
     webview: Webview,
     state: State<AppState>,
 ) -> Result<(), String> {
+    require_chrome(&webview)?;
+    if !width.is_finite() {
+        return Err("non-finite width".into());
+    }
     let (window, wid) = calling_window(&webview)?;
     let chrome_w = {
         let windows = state.windows.lock().unwrap();
@@ -153,6 +196,7 @@ fn reset_window_tabs(app: &AppHandle, wid: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub fn reset_all(webview: Webview) -> Result<(), String> {
+    require_chrome(&webview)?;
     let wid = calling_window_id(&webview);
     reset_window_tabs(webview.app_handle(), &wid)
 }
@@ -160,6 +204,7 @@ pub fn reset_all(webview: Webview) -> Result<(), String> {
 /// Refresh a single tab's current page in place (no-op if it hasn't been opened yet).
 #[tauri::command]
 pub fn reload_tab(label: String, webview: Webview) -> Result<(), String> {
+    require_chrome(&webview)?;
     let (window, _) = calling_window(&webview)?;
     if let Some(wv) = window.get_webview(&label) {
         wv.eval("location.reload()").map_err(|e| e.to_string())?;
@@ -172,6 +217,7 @@ pub fn reload_tab(label: String, webview: Webview) -> Result<(), String> {
 /// isn't created yet.
 #[tauri::command]
 pub fn home_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
+    require_chrome(&webview)?;
     let (window, wid) = calling_window(&webview)?;
     let url = {
         let windows = state.windows.lock().unwrap();
@@ -190,6 +236,7 @@ pub fn home_tab(label: String, webview: Webview, state: State<AppState>) -> Resu
 /// isn't created or there's nothing to go back to (WKWebView history isn't exposed here).
 #[tauri::command]
 pub fn nav_back(label: String, webview: Webview) -> Result<(), String> {
+    require_chrome(&webview)?;
     let (window, _) = calling_window(&webview)?;
     if let Some(wv) = window.get_webview(&label) {
         wv.eval("history.back()").map_err(|e| e.to_string())?;
@@ -201,6 +248,7 @@ pub fn nav_back(label: String, webview: Webview) -> Result<(), String> {
 /// isn't created or there's nothing to go forward to.
 #[tauri::command]
 pub fn nav_forward(label: String, webview: Webview) -> Result<(), String> {
+    require_chrome(&webview)?;
     let (window, _) = calling_window(&webview)?;
     if let Some(wv) = window.get_webview(&label) {
         wv.eval("history.forward()").map_err(|e| e.to_string())?;
@@ -212,6 +260,7 @@ pub fn nav_forward(label: String, webview: Webview) -> Result<(), String> {
 /// reloads lazily on next selection. No-op if it isn't loaded.
 #[tauri::command]
 pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
+    require_chrome(&webview)?;
     let (window, wid) = calling_window(&webview)?;
     if let Some(wv) = window.get_webview(&label) {
         wv.close().map_err(|e| e.to_string())?;
@@ -255,8 +304,11 @@ fn focused_window_id(app: &AppHandle) -> Option<String> {
     app.get_focused_window().map(|w| w.label().to_string())
 }
 
-/// Reload the focused window's active tab (Cmd+R / menu). No-op if nothing is active.
-pub fn reload_active_tab(app: &AppHandle) {
+/// Run `f` against the focused window's active content webview, if there is one. Resolves the
+/// focused window, reads its active tab label (under the `windows` lock, dropped before acting),
+/// and looks up that tab's webview — a no-op if no window is focused, nothing is active, or the
+/// active tab's webview isn't created yet.
+fn with_focused_active_webview(app: &AppHandle, f: impl FnOnce(&Webview)) {
     let Some(wid) = focused_window_id(app) else {
         return;
     };
@@ -265,34 +317,27 @@ pub fn reload_active_tab(app: &AppHandle) {
         let windows = state.windows.lock().unwrap();
         windows
             .get(&wid)
-            .and_then(|rt: &WindowRuntime| rt.tabs.active().map(str::to_string))
+            .and_then(|rt| rt.tabs.active().map(str::to_string))
     };
     if let (Some(label), Some(window)) = (active, app.get_window(&wid)) {
         if let Some(wv) = window.get_webview(&label) {
-            let _ = wv.eval("location.reload()");
+            f(&wv);
         }
     }
+}
+
+/// Reload the focused window's active tab (Cmd+R / menu). No-op if nothing is active.
+pub fn reload_active_tab(app: &AppHandle) {
+    with_focused_active_webview(app, |wv| {
+        let _ = wv.eval("location.reload()");
+    });
 }
 
 /// Open the WebKit Web Inspector on the focused window's active tab (menu "Open Developer
 /// Tools" / ⌥⌘I). No-op if nothing is active. Compiled in for both dev and release via the
 /// `devtools` Cargo feature, so the inspector is available in deployed builds too.
 pub fn open_active_devtools(app: &AppHandle) {
-    let Some(wid) = focused_window_id(app) else {
-        return;
-    };
-    let active = {
-        let state = app.state::<AppState>();
-        let windows = state.windows.lock().unwrap();
-        windows
-            .get(&wid)
-            .and_then(|rt: &WindowRuntime| rt.tabs.active().map(str::to_string))
-    };
-    if let (Some(label), Some(window)) = (active, app.get_window(&wid)) {
-        if let Some(wv) = window.get_webview(&label) {
-            wv.open_devtools();
-        }
-    }
+    with_focused_active_webview(app, |wv| wv.open_devtools());
 }
 
 /// Reset the focused window's tabs (menu "Reset All Tabs"). No-op if no window is focused.
@@ -301,4 +346,23 @@ pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     };
     reset_window_tabs(app, &wid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::label_is_chrome;
+
+    #[test]
+    fn only_chrome_labels_are_callers() {
+        // The trusted sidebar.
+        assert!(label_is_chrome("w0123456789abcdef:chrome"));
+        // Content webviews (url_label always yields `tab-<hash>`) must be rejected — this is the
+        // gate keeping remote pages out of the command surface.
+        assert!(!label_is_chrome("w0123456789abcdef:tab-00112233445566ff"));
+        // A window whose id somehow embedded `:chrome` still can't smuggle a content tab through:
+        // the content label ends in the tab hash, not `:chrome`.
+        assert!(!label_is_chrome("wdead:chrome:tab-00112233445566ff"));
+        assert!(!label_is_chrome("curator-error-view"));
+        assert!(!label_is_chrome(""));
+    }
 }

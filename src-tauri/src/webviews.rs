@@ -67,6 +67,9 @@ pub const CHROME_W: f64 = 240.0;
 pub const COMPACT_CHROME_W: f64 = 200.0;
 const MIN_CHROME_W: f64 = 160.0;
 const MAX_CHROME_W: f64 = 520.0;
+/// Hard cap on the sidebar as a fraction of the window's logical width, so even a wide drag (or a
+/// stale persisted width on a now-smaller window) can't crowd out the content area.
+const MAX_CHROME_FRACTION: f64 = 0.4;
 /// macOS title-bar height. The title bar is an overlay (transparent, floating traffic
 /// lights); the content webview paints over it full-height while the chrome sidebar is
 /// inset by this much, leaving the native title-bar strip exposed only above the tab list.
@@ -118,7 +121,7 @@ fn content_size(chrome_w: f64, w: f64, h: f64) -> LogicalSize<f64> {
 /// logical width `win_w`, so a drag (or a stale persisted width on a now-smaller window) can
 /// never starve the content area.
 fn clamp_chrome_w(desired: f64, win_w: f64) -> f64 {
-    let upper = (win_w * 0.4).clamp(MIN_CHROME_W, MAX_CHROME_W);
+    let upper = (win_w * MAX_CHROME_FRACTION).clamp(MIN_CHROME_W, MAX_CHROME_W);
     desired.clamp(MIN_CHROME_W, upper)
 }
 

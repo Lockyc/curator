@@ -324,10 +324,11 @@ fn url_label(url: &str) -> String {
 }
 
 /// A configured `session` value, treating blank/whitespace-only as unset so an empty
-/// `session = ""` falls through the chain rather than keying a store on "".
-fn normalized_session(s: &Option<String>) -> Option<String> {
-    s.as_deref()
-        .map(str::trim)
+/// `session = ""` falls through the chain rather than keying a store on "". Takes `Option<&str>`
+/// so all three cascade links (tab/window `Option<String>` via `as_deref`, and the already-`&str`
+/// global) share the one blank-is-unset rule.
+fn normalized_session(s: Option<&str>) -> Option<String> {
+    s.map(str::trim)
         .filter(|t| !t.is_empty())
         .map(str::to_string)
 }
@@ -359,14 +360,9 @@ impl WindowConfig {
             *n += 1;
             // Session chain: the tab's own store, else the window's, else the app-wide global,
             // else the shared default (blank values are treated as unset and fall through).
-            let session = normalized_session(&tab.session)
-                .or_else(|| normalized_session(&self.session))
-                .or_else(|| {
-                    global_session
-                        .map(str::trim)
-                        .filter(|t| !t.is_empty())
-                        .map(str::to_string)
-                })
+            let session = normalized_session(tab.session.as_deref())
+                .or_else(|| normalized_session(self.session.as_deref()))
+                .or_else(|| normalized_session(global_session))
                 .unwrap_or_else(|| DEFAULT_SESSION.to_string());
             views.push(TabView {
                 label: crate::identity::namespaced(&wid, &within),
