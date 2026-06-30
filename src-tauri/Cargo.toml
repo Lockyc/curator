@@ -28,7 +28,10 @@ notify = "6"
 dirs = "5"
 # Shared, domain-free TOML config primitives (house-style `fmt`, colour parsing) used by both
 # curator and warden — git dep so the build-from-source install flow needs no extra setup.
-config-core = { git = "https://github.com/Lockyc/config-core" }
+# Pinned by rev (same as warden's pin): the shared house formatter must format identically in
+# both apps, so an unpinned dep that floats forward in only one repo would silently diverge
+# `curator fmt` from `warden fmt`. Bump this in lockstep with warden + config-core's own pin.
+config-core = { git = "https://github.com/Lockyc/config-core", rev = "4742ec48499ade023dbfc14014cbcd9482d22aba" }
 
 # For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate, and
 # for posting native banners via UserNotifications (tauri-plugin-notification's NSUserNotification
