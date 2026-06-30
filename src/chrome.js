@@ -38,9 +38,15 @@ function restoreSidebarWidth(title) {
   const saved = parseFloat(localStorage.getItem(widthKey));
   // Saved width wins; otherwise apply the density-aware default (window_identity returns a
   // narrower default under compact) so first-run compact corrects from Rust's launch-time
-  // CHROME_W down to its default. Comfortable's default == CHROME_W, so it's a no-op resize.
+  // CHROME_W down to its default. Skip the *comfortable* default: it equals CHROME_W, the width
+  // Rust already built, so applying it would be a redundant resize/relayout. (data-density is set
+  // just above in applyIdentity, before this runs.)
+  const usingDefault = !(saved > 0);
+  const comfortable = document.documentElement.getAttribute("data-density") !== "compact";
   const target = saved > 0 ? saved : defaultSidebarW;
-  if (target > 0) invoke("set_sidebar_width", { width: Math.round(target) }).catch(() => {});
+  if (target > 0 && !(usingDefault && comfortable)) {
+    invoke("set_sidebar_width", { width: Math.round(target) }).catch(() => {});
+  }
 }
 
 // Wire the right-edge resize grip: a drag pushes the target width (= pointer x within the sidebar

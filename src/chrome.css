@@ -21,6 +21,8 @@ body {
   --tile-size: 20px;
   --tile-font: 11px;
   --dot-svg: 20px;
+  --dot-box: 22px;
+  --group-first-top: 12px;
 }
 [data-density="compact"] {
   --title-font: 14px;
@@ -33,6 +35,8 @@ body {
   --tile-size: 17px;
   --tile-font: 10px;
   --dot-svg: 18px;
+  --dot-box: 20px;
+  --group-first-top: 8px;
 }
 #sidebar { flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #ddd; }
 /* Sticky section headers with a separator line above each group (so groups read as
@@ -46,7 +50,7 @@ body {
   font-size: var(--group-font); font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase; color: #9aa4b2;
 }
-.group:first-child { margin-top: 0; border-top: none; padding-top: 12px; }
+.group:first-child { margin-top: 0; border-top: none; padding-top: var(--group-first-top); }
 /* Rows inset themselves (margin) and round their corners to read as chips; group headers
    below run full-bleed so their separator spans the sidebar. */
 .tab { display: flex; align-items: center; gap: var(--row-gap); margin: 0 6px; padding: var(--row-pad); border-radius: 5px; font-size: var(--row-font); color: #ddd; cursor: pointer; }
@@ -71,7 +75,7 @@ body {
 .unload {
   flex: none;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px;
+  width: var(--dot-box); height: var(--dot-box);
   background: none; border: none; padding: 0; color: inherit;
 }
 /* width/height (CSS) override the SVG's inline 20px attrs so the dot scales with density. */
