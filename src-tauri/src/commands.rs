@@ -1,4 +1,4 @@
-use crate::{config::TabView, webviews, AppState, WindowRuntime};
+use crate::{config::Density, config::TabView, webviews, AppState, WindowRuntime};
 use serde::Serialize;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State, Webview, Window};
@@ -36,24 +36,35 @@ pub struct WindowIdentity {
     title: String,
     colour: Option<String>,
     default_width: f64,
+    /// Whole-app chrome density ("comfortable" | "compact"), from the global config. The chrome
+    /// sets it as `data-density` on the root so its CSS variables switch sizing.
+    density: Density,
 }
 
 /// Return the calling window's title + accent colour so the chrome can paint a per-window
 /// identity banner. Colour is `None` when the window config omits it (chrome stays neutral).
+/// Carries the global density too — the default width follows it (compact is narrower).
 #[tauri::command]
 pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdentity {
     let wid = calling_window_id(&webview);
+    let density = *state.density.lock().unwrap();
+    let default_width = match density {
+        Density::Compact => webviews::COMPACT_CHROME_W,
+        Density::Comfortable => webviews::CHROME_W,
+    };
     let windows = state.windows.lock().unwrap();
     match windows.get(&wid) {
         Some(rt) => WindowIdentity {
             title: rt.cfg.title.clone(),
             colour: rt.cfg.colour.clone(),
-            default_width: webviews::CHROME_W,
+            default_width,
+            density,
         },
         None => WindowIdentity {
             title: String::new(),
             colour: None,
-            default_width: webviews::CHROME_W,
+            default_width,
+            density,
         },
     }
 }

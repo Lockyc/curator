@@ -15,6 +15,18 @@ impl Default for OpenOnLaunch {
     }
 }
 
+/// Chrome sizing mode (whole-app). `Comfortable` (default) is the standard sizing; `Compact`
+/// proportionally condenses the chrome's type + spacing for denser tab lists. The chrome maps
+/// this to a `data-density` attribute → CSS variables; it serializes to the lowercase token the
+/// chrome reads. An unrecognised value is a parse error (same as any bad enum here).
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    #[default]
+    Comfortable,
+    Compact,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -35,6 +47,10 @@ pub struct Config {
     /// `session = ""` is treated as unset and falls through to `DEFAULT_SESSION`.
     #[serde(default)]
     pub session: Option<String>,
+    /// Chrome sizing mode (whole-app). Default comfortable; `compact` proportionally condenses
+    /// the chrome. See [`Density`].
+    #[serde(default)]
+    pub density: Density,
     #[serde(default, rename = "window")]
     pub windows: Vec<WindowConfig>,
 }
@@ -399,6 +415,17 @@ url = "https://calendar.google.com/"
 load_on_open = true
 reload_every = 15
 "#;
+
+    #[test]
+    fn density_defaults_comfortable_and_parses_compact() {
+        assert_eq!(parse_and_validate(VALID).unwrap().0.density, Density::Comfortable);
+        let cfg = parse_and_validate(&format!("density = \"compact\"\n{VALID}"))
+            .unwrap()
+            .0;
+        assert_eq!(cfg.density, Density::Compact);
+        // An unrecognised value is a parse error (serde rejects the unknown variant).
+        assert!(parse_and_validate(&format!("density = \"roomy\"\n{VALID}")).is_err());
+    }
 
     #[test]
     fn parses_windows_groups_tabs_in_order() {

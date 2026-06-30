@@ -6,6 +6,34 @@ body {
   /* The sidebar is app chrome (navigation), not content — never let its labels be text-selected. */
   -webkit-user-select: none; user-select: none; cursor: default;
 }
+/* Chrome sizing tokens. The default set is "comfortable"; chrome.js sets
+   data-density="compact" on <html> from the global config (window_identity), swapping in the
+   condensed set so the whole type + spacing scale moves as a unit. Sidebar *width* is not here —
+   the sidebar is its own Rust-sized webview; window_identity delivers a density-aware default. */
+:root {
+  --title-font: 16px;
+  --title-pad: 6px 10px;
+  --group-font: 14px;
+  --group-pad: 14px 12px 6px;
+  --row-font: 14px;
+  --row-pad: 9px 12px;
+  --row-gap: 10px;
+  --tile-size: 20px;
+  --tile-font: 11px;
+  --dot-svg: 20px;
+}
+[data-density="compact"] {
+  --title-font: 14px;
+  --title-pad: 4px 8px;
+  --group-font: 12px;
+  --group-pad: 10px 9px 4px;
+  --row-font: 12px;
+  --row-pad: 6px 9px;
+  --row-gap: 8px;
+  --tile-size: 17px;
+  --tile-font: 10px;
+  --dot-svg: 18px;
+}
 #sidebar { flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #ddd; }
 /* Sticky section headers with a separator line above each group (so groups read as
    distinct sections, and the current section stays visible while scrolling a long list). */
@@ -13,15 +41,15 @@ body {
   position: sticky; top: 0; z-index: 1;
   background: #1e1e1e;
   margin-top: 6px;
-  padding: 14px 12px 6px;
+  padding: var(--group-pad);
   border-top: 1px solid #313640;
-  font-size: 14px; font-weight: 700; letter-spacing: 0.06em;
+  font-size: var(--group-font); font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase; color: #9aa4b2;
 }
 .group:first-child { margin-top: 0; border-top: none; padding-top: 12px; }
 /* Rows inset themselves (margin) and round their corners to read as chips; group headers
    below run full-bleed so their separator spans the sidebar. */
-.tab { display: flex; align-items: center; gap: 10px; margin: 0 6px; padding: 9px 12px; border-radius: 5px; font-size: 14px; color: #ddd; cursor: pointer; }
+.tab { display: flex; align-items: center; gap: var(--row-gap); margin: 0 6px; padding: var(--row-pad); border-radius: 5px; font-size: var(--row-font); color: #ddd; cursor: pointer; }
 .tab:hover { background: #2a2a2a; }
 /* Active highlight tints with the window's accent colour (set as --active-bg from the
    identity colour); falls back to a neutral blue when the window configures no colour. */
@@ -30,10 +58,10 @@ body {
 
 .favicon {
   flex: none;
-  width: 20px; height: 20px;
+  width: var(--tile-size); height: var(--tile-size);
   border-radius: 5px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600; color: #fff;
+  font-size: var(--tile-font); font-weight: 600; color: #fff;
 }
 
 .actions { flex: none; display: inline-flex; align-items: center; gap: 10px; }
@@ -46,7 +74,8 @@ body {
   width: 22px; height: 22px;
   background: none; border: none; padding: 0; color: inherit;
 }
-.unload svg { display: block; }
+/* width/height (CSS) override the SVG's inline 20px attrs so the dot scales with density. */
+.unload svg { display: block; width: var(--dot-svg); height: var(--dot-svg); }
 
 /* Loaded indicator that doubles as an unload control: a green dot when the tab is warm,
    swapping to a red ✕ on hover. */
@@ -74,7 +103,7 @@ body {
 #identity {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 16px; font-weight: 700;
+  font-size: var(--title-font); font-weight: 700;
   color: #fff;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -101,7 +130,7 @@ body {
 #titlebar {
   flex: none;
   display: flex; align-items: center; gap: 10px;
-  padding: 6px 10px;
+  padding: var(--title-pad);
   background: #1e1e1e;
   border-bottom: 1px solid #313640;
 }

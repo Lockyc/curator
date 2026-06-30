@@ -36,7 +36,11 @@ function restoreSidebarWidth(title) {
   if (!title) return;
   widthKey = "curator:sidebar-width:" + title;
   const saved = parseFloat(localStorage.getItem(widthKey));
-  if (saved > 0) invoke("set_sidebar_width", { width: Math.round(saved) }).catch(() => {});
+  // Saved width wins; otherwise apply the density-aware default (window_identity returns a
+  // narrower default under compact) so first-run compact corrects from Rust's launch-time
+  // CHROME_W down to its default. Comfortable's default == CHROME_W, so it's a no-op resize.
+  const target = saved > 0 ? saved : defaultSidebarW;
+  if (target > 0) invoke("set_sidebar_width", { width: Math.round(target) }).catch(() => {});
 }
 
 // Wire the right-edge resize grip: a drag pushes the target width (= pointer x within the sidebar
@@ -99,6 +103,9 @@ function initResize() {
 // name hidden, title bar neutral (the pill stays).
 async function applyIdentity() {
   const id = await invoke("window_identity");
+  // Whole-app density token applied to <html> so the CSS sizing variables switch. Re-runs on
+  // `config-reloaded`, so a live density change restyles the chrome without a relaunch.
+  document.documentElement.setAttribute("data-density", (id && id.density) || "comfortable");
   if (id) defaultSidebarW = id.default_width;
   // The width restore is a one-time relayout at load, not a per-reload action.
   if (!widthRestored) {

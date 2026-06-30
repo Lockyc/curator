@@ -61,6 +61,10 @@ const ERROR_VIEW: &str = "curator-error-view";
 /// additionally capped at 40% of the window in [`clamp_chrome_w`] so the sidebar can never crowd
 /// out the content area.
 pub const CHROME_W: f64 = 240.0;
+/// Default sidebar width under `density = "compact"` — narrower to match the condensed type.
+/// Delivered to the chrome via `window_identity` as the reset/first-run default; the initial
+/// webview still builds at [`CHROME_W`] and the chrome corrects to this on load.
+pub const COMPACT_CHROME_W: f64 = 200.0;
 const MIN_CHROME_W: f64 = 160.0;
 const MAX_CHROME_W: f64 = 520.0;
 /// macOS title-bar height. The title bar is an overlay (transparent, floating traffic

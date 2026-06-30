@@ -80,6 +80,9 @@ pub struct AppState {
     /// Current app-wide `dark_mode`, kept live across hot-reload so Window-menu reopen themes a
     /// window to match every other open window (not the stale launch-time value).
     pub dark_mode: AtomicBool,
+    /// Current app-wide chrome `density`, kept live across hot-reload so `window_identity`
+    /// (re-called by the chrome on `config-reloaded`) returns the new mode.
+    pub density: Mutex<config::Density>,
 }
 
 impl AppState {
@@ -243,6 +246,9 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
     let state = app.state::<AppState>();
     // Keep the live dark_mode current so a later Window-menu reopen themes to match.
     state.dark_mode.store(new_cfg.dark_mode, Ordering::Relaxed);
+    // Keep the live density current so each kept window's chrome, re-calling window_identity on
+    // `config-reloaded` below, picks up a density change without a relaunch.
+    *state.density.lock().unwrap() = new_cfg.density;
 
     // Closed windows: drop the window and its runtime, and stop its reload timers. Use
     // `destroy()` (not `close()`) so this programmatic removal bypasses `on_real_window_close` —
@@ -653,6 +659,7 @@ pub fn run() {
             app.manage(AppState {
                 windows: Mutex::new(runtimes),
                 dark_mode: AtomicBool::new(cfg.dark_mode),
+                density: Mutex::new(cfg.density),
             });
 
             // No windows opened — either the config failed to parse or it defines no
