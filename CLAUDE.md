@@ -47,6 +47,13 @@ warns). `parse_and_validate`/`load_config` return `(Config, Vec<Warning>)`; warn
 URL-hash label (`url_label`), not the title — titles are display labels (hence the new title
 uniqueness, which removes the silent `open_on_launch` first-match ambiguity).
 
+Tabs can be added to an existing window via the `add_tab` Tauri command (see Architecture below)
+without hand-editing the file. The command appends via `config_core::add_tab(path, window_title,
+group, fields)`, where `group: Option<&str>` is the seam for placing a new tab into an existing
+group or the loose section. **Creating a new group from the UI is not yet built** — the group
+picker in the `+ Add tab` form offers only existing groups plus the loose section; new groups must
+be added by editing `config.toml` directly.
+
 ## Architecture
 
 **Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
@@ -121,6 +128,18 @@ Tools" (⌥⌘I) opens the WebKit inspector on the focused window's active conte
 release builds because `tauri`'s `devtools` feature is enabled in `Cargo.toml` — that's
 deliberate (this is an operator console, not a sandboxed consumer app), not a debug leftover;
 don't strip the feature.
+
+**Adding tabs from the UI.** The sidebar's always-visible **`+ Add tab`** button expands an
+inline form (title, URL, optional group picker, and an Advanced section for `load_on_open`,
+`reload_every`, `session`). On submit, the chrome invokes the `add_tab` Tauri command
+(`commands.rs`). The command: (1) snapshots the window's current config under the `windows` lock
+and then drops the lock; (2) builds a candidate `WindowConfig` with the new tab appended to the
+target group (or loose section if `group` is `None`/empty); (3) wraps it in a single-window
+`Config` and calls `config::validate_config` — the same full validation as load-time; (4) only on
+success writes the new tab to the config file via `config_core::add_tab`. The existing file-watcher
+reload then re-renders the sidebar — there is no separate render path. Any validation error is
+returned as a string and shown inline in the form. New-group creation from the UI is not supported;
+adding a tab to a group that doesn't yet exist returns an error.
 
 **Resizable sidebar.** The sidebar is a fixed-width child webview (default `CHROME_W`) with the
 content webviews Rust-positioned beside it, so width can't be pure CSS. Each window's width lives

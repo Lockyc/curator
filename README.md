@@ -31,8 +31,10 @@ file-driven, everything else is ephemeral.
 
 - **`config.toml` is the source of truth** — each `[[window]]` block opens one window,
   containing loose `[[window.tab]]` entries and/or `[[window.group]]` sections of
-  `[[window.group.tab]]`s. No in-app pin/unpin; you curate by editing the file (hot-reloaded
-  on save).
+  `[[window.group.tab]]`s. The sidebar's **`+ Add tab`** button lets you append a tab to any
+  window without hand-editing the file; the full tab form (title, URL, group, and advanced
+  options) validates and writes to `config.toml`, and the watcher hot-reloads the result. For
+  bulk edits, new windows, or new groups, edit the file directly (hot-reloaded on save).
 - **Multiple windows** — each `[[window]]` opens its own window with its own tab list. All
   open at launch; ⌘W (or the red button) closes a window and the **Window** menu reopens it.
   Closing the last open window quits curator.
@@ -104,7 +106,9 @@ manual / contributor flow.
    A malformed file keeps the last-good config running and shows an error banner instead of
    crashing. The **Config** menu has *Edit Config* / *Reveal Config in Finder* so you needn't
    memorise the path; the **Tabs** menu has *Reload Tab* (⌘R) and *Reset All Tabs* to snap
-   every open tab back to its canonical URL.
+   every open tab back to its canonical URL. You can also add tabs without editing the file:
+   use the **`+ Add tab`** button at the bottom of each window's sidebar — it writes directly
+   to `config.toml` and the watcher reloads the result.
 
 ## Config
 
