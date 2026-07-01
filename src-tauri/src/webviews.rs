@@ -176,15 +176,20 @@ pub fn build_window(
         .title_bar_style(TitleBarStyle::Overlay)
         .build()?;
 
-    // Windows are built at runtime (not declared in tauri.conf.json), so the window-state plugin's
-    // automatic restore doesn't apply — trigger it explicitly. Saved bounds (keyed by the window
-    // label, which is the stable window_id) override the config-resolved inner_size above; first
-    // launch (no saved state) keeps it. The plugin saves on close/exit; see lib.rs for setup.
-    {
-        use tauri_plugin_window_state::{StateFlags, WindowExt};
-        let _ =
-            window.restore_state(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED);
-    }
+    // Saved bounds (size/position/maximized) are restored by tauri-plugin-window-state's own
+    // `window_created` hook, which runs on the main thread *inside* the event loop — where its
+    // `set_size`/`set_position` (and the monitor-intersection check that keeps a stale off-screen
+    // position from stranding the window) resolve inline. Every window is covered except WINDOW_ERROR
+    // (`skip_initial_state` in lib.rs, which must not restore its throwaway bounds).
+    //
+    // FOOTGUN: do NOT call `window.restore_state(...)` here. It looks right — windows are built at
+    // runtime, so restore them by hand — but `restore_state` reads/sets geometry via calls that
+    // marshal to the main event loop, and `build_window` always runs *off* it (the setup hook runs
+    // before the loop starts; hot-reload runs on the watcher thread). Off the loop that marshal
+    // blocks: a self-hang at launch, or a mutex-holding deadlock against the auto-hook on reload. It
+    // stayed invisible while no window title hashed to a persisted state entry (restore
+    // short-circuited before the marshal); the first matching title — e.g. renaming a window onto an
+    // old entry — froze the app.
 
     let chrome_label = crate::identity::namespaced(window_id, "chrome");
     let chrome = WebviewBuilder::new(&chrome_label, WebviewUrl::App("index.html".into()));

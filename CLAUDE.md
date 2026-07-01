@@ -162,15 +162,24 @@ and `relayout_with_width`s the chrome + content. The window re-clamps on resize.
 highlight tints with the window's accent colour (`--active-bg`), falling back to neutral blue.
 
 **Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION
-| MAXIMIZED). curator builds every window at runtime (not from `tauri.conf.json`), so the plugin's
-*automatic* restore never fires — `webviews::build_window` must call `window.restore_state(...)`
-itself right after `.build()`; don't drop it expecting auto-restore. State is keyed by Tauri label
-(== `window_id`, derived from the title, stable across launches) *within a per-config state file*
+| MAXIMIZED). Restore is handled entirely by the plugin's `window_created` hook, which runs on the
+main thread inside the running event loop — where its `set_size`/`set_position` resolve inline and
+its monitor-intersection check keeps a stale off-screen position from stranding the window. So
+`build_window` must **not** call `restore_state` itself. That looks correct (windows are built at
+runtime, not from `tauri.conf.json`, so restore them by hand) but is a footgun: once a saved entry
+matches the label, `restore_state` applies geometry via calls that marshal to the main event loop and
+block when invoked off it. In the setup hook the loop hasn't started (launch freeze); on the
+hot-reload watcher thread it holds the plugin mutex while the `window_created` hook waits on it
+(reload deadlock). It stayed invisible while no window title hashed to a persisted label (restore
+short-circuited before the marshal); the first matching title — e.g. renaming a window onto an old
+entry — froze the app. State is keyed by Tauri label (== `window_id`,
+derived from the title, stable across launches) *within a per-config state file*
 (`window_state_filename` hashes the config path) so two configs that reuse a window title don't
 share bounds. The config `width`/`height` is only the first-run default — saved bounds override it
 once present. The transient error window is `skip_initial_state`-excluded. Renaming a window's
-`title` changes its id/label, so it restores fresh default bounds (consistent with the title also
-being the session/identity key). Sidebar width is separate (per-title `localStorage`, above).
+`title` changes its id/label, so it normally restores fresh default bounds — unless the new title
+happens to hash to a label already in the state file, which is how the rename-onto-old-entry case
+above arises. Sidebar width is separate (per-title `localStorage`, above).
 
 **Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
 Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across

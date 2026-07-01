@@ -646,9 +646,9 @@ pub fn run() {
     tauri::Builder::default()
         // Persist each window's size + position (+ maximized) across launches, keyed by Tauri
         // label within a per-config state file (window_state_filename) so two configs that share a
-        // window title don't share bounds. Saving is automatic (on close/exit); restore is
-        // triggered explicitly in webviews::build_window, since curator's windows are built at
-        // runtime (not declared in tauri.conf.json) so the plugin's auto-restore never fires. The
+        // window title don't share bounds. Both save (on close/exit) and restore (the plugin's
+        // window_created hook, on the main event loop) are automatic — build_window must NOT restore
+        // by hand (that call marshals off the loop and deadlocks; see the footgun there). The
         // transient error window is excluded — its throwaway bounds must not seed a real window.
         .plugin(
             tauri_plugin_window_state::Builder::default()
