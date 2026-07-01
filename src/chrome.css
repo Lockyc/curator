@@ -1,150 +1,37 @@
+/* Page shell only — the sidebar interior (rows, dots, groups, banner, error bar, resize) lives in
+   chrome-core (chrome-core.css). This file keeps what's curator-specific: the dark page base and the
+   nav pill (browser navigation), which chrome-core mounts into its banner via the header slot. */
+
 * { box-sizing: border-box; }
-html, body { background: #1e1e1e; }   /* dark overscroll/rubber-band, not white */
-body {
-  margin: 0; font: 13px -apple-system, sans-serif; height: 100vh;
-  display: flex; flex-direction: column;
-  /* The sidebar is app chrome (navigation), not content — never let its labels be text-selected. */
-  -webkit-user-select: none; user-select: none; cursor: default;
-}
-/* Chrome sizing tokens. The default set is "comfortable"; chrome.js sets
-   data-density="compact" on <html> from the global config (window_identity), swapping in the
-   condensed set so the whole type + spacing scale moves as a unit. Sidebar *width* is not here —
-   the sidebar is its own Rust-sized webview; window_identity delivers a density-aware default. */
-:root {
-  --title-font: 16px;
-  --title-pad: 6px 10px;
-  --group-font: 14px;
-  --group-pad: 14px 12px 6px;
-  --row-font: 14px;
-  --row-pad: 9px 12px;
-  --row-gap: 10px;
-  --tile-size: 20px;
-  --tile-font: 11px;
-  --dot-svg: 20px;
-  --dot-box: 22px;
-  --group-first-top: 12px;
-}
-[data-density="compact"] {
-  --title-font: 14px;
-  --title-pad: 4px 8px;
-  --group-font: 12px;
-  --group-pad: 10px 9px 4px;
-  --row-font: 12px;
-  --row-pad: 6px 9px;
-  --row-gap: 8px;
-  --tile-size: 17px;
-  --tile-font: 10px;
-  --dot-svg: 18px;
-  --dot-box: 20px;
-  --group-first-top: 8px;
-}
-#sidebar { flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #ddd; }
-/* Sticky section headers with a separator line above each group (so groups read as
-   distinct sections, and the current section stays visible while scrolling a long list). */
-.group {
-  position: sticky; top: 0; z-index: 1;
-  background: #1e1e1e;
-  margin-top: 6px;
-  padding: var(--group-pad);
-  border-top: 1px solid #313640;
-  font-size: var(--group-font); font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: #9aa4b2;
-}
-.group:first-child { margin-top: 0; border-top: none; padding-top: var(--group-first-top); }
-/* Rows inset themselves (margin) and round their corners to read as chips; group headers
-   below run full-bleed so their separator spans the sidebar. */
-.tab { display: flex; align-items: center; gap: var(--row-gap); margin: 0 6px; padding: var(--row-pad); border-radius: 5px; font-size: var(--row-font); color: #ddd; cursor: pointer; }
-.tab:hover { background: #2a2a2a; }
-/* Active highlight tints with the window's accent colour (set as --active-bg from the
-   identity colour); falls back to a neutral blue when the window configures no colour. */
-.tab.active { background: var(--active-bg, #094771); color: #fff; font-weight: 600; }
-.tab-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html, body { margin: 0; height: 100vh; background: #1e1e1e; } /* dark overscroll/rubber-band */
 
-.favicon {
+/* #chrome is the chrome-core mount container; chrome-core makes it a flex column (.cc-root). */
+#chrome { height: 100vh; }
+
+/* Nav pill (back/forward/reload/home) — curator-only browser nav, mounted in chrome-core's banner. */
+.nav-pill {
   flex: none;
-  width: var(--tile-size); height: var(--tile-size);
-  border-radius: 5px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: var(--tile-font); font-weight: 600; color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 2px;
 }
-
-.actions { flex: none; display: inline-flex; align-items: center; gap: 10px; }
-
-/* The indicator is an SVG in a fixed, centered box — display:block on the svg removes the
-   inline baseline gap, so the dot lines up exactly across every row. */
-.unload {
+.nav-btn {
   flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--dot-box); height: var(--dot-box);
-  background: none; border: none; padding: 0; color: inherit;
-}
-/* width/height (CSS) override the SVG's inline 20px attrs so the dot scales with density. */
-.unload svg { display: block; width: var(--dot-svg); height: var(--dot-svg); }
-
-/* Loaded indicator that doubles as an unload control: a green dot when the tab is warm,
-   swapping to a red ✕ on hover. */
-.unload .dot, .unload .cross { display: none; }
-.unload.loaded { cursor: pointer; }
-.unload.loaded .dot { display: block; opacity: 0.85; }
-.unload.loaded:hover .dot { display: none; }
-.unload.loaded:hover .cross { display: block; }
-
-/* Sidebar resize grip pinned to the chrome's right edge. The sidebar is its own fixed-width
-   webview, so the drag reports the target width to Rust (set_sidebar_width), which resizes this
-   webview and repositions the content webviews. Invisible until hover/drag. */
-#resize-handle {
-  position: fixed; top: 0; right: 0; width: 6px; height: 100vh;
-  cursor: col-resize; z-index: 10;
-}
-#resize-handle:hover, #resize-handle.dragging { background: rgba(255, 255, 255, 0.14); }
-
-#error-banner { background: #5a1d1d; color: #fff; padding: 8px 12px; font-size: 12px; }
-
-/* Per-window identity: the window name sitting in the title bar after the nav pill, trimmed
-   with an ellipsis when the sidebar is too narrow. The whole #titlebar carries a tint of the
-   accent colour (set by chrome.js), giving each window an at-a-glance identity. Hidden (no name)
-   when no colour is set — the pill stays. */
-#identity {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: var(--title-font); font-weight: 700;
-  color: #fff;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-.badge {
-  flex: none;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: #d13438;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-/* Window title bar pinned at the top of the sidebar (below the overlay traffic lights — the
-   chrome webview itself starts at TITLEBAR_H, so there's no collision). One row: the nav pill
-   first, the window name (#identity) after it. The bar carries a tint of the window's accent
-   colour (set by chrome.js); neutral base when no colour is configured. */
-#titlebar {
-  flex: none;
-  display: flex; align-items: center; gap: 10px;
-  padding: var(--title-pad);
-  background: #1e1e1e;
-  border-bottom: 1px solid #313640;
-}
-.nav-pill { flex: none; display: inline-flex; align-items: center; gap: 2px; background: #2a2a2a; border-radius: 8px; padding: 2px; }
-.nav-btn {
-  flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 26px;
-  background: none; border: none; padding: 0; color: #ddd;
-  border-radius: 6px; cursor: pointer; opacity: 0.85;
+  width: 30px;
+  height: 26px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.85;
   transition: opacity 0.12s ease, background 0.12s ease;
 }
 .nav-btn svg { display: block; }

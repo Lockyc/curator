@@ -3,21 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <title>curator</title>
+    <link rel="stylesheet" href="chrome-core.css" />
     <link rel="stylesheet" href="chrome.css" />
   </head>
   <body>
-    <div id="error-banner" hidden></div>
-    <div id="titlebar">
-      <div class="nav-pill">
-        <button id="nav-back" class="nav-btn" title="Back" disabled></button>
-        <button id="nav-forward" class="nav-btn" title="Forward" disabled></button>
-        <button id="nav-reload" class="nav-btn" title="Reload" disabled></button>
-        <button id="nav-home" class="nav-btn" title="Go to start" disabled></button>
-      </div>
-      <div id="identity" hidden></div>
-    </div>
-    <nav id="sidebar"></nav>
-    <div id="resize-handle" title="Drag to resize · double-click to reset"></div>
+    <!-- The chrome-core sidebar mounts here; the nav pill is built in chrome.js and passed as the
+         component's header slot. chrome-core.js (plain script) sets window.ChromeSidebar before the
+         module runs. -->
+    <div id="chrome"></div>
+    <script src="chrome-core.js"></script>
     <script type="module" src="chrome.js"></script>
   </body>
 </html>
