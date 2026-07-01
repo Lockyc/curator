@@ -25,5 +25,14 @@ fn main() {
     // Re-stamp after any git ref update (commit/checkout) — logs/HEAD changes every time.
     println!("cargo:rerun-if-changed=../.git/logs/HEAD");
 
+    // Materialize the shared chrome into frontendDist (../src) so generate_context! embeds it.
+    // The generated files are git-ignored — reproducible from the pinned chrome-core rev + this
+    // recipe, so a plain clone still builds (cargo fetches chrome-core; this writes it out).
+    let src = std::path::Path::new("../src");
+    std::fs::write(src.join("chrome-core.css"), chrome_core::SIDEBAR_CSS)
+        .expect("write chrome-core.css");
+    std::fs::write(src.join("chrome-core.js"), chrome_core::SIDEBAR_JS)
+        .expect("write chrome-core.js");
+
     tauri_build::build()
 }

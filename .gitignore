@@ -1,5 +1,10 @@
 # Ephemeral spec/plan/brainstorm scratch — kept on disk, never tracked
 docs/superpowers/
+.superpowers/
+
+# Generated at build time from the pinned chrome-core crate (build.rs); reproducible, not tracked
+/src/chrome-core.css
+/src/chrome-core.js
 
 # macOS
 .DS_Store

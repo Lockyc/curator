@@ -348,6 +348,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chrome-core"
+version = "0.1.0"
+source = "git+https://github.com/Lockyc/chrome-core?rev=a08c4724a627d8f29b2592588d1854c0f8efa680#a08c4724a627d8f29b2592588d1854c0f8efa680"
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -522,6 +527,7 @@ name = "curator"
 version = "0.5.0"
 dependencies = [
  "block2",
+ "chrome-core",
  "config-core",
  "dirs 5.0.1",
  "notify",
