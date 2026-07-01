@@ -60,6 +60,10 @@ function badgeToAttention(text) {
 async function buildDto() {
   const id = await invoke("window_identity");
   const tabs = await invoke("get_tabs");
+  // Drop badges for tabs that no longer exist (removed / URL-hash label moved), so a future tab
+  // reusing the label doesn't inherit a stale count with no fresh service-badge (mirrors warden).
+  const labels = new Set(tabs.map((t) => t.label));
+  [...badges.keys()].forEach((l) => { if (!labels.has(l)) badges.delete(l); });
   return {
     title: (id && id.title) || "",
     colour: (id && id.colour) ?? null,
