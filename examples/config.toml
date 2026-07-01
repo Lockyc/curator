@@ -43,77 +43,67 @@
 # so this window stays quiet. It opens with a loose tab above the grouped sections.
 
 [[window]]
-title           = "Keepers"
-colour          = "#0f8a8a"   # optional accent: name banner + faint navbar tint (per-window identity)
-open_on_launch  = "Grafana"   # open this tab on launch instead of the blank screen
-
+  title          = "Keepers"
+  colour         = "#0f8a8a" # optional accent: name banner + faint navbar tint (per-window identity)
+  open_on_launch = "Grafana" # open this tab on launch instead of the blank screen
   # Loose (ungrouped) tab — renders first, in a headerless section above the groups below.
   [[window.tab]]
-  title = "Start"
-  url   = "https://duckduckgo.com/"
+    title = "Start"
+    url   = "https://duckduckgo.com/"
 
   [[window.group]]
-  name = "Dashboards"
-
+    name = "Dashboards"
     [[window.group.tab]]
-    title        = "Grafana"
-    url          = "https://play.grafana.org/"
-    load_on_open = true   # preload + keep warm from window open (default false)
-    reload_every = 5      # auto-refresh every 5 minutes
-
+      title        = "Grafana"
+      url          = "https://play.grafana.org/"
+      load_on_open = true                        # preload + keep warm from window open (default false)
+      reload_every = 5                           # auto-refresh every 5 minutes
     [[window.group.tab]]
-    title = "Uptime Kuma"
-    url   = "https://demo.uptime.kuma.pet/"
+      title = "Uptime Kuma"
+      url   = "https://demo.uptime.kuma.pet/"
 
   [[window.group]]
-  name = "Status"
-
+    name = "Status"
     [[window.group.tab]]
-    title = "GitHub Status"
-    url   = "https://www.githubstatus.com/"
-
+      title = "GitHub Status"
+      url   = "https://www.githubstatus.com/"
     [[window.group.tab]]
-    title = "Cloudflare Status"
-    url   = "https://www.cloudflarestatus.com/"
+      title = "Cloudflare Status"
+      url   = "https://www.cloudflarestatus.com/"
 
   [[window.group]]
-  name = "Docs"
-
+    name = "Docs"
     [[window.group.tab]]
-    title = "Material for MkDocs"
-    url   = "https://squidfunk.github.io/mkdocs-material/"
-
+      title = "Material for MkDocs"
+      url   = "https://squidfunk.github.io/mkdocs-material/"
     [[window.group.tab]]
-    title = "Tauri"
-    url   = "https://tauri.app/"
+      title = "Tauri"
+      url   = "https://tauri.app/"
 
-# ─── Window 2: Comms ──────────────────────────────────────────────────────────
-# Chat apps you want live: each is `load_on_open`, so it stays loaded in the background, fires
-# native banners on new messages, and rolls its unread count up to the dock badge.
+      # ─── Window 2: Comms ──────────────────────────────────────────────────────────
+      # Chat apps you want live: each is `load_on_open`, so it stays loaded in the background, fires
+      # native banners on new messages, and rolls its unread count up to the dock badge.
 
 [[window]]
-title = "Comms"
+  title = "Comms"
 
   [[window.group]]
-  name = "Chat"
-
+    name = "Chat"
     [[window.group.tab]]
-    title        = "Mattermost"
-    url          = "https://community.mattermost.com/"
-    load_on_open = true   # keep live so it notifies even when it isn't the active tab
-
+      title        = "Mattermost"
+      url          = "https://community.mattermost.com/"
+      load_on_open = true                                # keep live so it notifies even when it isn't the active tab
     [[window.group.tab]]
-    title        = "Slack"
-    url          = "https://app.slack.com/"
-    load_on_open = true
-    # session = "work"   # give this tab its own login store (e.g. a separate account)
+      title        = "Slack"
+      url          = "https://app.slack.com/"
+      load_on_open = true
+      # session = "work"   # give this tab its own login store (e.g. a separate account)
 
   [[window.group]]
-  name = "Notifications"
-
+    name = "Notifications"
     [[window.group.tab]]
-    # ntfy.sh is an open-source push-notification service. Replace with your self-hosted
-    # instance URL (e.g. https://ntfy.example.com/) — the tab renders the ntfy web UI.
-    title        = "ntfy"
-    url          = "https://ntfy.sh/app"
-    load_on_open = true
+      # ntfy.sh is an open-source push-notification service. Replace with your self-hosted
+      # instance URL (e.g. https://ntfy.example.com/) — the tab renders the ntfy web UI.
+      title        = "ntfy"
+      url          = "https://ntfy.sh/app"
+      load_on_open = true

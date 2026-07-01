@@ -20,14 +20,14 @@ INSTALL_DIR="$HOME/.curator"
 # 1. Hard prerequisites. The /curator:install command offers to install these;
 #    the bare script only refuses with a hint.
 missing=0
-for c in git cargo npm; do
+for c in git cargo; do
   if ! command -v "$c" >/dev/null 2>&1; then
     echo "curator: '$c' is required but not found on PATH" >&2
     missing=1
   fi
 done
 if [ "$missing" -ne 0 ]; then
-  echo "curator: install Rust (https://rustup.rs), Node (brew install node), and" >&2
+  echo "curator: install Rust (https://rustup.rs) and" >&2
   echo "         Xcode Command Line Tools (xcode-select --install), then re-run." >&2
   exit 1
 fi
@@ -46,10 +46,15 @@ fi
 
 # 3. Build the release bundle.
 cd "$INSTALL_DIR"
-echo "→ installing npm deps"
-npm install
-echo "→ building release bundle (this takes a while)"
-npm run tauri build
+
+# Ensure the Tauri CLI is available (provides `cargo tauri`).
+if ! cargo tauri --version >/dev/null 2>&1; then
+  echo "→ installing the Tauri CLI"
+  cargo install tauri-cli --version '^2'
+fi
+
+echo "→ building curator (release)"
+( cd src-tauri && cargo tauri build )
 
 # 4. Install the built app into /Applications.
 bash scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
