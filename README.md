@@ -85,19 +85,19 @@ manual / contributor flow.
    It lives under `~/.config/` so it slots into a dotfiles workflow — your curated tab set
    becomes versioned, portable config.
 
-2. Run it (requires Rust + Node):
+2. Run it (requires Rust + the Tauri CLI; the installer backstops this via `cargo install tauri-cli`):
 
    ```sh
-   just dev      # or: npm run tauri dev
+   just run      # or: cargo tauri dev
    ```
 
-   `just dev` loads the repo's `examples/config.toml` (via the `CURATOR_CONFIG` env var) so
+   `just run` loads the repo's `examples/config.toml` (via the `CURATOR_CONFIG` env var) so
    iterating never touches your real `~/.config/curator/config.toml`. Point `CURATOR_CONFIG`
    at any file to test another config.
 
    `just build` produces a `.app` bundle; **`just deploy`** builds and installs/updates it
    in `/Applications` (quitting the running copy and relaunching). `just test` runs the Rust
-   tests. The app icon source is `src-tauri/icons/icon.svg` — re-run `npx tauri icon
+   tests. The app icon source is `src-tauri/icons/icon.svg` — re-run `cargo tauri icon
    src-tauri/icons/icon.svg` after editing it.
 
 3. Edit `~/.config/curator/config.toml` and save — the sidebar **hot-reloads**, no restart.

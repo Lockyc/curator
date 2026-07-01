@@ -1,16 +1,16 @@
 # curator — agent notes
 
-macOS-only Tauri v2 app (Rust + a static web frontend in `src/`, driven via npm).
+macOS-only Tauri v2 app (Rust + a static web frontend in `src/`). Build is pure cargo / `cargo tauri`.
 
 Built as the operator-side console for a self-hosted homelab.
 
-Dev: `just dev`. Build a release `.app`: `just build`. Install/replace it in
+Dev: `just run`. Build a release `.app`: `just build`. Install/replace it in
 `/Applications` and relaunch: `just deploy`. Tests: `just test` (or `cd src-tauri &&
-cargo test`). There is no CI — the release gate is running `just fmt`, `just clippy`,
-and `just test` locally and confirming all are green before tagging a release.
+cargo test`). There is no CI — run `just gate` locally (format check, clippy, tests) and
+confirm it is green before tagging a release.
 
 The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/config.toml`
-(`config::resolve_config_path`). `just dev` sets `CURATOR_CONFIG` to the repo's
+(`config::resolve_config_path`). `just run` sets `CURATOR_CONFIG` to the repo's
 `examples/config.toml` so dev runs never touch a real user config.
 
 `curator validate [path]` (arg-dispatched in `main.rs` before Tauri starts → `validate_cli` in
@@ -208,9 +208,9 @@ the owner reopening it.
 
 Every release gets a matching GitHub release — don't just push `main`. To cut one:
 
-1. Bump the version in **both** `src-tauri/Cargo.toml` and `package.json` (keep them in
-   sync) and commit it.
-2. Confirm the release gate is green: `just fmt`, `just clippy`, `just test`.
+1. Bump the version in `src-tauri/Cargo.toml` (the single source of version truth — `package.json`
+   no longer exists) and commit it.
+2. Confirm the release gate is green: `just gate`.
 3. Tag the release commit `v<version>` (matching the bumped version) and publish:
    `gh release create v<version> --target main --title v<version> --notes "<changelog>"`,
    where the notes summarise what shipped since the previous release.
