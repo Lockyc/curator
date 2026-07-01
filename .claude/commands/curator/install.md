@@ -28,7 +28,6 @@ Probe each build prerequisite:
 ```bash
 command -v git   >/dev/null 2>&1 && echo "git: ok"   || echo "git: MISSING"
 command -v cargo >/dev/null 2>&1 && echo "cargo: ok" || echo "cargo: MISSING"
-command -v npm   >/dev/null 2>&1 && echo "npm: ok"   || echo "npm: MISSING"
 xcode-select -p  >/dev/null 2>&1 && echo "clt: ok"   || echo "clt: MISSING"
 command -v brew  >/dev/null 2>&1 && echo "brew: ok"  || echo "brew: MISSING"
 ```
@@ -40,8 +39,6 @@ Only run an install command on confirmation:
   (this opens a GUI installer — tell the user to finish it, then continue).
 - **Rust** (`cargo`): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`,
   then advise sourcing `~/.cargo/env` or restarting the shell.
-- **Node** (`npm`): if `brew` is present, `brew install node`; otherwise tell the user to
-  install Node from https://nodejs.org and re-run.
 
 If a prerequisite the user declined to install is still missing, warn that `install.sh`
 will refuse to build until it is present, and ask whether to continue anyway.
@@ -79,8 +76,9 @@ curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | PA
 installed via rustup in step 2 is found — a fresh shell won't have picked up rustup's
 profile changes yet.)
 
-This clones/updates `~/.curator`, runs `npm install` and `npm run tauri build`, installs the
-built app to `/Applications/curator.app`, and seeds `~/.config/curator/config.toml` if absent.
+This clones/updates `~/.curator`, backstops the Tauri CLI if absent (`cargo install tauri-cli
+--version '^2'`), then builds with `cargo tauri build` (requires Rust/cargo). It installs the
+built app to `/Applications/curator.app` and seeds `~/.config/curator/config.toml` if absent.
 The build takes a few minutes. **If it fails, show the full output and stop** — do not run
 later steps.
 
