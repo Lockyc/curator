@@ -34,11 +34,11 @@ App-global keys: `dark_mode`, `allow_insecure`, `session`, `format_on_save` (boo
 false — reformat the file in house style on a clean hot-reload),
 and `density` (`comfortable` default / `compact`). Density is kept live in `AppState` across
 hot-reload (like `dark_mode`); `window_identity` returns it (plus a density-aware default sidebar
-width — compact is narrower) and the chrome sets `data-density` on `<html>`, swapping a block of
-CSS sizing variables (`--row-font`/`--title-font`/`--tile-size`/`--dot-svg`/… in `chrome.css`).
-`compact` is a proportional ~0.85× scale of the comfortable set. **Warden mirrors this** (same key,
-`data-density`, CSS-variable mechanism) — keep the two apps' chrome in step when touching either.
-Accent-colour validation delegates to `config_core::Colour::parse` (shared with warden).
+width — compact is narrower) and the controller passes it in the DTO, so **chrome-core** sets
+`data-density` on `<html>` and swaps its `--cc-*` sizing tokens (`--cc-row-font`/`--cc-tile-size`/
+`--cc-dot-size`/… in chrome-core's `assets/sidebar.css`). `compact` is a proportional ~0.85× scale
+of the comfortable set. **Both apps consume chrome-core**, so the tokens live once and stay aligned
+by construction. Accent-colour validation delegates to `config_core::Colour::parse` (shared with warden).
 
 Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
 window title, zero window dimension, invalid colour, empty group name, dup group name within a
@@ -154,10 +154,11 @@ don't strip the feature.
 
 **Resizable sidebar.** The sidebar is a fixed-width child webview (default `CHROME_W`) with the
 content webviews Rust-positioned beside it, so width can't be pure CSS. Each window's width lives
-in a `WindowRuntime.chrome_w` (`Arc<AtomicU64>`, f64 bits) shared with its resize closure; a
-right-edge drag in the chrome invokes `set_sidebar_width`, which clamps Rust-side (`clamp_chrome_w`:
-160–520px and ≤40% of the window) and `relayout_with_width`s the chrome + content. The window
-re-clamps on resize; the chosen width persists in `localStorage` per window title. The active-tab
+in a `WindowRuntime.chrome_w` (`Arc<AtomicU64>`, f64 bits) shared with its resize closure. The
+drag handle + per-window `localStorage` persistence now live in **chrome-core** (config
+`storageKey: "curator:sidebar-width:<title>"`); its `onResize(width)` callback invokes
+`set_sidebar_width`, which clamps Rust-side (`clamp_chrome_w`: 160–520px and ≤40% of the window)
+and `relayout_with_width`s the chrome + content. The window re-clamps on resize. The active-tab
 highlight tints with the window's accent colour (`--active-bg`), falling back to neutral blue.
 
 **Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION
@@ -259,3 +260,20 @@ retrofitted onto the shared crate — there's one implementation, not a copy per
 deliberately leaf-free: each app keeps its own model, validation, and session/shell cascade. Only
 add to `config-core` what is genuinely identical and leaf-agnostic in *both* apps — don't grow it
 into a generic config framework.
+
+## Shared sidebar chrome: `chrome-core`
+
+The sidebar chrome — banner, grouped tab rows (tile, title, dot slots), kill-confirm overlay,
+density tokens, resize-drag, error bar — is the shared **`chrome-core`** component
+(`https://github.com/Lockyc/chrome-core`), consumed by both curator and warden so a look/behaviour
+change is made once. It's a *build-dependency* pinned by `rev` (like config-core); `src-tauri/build.rs`
+writes `SIDEBAR_CSS`/`SIDEBAR_JS` into `src/chrome-core.{css,js}` (git-ignored) before Tauri embeds
+`src/`. curator's `src/chrome.js` is now a **thin controller** over chrome-core's `ChromeSidebar`
+view: it maps the component's callbacks to curator's commands (`onSelect`→`select_tab`/`home_tab`,
+`onUnload`→`unload_tab`, `onResize`→`set_sidebar_width`) and events to its setters
+(`service-badge`→`setAttention`, `config-error`→`setError`, `nav-tab`/`jump-tab`→nav). The nav pill
+(browser-only) mounts into the component's `header` slot; curator passes `active` in the DTO (its
+Rust side owns selection). What stays per-app is the content-area topology (curator z-orders content
+webviews) + the controller — not the sidebar. See warden's CLAUDE.md and chrome-core's own for the
+full interface. Edit the chrome in chrome-core (`assets/sidebar.{css,js}`), never the generated
+`src/chrome-core.*`; for active chrome work use a cargo `[patch]` path override, then re-pin the rev.
