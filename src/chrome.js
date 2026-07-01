@@ -122,7 +122,10 @@ async function mountChrome() {
       defaultWidth,
       minWidth: 160,
       maxWidth: 520,
-      maxFraction: 0.4,
+      // 0 = skip chrome-core's JS fraction cap. curator's sidebar is an isolated child webview, so
+      // that cap's `window.innerWidth` is the sidebar's own width (not the window) and would pin every
+      // drag to the floor. Rust's `clamp_chrome_w` enforces the real ≤40%-of-window limit instead.
+      maxFraction: 0,
     }
   );
 
