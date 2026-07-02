@@ -88,16 +88,19 @@ const BADGE_JS: &str = include_str!("../../src/inject/badge.js");
 
 /// A per-webview anti-forgery key, baked into that webview's injected shims as a function-local
 /// literal (never exposed on `window`, so page scripts can't read it) and required on every
-/// sentinel navigation. Seeded from the OS RNG via `RandomState`, so a page can't guess it to
-/// forge a banner/badge/browser-escape by navigating to a sentinel host directly.
+/// sentinel navigation. Drawn straight from the OS CSPRNG (`getrandom`) — 128 bits a page can't
+/// guess to forge a banner/badge/browser-escape by navigating to a sentinel host directly. (Using
+/// the CSPRNG directly, rather than hashing under `RandomState`, keeps the unforgeability property
+/// from resting on any assumption about SipHash-as-PRF.)
 fn random_nonce() -> String {
-    use std::hash::{BuildHasher, Hasher};
-    let mk = || {
-        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-        h.write_u64(0x9e37_79b9_7f4a_7c15);
-        h.finish()
-    };
-    format!("{:016x}{:016x}", mk(), mk())
+    use std::fmt::Write as _;
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).expect("OS CSPRNG (getrandom) must succeed on macOS");
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
 }
 
 /// Current inner size of the window in logical px.
