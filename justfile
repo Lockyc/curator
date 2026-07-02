@@ -51,6 +51,14 @@ gate:
 build:
     cd src-tauri && cargo tauri build
 
+# Build the release bundle and emit the updater manifest (latest.json) for a GitHub release.
+# Requires TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] (else the signed .app.tar.gz.sig is absent and
+# gen-latest-json.sh errors). Upload latest.json + curator.app.tar.gz(.sig) to the release.
+[group("dist")]
+release-artifacts version: build
+    bash scripts/gen-latest-json.sh {{version}} latest.json
+    @echo "→ upload: src-tauri/target/release/bundle/macos/curator.app.tar.gz(.sig) + latest.json"
+
 # Build a release .app and install/replace it in /Applications, then relaunch
 [group("dist")]
 deploy: build
