@@ -501,8 +501,12 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     let edit_cfg = MenuItemBuilder::with_id("edit_config", "Edit Config").build(manager)?;
     let reveal_cfg =
         MenuItemBuilder::with_id("reveal_config", "Reveal Config in Finder").build(manager)?;
+    let check_updates =
+        MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(manager)?;
     let app_menu = SubmenuBuilder::new(manager, "curator")
         .about(Some(about_meta))
+        .separator()
+        .item(&check_updates)
         .separator()
         .services()
         .separator()
@@ -807,6 +811,7 @@ pub fn run() {
                 "open_devtools" => {
                     commands::open_active_devtools(app);
                 }
+                "check_updates" => emit_to_focused_chrome(app, "check-update", ()),
                 "tab_next" => emit_to_focused_chrome(app, "nav-tab", 1i32),
                 "tab_prev" => emit_to_focused_chrome(app, "nav-tab", -1i32),
                 id if id.starts_with("tab_jump:") => {
