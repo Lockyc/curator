@@ -96,11 +96,20 @@ function paintEmptyState(active) {
   document.getElementById("empty-state").style.display = active ? "none" : "flex";
 }
 
+// Report the #content-hole's CSS rect so Rust positions the content webviews to match. This is the
+// single source of truth for content placement (warden's model): chrome-core owns the sidebar
+// width and clamp, the flex hole follows from CSS, and Rust just applies what's measured here.
+function reportRect() {
+  const r = document.getElementById("content-hole").getBoundingClientRect();
+  invoke("set_hole_rect", { rect: { x: r.x, y: r.y, width: r.width, height: r.height } }).catch(() => {});
+}
+
 async function refresh() {
   const dto = await buildDto();
   sb.update(dto);
   setActiveLabel(dto.active);
   paintEmptyState(dto.active);
+  reportRect();
 }
 
 async function mountChrome() {
@@ -123,12 +132,12 @@ async function mountChrome() {
         await refresh();
       },
       onResize(width) {
-        // The chrome is now the window's full-size main webview, so the sidebar's visible width is
-        // CSS (set here) and Rust positions the content webviews at the matching x via
-        // set_sidebar_width. Both clamp with identical bounds (see the config below ↔ Rust's
-        // clamp_chrome_w), so the sidebar edge and the content's left edge always agree.
+        // The chrome is the window's full-size main webview: the sidebar's visible width is CSS
+        // (set here); the flex #content-hole follows, and reportRect tells Rust where to put the
+        // content webviews. Rust no longer computes or clamps a width — chrome-core is the sole
+        // clamp (bounds below), so there's nothing to keep in sync across the JS/Rust boundary.
         setSidebarWidth(width);
-        invoke("set_sidebar_width", { width: Math.round(width) }).catch(() => {});
+        reportRect();
       },
       // onKill: unused — curator sets killable:false, so the component never invokes it.
     },
@@ -138,44 +147,50 @@ async function mountChrome() {
       defaultWidth,
       minWidth: MIN_W,
       maxWidth: MAX_W,
-      // Matches Rust's clamp_chrome_w (≤40% of the window). Now that the chrome is the full-window
-      // main webview, chrome-core's `window.innerWidth` IS the window width, so this JS cap and the
-      // Rust cap agree — keeping the sidebar edge aligned with the content webviews' left edge.
+      // The chrome is the full-window main webview, so chrome-core's `window.innerWidth` IS the
+      // window width and this is the ≤40% cap. chrome-core is now the *sole* clamp — Rust positions
+      // the content from the reported hole rect, so there's no second (Rust) cap to keep aligned.
       maxFraction: MAX_FRACTION,
     }
   );
 
   await refresh();
 
-  // First-run width: chrome-core restores a saved width itself (firing onResize → CSS + Rust); if
-  // none is saved, apply the density-aware default. Rust launches content at CHROME_W (comfortable);
-  // only the narrower compact default needs to be pushed to Rust to realign the content edge.
+  // First-run width: chrome-core restores a saved width itself (firing onResize → CSS + reportRect);
+  // if none is saved, apply the density-aware default. Setting the sidebar CSS width reflows the flex
+  // #content-hole, so the ResizeObserver below fires reportRect and Rust realigns the content — no
+  // explicit width has to be pushed to Rust anymore.
   const saved = parseFloat(localStorage.getItem("curator:sidebar-width:" + title));
   if (!(saved > 0)) {
     setSidebarWidth(defaultWidth);
-    if (id && id.density === "compact") {
-      invoke("set_sidebar_width", { width: Math.round(defaultWidth) }).catch(() => {});
-    }
   }
 }
 
-// Sidebar width bounds — kept identical to Rust's clamp_chrome_w (MIN_CHROME_W / MAX_CHROME_W /
-// MAX_CHROME_FRACTION) so the JS-owned sidebar edge and the Rust-positioned content edge agree.
+// Sidebar width bounds passed to chrome-core (the single clamp). The window-resize handler below
+// re-applies the ≤40% cap because a window shrink can push the sidebar past it without a drag.
 const MIN_W = 160, MAX_W = 520, MAX_FRACTION = 0.4;
 
 function setSidebarWidth(w) {
   document.getElementById("sidebar").style.width = Math.round(w) + "px";
 }
 
-// A window resize can push the sidebar past the ≤40% cap; re-clamp it here with the same bounds
-// Rust re-clamps the content with, so the two stay edge-aligned without any extra round-trip.
+// A window resize can push the sidebar past the ≤40% cap; re-clamp it here, then report the new
+// hole so Rust repositions the content (there's no Rust-side resize relayout — JS drives it, as in
+// warden). The flex #content-hole also fires the ResizeObserver below, so this is belt-and-braces.
 window.addEventListener("resize", () => {
   const el = document.getElementById("sidebar");
   const cur = parseInt(el.style.width, 10) || parseInt(getComputedStyle(el).width, 10);
-  if (!Number.isFinite(cur)) return;
-  const upper = Math.min(MAX_W, window.innerWidth * MAX_FRACTION);
-  setSidebarWidth(Math.max(MIN_W, Math.min(cur, upper)));
+  if (Number.isFinite(cur)) {
+    const upper = Math.min(MAX_W, window.innerWidth * MAX_FRACTION);
+    setSidebarWidth(Math.max(MIN_W, Math.min(cur, upper)));
+  }
+  reportRect();
 });
+
+// The content webviews track the hole: re-report whenever it resizes (sidebar drag, window resize).
+// ResizeObserver fires once when observation begins, which is what makes the initial report happen.
+const holeObserver = new ResizeObserver(() => reportRect());
+holeObserver.observe(document.getElementById("content-hole"));
 
 // ── Events ──────────────────────────────────────────────────────────────────
 listen("config-reloaded", () => {

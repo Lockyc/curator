@@ -92,7 +92,7 @@ underlying invoke channel) reaches *every* webview, remote content tabs included
 app-defined `#[tauri::command]`s are **not** ACL/capability-gated (the `core:event` capability in
 `capabilities/default.json` is a separate concern — see below; the commands work regardless).
 The only thing stopping a remote page from invoking the whole command surface (reading sibling
-tabs' URLs via `get_tabs`, driving `select_tab`/`unload_tab`/`reset_all`/`set_sidebar_width`) is
+tabs' URLs via `get_tabs`, driving `select_tab`/`unload_tab`/`reset_all`/`set_hole_rect`) is
 the `require_chrome`/`is_chrome_caller` guard at the top of every command in `commands.rs`. The
 chrome is its window's **main** webview (hole-punch — see *Resizable sidebar*), so its label *is*
 the window label; content webviews are `{window_id}:tab-<hash>`, so the guard is `label ==
@@ -188,18 +188,26 @@ transparency needed (content is opaque; unlike warden's native surfaces). The tr
 CSS (`#sidebar { padding-top: 28px }`), owned by the frontend — Rust does not offset the chrome.
 
 The sidebar's **visible width is JS-owned CSS** (`#sidebar` inline width, set by `chrome.js`'s
-`onResize`), while Rust positions the content webviews at the matching x. They stay edge-aligned
-because both clamp with **identical bounds** — `chrome.js`'s `MIN_W`/`MAX_W`/`MAX_FRACTION` (passed
-to chrome-core as `minWidth`/`maxWidth`/`maxFraction`) must mirror Rust's `clamp_chrome_w` bounds
-(`MIN_CHROME_W`/`MAX_CHROME_W`/`MAX_CHROME_FRACTION`) — so a resize-drag or a window resize (each
-re-clamps its own copy) settles both on the same value with no cross-process echo. Those JS literals
-are a hand-kept copy of the Rust constants; changing one side means changing the other. Each window's width lives in
-`WindowRuntime.chrome_w` (`Arc<AtomicU64>`, f64 bits); `set_sidebar_width` stores it and
-`relayout_with_width` writes back the *clamped* value so it tracks the JS width (this drops
-restore-on-window-grow — matching warden). chrome-core owns the drag handle + `localStorage`
-persistence (`storageKey: "curator:sidebar-width:<title>"`). Because the chrome is now full-window,
-chrome-core's `window.innerWidth` fraction cap *is* the window width (so `chrome.js` passes a real
-`maxFraction`), unlike the old child-webview case that had to skip it. The active-tab highlight tints with the window's
+`onResize`); the content webviews' geometry is **whatever the chrome reports**, not something Rust
+recomputes from a width. `chrome.js` measures `#content-hole`'s `getBoundingClientRect` and sends it
+via the **`set_hole_rect`** command — on mount, on a resize-drag, and on window resize, all driven by
+a `ResizeObserver` on `#content-hole` (plus the `resize` handler). Rust stores the rect on
+`WindowRuntime.hole` and positions every content webview to it (`webviews::layout_webviews`), so a
+lazily-created or hot-reload-added tab lands in the current hole (read under the `windows` lock and
+passed into `create_content_webview` by value). This is exactly **warden's `set_hole_rect` model** —
+the sole difference is curator needs **no Y-flip** (Tauri's `LogicalPosition` is top-left; warden
+flips for its bottom-left native `NSView`). **chrome-core is the *only* sidebar-width clamp**
+(`MIN_W`/`MAX_W`/`MAX_FRACTION` in `chrome.js` → the component's `minWidth`/`maxWidth`/`maxFraction`,
+160–520px, ≤40% of the window); because Rust just applies the reported hole there is **no Rust-side
+clamp to keep identical**. The old `clamp_chrome_w`/`relayout_with_width`/`set_sidebar_width` command
+and the `WindowRuntime.chrome_w` atomic were **removed** when curator converged onto warden's
+report-the-rect model — don't reintroduce a Rust-side width or clamp (that was the whole
+JS↔Rust-duplication this convergence deleted). The window-shrink re-clamp lives in `chrome.js`'s
+`resize` handler (a shrink can push the sidebar past the 40% cap without a drag), which then
+re-reports the hole; there is **no Rust-side resize relayout** (`build_window` wires only the
+user-close handler now — JS drives resize, matching warden, which also drops restore-on-window-grow).
+chrome-core owns the drag handle + `localStorage` persistence
+(`storageKey: "curator:sidebar-width:<title>"`). The active-tab highlight tints with the window's
 accent colour (`--active-bg`), falling back to neutral blue.
 
 **Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION
@@ -229,9 +237,9 @@ commands run on the main thread, so those ops execute inline and the watcher thr
 drops the lock before marshaling a webview op to main) can't deadlock against them. **Do not make
 any command that holds `windows` `async`** — it would then run off-main, hold the lock, and block
 on a main-thread-marshaled webview op while a `windows`-locking main-thread callback waits, which
-deadlocks. If a command must become async, drop the `windows` guard before any webview op. (This
-is the class the "sidebar-width re-lock" fix closed by passing `chrome_w` by value instead of
-re-locking inside `create_content_webview`.)
+deadlocks. If a command must become async, drop the `windows` guard before any webview op. (The
+create-tab path avoids this class by reading `WindowRuntime.hole` under the held `windows` lock and
+passing it into `create_content_webview` by value, rather than re-locking `windows` inside.)
 
 ## Non-goals / parked: browser extensions (Bitwarden etc.)
 
@@ -320,7 +328,7 @@ change is made once. It's a *build-dependency* pinned by `rev` (like config-core
 writes `SIDEBAR_CSS`/`SIDEBAR_JS` into `src/chrome-core.{css,js}` (git-ignored) before Tauri embeds
 `src/`. curator's `src/chrome.js` is now a **thin controller** over chrome-core's `ChromeSidebar`
 view: it maps the component's callbacks to curator's commands (`onSelect`→`select_tab`/`home_tab`,
-`onUnload`→`unload_tab`, `onResize`→`set_sidebar_width`) and events to its setters
+`onUnload`→`unload_tab`, `onResize`→sidebar CSS width + `reportRect`→`set_hole_rect`) and events to its setters
 (`service-badge`→`setAttention`, `config-error`→`setError`, `nav-tab`/`jump-tab`→nav). The nav pill
 (browser-only) mounts into the component's `header` slot; curator passes `active` in the DTO (its
 Rust side owns selection). What stays per-app is the content-area topology (curator z-orders content

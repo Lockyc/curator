@@ -1,5 +1,5 @@
 use crate::{config::Density, config::TabView, webviews, AppState};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State, Webview, Window};
 
@@ -151,10 +151,10 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
         .clone();
 
     if !rt.tabs.is_created(&label) {
-        // Pass the current sidebar width (read under this held lock); create_content_webview must
+        // Pass the current hole rect (read under this held lock); create_content_webview must
         // not re-lock `windows` itself — that would self-deadlock the non-reentrant mutex.
-        let cw = f64::from_bits(rt.chrome_w.load(Ordering::Relaxed));
-        webviews::create_content_webview(&window, &target, cw).map_err(|e| e.to_string())?;
+        let hole = rt.hole;
+        webviews::create_content_webview(&window, &target, hole).map_err(|e| e.to_string())?;
         rt.tabs.mark_created(&label);
     }
     rt.tabs.set_active(&label);
@@ -163,27 +163,50 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     webviews::apply_active(&window, Some(&label), &views).map_err(|e| e.to_string())
 }
 
-/// Set the calling window's sidebar width from a chrome resize-drag (logical px), clamp it
-/// Rust-side (range + ≤40% of the window), and re-lay-out the content webviews. `relayout_with_width`
-/// stores the clamped value back so it stays edge-aligned with the JS-owned sidebar CSS width (which
-/// the chrome clamps with identical bounds and persists to its own localStorage). Nothing is returned.
+/// A content-hole rect reported by the chrome (logical px, top-left), deserialized from the
+/// `set_hole_rect` command's `{ rect: {x, y, width, height} }` argument.
+#[derive(Deserialize)]
+pub struct RectArg {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Position the calling window's content webviews from the chrome's reported `#content-hole` rect.
+/// The chrome (chrome-core) owns the sidebar width and its clamp; the flex hole follows from CSS
+/// and the chrome reports the measured rect here on mount, on a resize-drag, and on window resize
+/// (via a ResizeObserver). Rust stores it on the runtime — so lazily-created tabs land in the
+/// current hole — and repositions the existing content webviews. This is warden's `set_hole_rect`
+/// model: there is no Rust-side sidebar-width computation or clamp to keep in sync with the JS.
 #[tauri::command]
-pub fn set_sidebar_width(
-    width: f64,
+pub fn set_hole_rect(
+    rect: RectArg,
     webview: Webview,
     state: State<AppState>,
 ) -> Result<(), String> {
     require_chrome(&webview)?;
-    if !width.is_finite() {
-        return Err("non-finite width".into());
+    if ![rect.x, rect.y, rect.width, rect.height]
+        .iter()
+        .all(|v| v.is_finite())
+    {
+        return Err("non-finite hole rect".into());
     }
     let (window, wid) = calling_window(&webview)?;
-    let chrome_w = {
-        let windows = state.windows.lock().unwrap();
-        windows.get(&wid).ok_or("no such window")?.chrome_w.clone()
+    let hole = webviews::HoleRect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
     };
-    chrome_w.store(width.to_bits(), Ordering::Relaxed);
-    webviews::relayout_with_width(&window, &chrome_w);
+    // Store under the lock, then reposition after releasing it (webview ops marshal to the main
+    // thread; `set_hole_rect` is a sync command so they run inline, but keeping them off the lock
+    // matches the window-mutex discipline in the rest of this file).
+    {
+        let mut windows = state.windows.lock().unwrap();
+        windows.get_mut(&wid).ok_or("no such window")?.hole = hole;
+    }
+    webviews::layout_webviews(&window, hole);
     Ok(())
 }
 

@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 /// Pure bookkeeping for which content webviews have been created (lazy-load tracking)
 /// and which is active. Webview side-effects live in the Tauri-aware code below.
@@ -57,20 +55,15 @@ pub const WINDOW_ERROR: &str = "curator-error";
 /// Webview label inside the error window (so we can refresh its message on a later failure).
 const ERROR_VIEW: &str = "curator-error-view";
 
-/// Default sidebar width and the bounds a user drag may resize it to (logical px). The width is
-/// additionally capped at 40% of the window in [`clamp_chrome_w`] so the sidebar can never crowd
-/// out the content area.
+/// Default sidebar width, delivered to the chrome via `window_identity` as its reset/first-run
+/// default. It is *only* a default: the chrome (chrome-core) owns the sidebar width and its clamp,
+/// and Rust learns the resulting content geometry from the chrome's reported [`HoleRect`] — Rust no
+/// longer computes or clamps a sidebar width itself. Also the initial best-guess hole ([`initial_hole`])
+/// until the first `set_hole_rect` arrives.
 pub const CHROME_W: f64 = 240.0;
 /// Default sidebar width under `density = "compact"` — narrower to match the condensed type.
-/// Delivered to the chrome via `window_identity` as the reset/first-run default; the initial
-/// webview still builds at [`CHROME_W`] and the chrome corrects to this on load.
+/// Same role as [`CHROME_W`]: the chrome's reset/first-run default for the compact mode.
 pub const COMPACT_CHROME_W: f64 = 200.0;
-const MIN_CHROME_W: f64 = 160.0;
-const MAX_CHROME_W: f64 = 520.0;
-/// Hard cap on the sidebar as a fraction of the window's logical width, so even a wide drag (or a
-/// stale persisted width on a now-smaller window) can't crowd out the content area. Kept identical
-/// to the JS cap (`MAX_FRACTION` in chrome.js) so the sidebar edge and content edge agree.
-const MAX_CHROME_FRACTION: f64 = 0.4;
 const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
@@ -107,69 +100,59 @@ fn logical_inner(window: &Window) -> (f64, f64) {
     (size.width as f64 / scale, size.height as f64 / scale)
 }
 
-/// Position of a content webview within the window (right of the `chrome_w`-wide sidebar).
-fn content_position(chrome_w: f64) -> LogicalPosition<f64> {
-    LogicalPosition::new(chrome_w, 0.0)
+/// The content hole's rect in logical px (top-left origin), exactly as the chrome measures its
+/// `#content-hole` element via `getBoundingClientRect` and reports it through `set_hole_rect`.
+///
+/// This is the single source of truth for content-webview placement. The chrome (chrome-core) owns
+/// the sidebar width and clamps it; the flex `#content-hole` follows from CSS; the chrome reports
+/// the resulting rect here. Rust just tracks and applies it — it no longer recomputes the geometry
+/// from a sidebar width or clamps anything (which is what removed the old Rust↔JS clamp duplication).
+/// Tauri's `LogicalPosition`/`LogicalSize` are also top-left, so — unlike warden's bottom-left
+/// native `NSView` surface — no coordinate flip is needed; the reported rect is used as-is.
+#[derive(Debug, Clone, Copy)]
+pub struct HoleRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
-/// Size of a content webview filling the window to the right of a `chrome_w`-wide sidebar.
-fn content_size(chrome_w: f64, w: f64, h: f64) -> LogicalSize<f64> {
-    LogicalSize::new((w - chrome_w).max(0.0), h)
-}
-
-/// Clamp a desired sidebar width to `[MIN_CHROME_W, MAX_CHROME_W]` and to ≤40% of a window of
-/// logical width `win_w`, so a drag (or a stale persisted width on a now-smaller window) can
-/// never starve the content area.
-fn clamp_chrome_w(desired: f64, win_w: f64) -> f64 {
-    let upper = (win_w * MAX_CHROME_FRACTION).clamp(MIN_CHROME_W, MAX_CHROME_W);
-    desired.clamp(MIN_CHROME_W, upper)
-}
-
-/// Lay out the chrome (sidebar) and every content webview (filling the rest) for the given
-/// sidebar width and the window's current size.
-fn layout_webviews(window: &Window, chrome_w: f64) {
-    let (w, h) = logical_inner(window);
-    for wv in window.webviews() {
-        // The chrome is the window's main webview (its label IS the window label); it auto-sizes to
-        // the window as the content view, and the sidebar's visible width is owned by CSS. So skip
-        // it and lay out only the content webviews, filling the hole to the right of the sidebar.
-        if wv.label() == window.label() {
-            continue;
-        }
-        let _ = wv.set_position(content_position(chrome_w));
-        let _ = wv.set_size(content_size(chrome_w, w, h));
+/// The best-guess hole before the chrome's first `set_hole_rect`: full height, offset by the
+/// default sidebar width. The first report corrects it — this only has to place launch-time
+/// `load_on_open` tabs sensibly for the frame or two before the chrome mounts and measures.
+pub fn initial_hole(win_w: f64, win_h: f64) -> HoleRect {
+    HoleRect {
+        x: CHROME_W,
+        y: 0.0,
+        width: (win_w - CHROME_W).max(0.0),
+        height: win_h,
     }
 }
 
-/// Lay out the content webviews for the window's sidebar width clamped to the current window size.
-/// Called on window resize and on a chrome resize-drag. The clamped width is stored back into the
-/// atomic so it stays in lockstep with the JS-owned sidebar CSS width, which chrome.js re-clamps
-/// on window resize with identical bounds — both settle on the same value from the same input, so
-/// the sidebar edge and the content webviews' left edge always agree. (This means a window-shrink
-/// past the 40% cap permanently narrows the stored width — matching warden; no restore-on-grow.)
-pub fn relayout_with_width(window: &Window, chrome_w: &AtomicU64) {
-    let (w, _h) = logical_inner(window);
-    let cw = clamp_chrome_w(f64::from_bits(chrome_w.load(Ordering::Relaxed)), w);
-    chrome_w.store(cw.to_bits(), Ordering::Relaxed);
-    layout_webviews(window, cw);
+/// Position every content webview to fill the reported hole. The chrome is the window's main
+/// webview (auto-sized to the window as its content view; its label IS the window label), so it's
+/// skipped — only the `add_child` content webviews are placed. All loaded tabs stack in the same
+/// hole; `apply_active` raises the active one, `load_on_open` tabs sit live behind it.
+pub fn layout_webviews(window: &Window, hole: HoleRect) {
+    for wv in window.webviews() {
+        if wv.label() == window.label() {
+            continue;
+        }
+        let _ = wv.set_position(LogicalPosition::new(hole.x, hole.y));
+        let _ = wv.set_size(LogicalSize::new(hole.width.max(0.0), hole.height.max(0.0)));
+    }
 }
 
-/// Build a window and its chrome (sidebar) webview, and wire window-resize relayout.
-/// `window_id` becomes the window label and namespaces the chrome/placeholder webview labels.
-/// Returns the window.
+/// Build a window and its chrome (sidebar) webview, and wire the user-close handler.
+/// `window_id` becomes the window label and namespaces the content webview labels.
+/// Returns the window; the caller seeds its runtime hole rect from [`initial_hole`].
 pub fn build_window(
     app: &AppHandle,
     window_id: &str,
     title: &str,
     win_w: f64,
     win_h: f64,
-) -> tauri::Result<(Window, Arc<AtomicU64>)> {
-    // Shared, lock-free sidebar width (f64 bits): captured by the resize closure below and stored in
-    // the window's runtime so the resize command and lazy-tab layout read the same value. Held
-    // clamped-to-window (relayout_with_width stores the clamped result), matching the JS-owned
-    // sidebar CSS width so the content webviews line up with the sidebar edge.
-    let chrome_w = Arc::new(AtomicU64::new(CHROME_W.to_bits()));
-
+) -> tauri::Result<Window> {
     // The sidebar chrome is the window's MAIN webview (hole-punch, warden-style): built as the
     // window's content view, so `data-tauri-drag-region` in it moves the window natively — a child
     // (`add_child`) webview cannot (that's why the whole-window drag was inert before). It spans the
@@ -206,18 +189,15 @@ pub fn build_window(
     // short-circuited before the marshal); the first matching title — e.g. renaming a window onto an
     // old entry — froze the app.
 
-    // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler
-    // queries webviews() live, so content webviews created later are covered too. The same
-    // handler routes a user close (native red button or ⌘W) through the shared close logic so
-    // it can't strand the app and doesn't leak the window's unread/timers (see lib.rs).
-    let win = window.clone();
-    let layout_w = chrome_w.clone();
+    // Route a user close (native red button or ⌘W) through the shared close logic so it can't
+    // strand the app and doesn't leak the window's unread/timers (see lib.rs). Content-webview
+    // repositioning is NOT wired here: the chrome's `#content-hole` is a flex child, so a window
+    // resize reflows it in the webview, the chrome's ResizeObserver fires `reportRect`, and the
+    // resulting `set_hole_rect` repositions the content — the same JS-reported path warden uses.
+    // (No Rust-side resize relayout means no Rust-side sidebar-width clamp to keep in sync.)
     let close_app = app.clone();
     let close_wid = window_id.to_string();
     window.on_window_event(move |event| match event {
-        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
-            relayout_with_width(&win, &layout_w);
-        }
         WindowEvent::CloseRequested { api, .. }
             if crate::on_real_window_close(&close_app, &close_wid) =>
         {
@@ -226,7 +206,7 @@ pub fn build_window(
         _ => {}
     });
 
-    Ok((window, chrome_w))
+    Ok(window)
 }
 
 /// Create a content webview for `view` in the given window. Its login store is keyed on the
@@ -235,12 +215,16 @@ pub fn build_window(
 /// banners and report unread — whether it notifies in the background is purely a function of
 /// whether it's kept live, which is what `load_on_open` controls (see `apply_active`).
 ///
-/// `chrome_w` is the window's *desired* sidebar width (the value stored in the runtime atomic);
-/// it's clamped to the current window size here before positioning, the same way `layout_webviews`
-/// does, so a new tab lines up with the displayed sidebar. It's passed in (not read from
-/// `AppState` here) because callers already hold the `windows` lock when they create a tab —
-/// re-locking it inside would self-deadlock the non-reentrant mutex.
-pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) -> tauri::Result<()> {
+/// `hole` is the window's current content-hole rect (the value stored on the runtime, seeded from
+/// [`initial_hole`] and updated by every `set_hole_rect`), so a newly-created tab lands exactly
+/// where the chrome measured the hole. It's passed in (not read from `AppState` here) because
+/// callers already hold the `windows` lock when they create a tab — re-locking it inside would
+/// self-deadlock the non-reentrant mutex.
+pub fn create_content_webview(
+    window: &Window,
+    view: &TabView,
+    hole: HoleRect,
+) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
     // Per-webview secret keying the sentinel handlers; substituted into the shims that emit
@@ -312,9 +296,11 @@ pub fn create_content_webview(window: &Window, view: &TabView, chrome_w: f64) ->
             crate::awareness::on_title_changed(&webview, &title);
         });
 
-    let (w, h) = logical_inner(window);
-    let cw = clamp_chrome_w(chrome_w, w);
-    let webview = window.add_child(builder, content_position(cw), content_size(cw, w, h))?;
+    let webview = window.add_child(
+        builder,
+        LogicalPosition::new(hole.x, hole.y),
+        LogicalSize::new(hole.width.max(0.0), hole.height.max(0.0)),
+    )?;
     #[cfg(target_os = "macos")]
     {
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
@@ -450,19 +436,6 @@ mod tests {
         s.mark_unloaded("tab-0");
         assert!(!s.is_created("tab-0"));
         assert_eq!(s.active(), Some("tab-1"));
-    }
-
-    #[test]
-    fn clamp_chrome_w_respects_bounds_and_window_cap() {
-        // Comfortably within range on a wide window — untouched.
-        assert_eq!(clamp_chrome_w(300.0, 1500.0), 300.0);
-        // Below the minimum snaps up; above the hard max snaps down.
-        assert_eq!(clamp_chrome_w(50.0, 1500.0), MIN_CHROME_W);
-        assert_eq!(clamp_chrome_w(900.0, 2000.0), MAX_CHROME_W);
-        // Capped at 40% of a narrower window.
-        assert_eq!(clamp_chrome_w(500.0, 1000.0), 400.0);
-        // Tiny window: the 40% cap would dip below the minimum, so the minimum wins.
-        assert_eq!(clamp_chrome_w(300.0, 300.0), MIN_CHROME_W);
     }
 
     #[test]
