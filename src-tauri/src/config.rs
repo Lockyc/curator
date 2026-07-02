@@ -459,7 +459,7 @@ reload_every = 15
             .0;
         assert!(!cfg.sidebar_drag);
         // The derived-vs-serde default trap: an empty config must agree with Config::default().
-        assert_eq!(Config::default().sidebar_drag, true);
+        assert!(Config::default().sidebar_drag);
     }
 
     #[test]
