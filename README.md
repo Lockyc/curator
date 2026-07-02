@@ -73,6 +73,10 @@ curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | ba
 Re-running either path updates curator (`git pull` + rebuild). The steps below describe the
 manual / contributor flow.
 
+Once installed, curator **updates itself**: it checks for a new release on launch (or via
+**curator ▸ Check for Updates…**) and offers a one-click "Update & Relaunch". Re-running
+`install.sh` is only needed to bootstrap the first updater-capable version, or to build from source.
+
 ## Setup
 
 1. Copy the sample config into place:

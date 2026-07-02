@@ -285,6 +285,13 @@ Every release gets a matching GitHub release — don't just push `main`. To cut 
 4. There is no CI to build artifacts, so attach the locally built app: `just build`,
    then zip the `.app` and `gh release upload v<version> <app>.zip` so the release
    carries an installable binary (the `install.sh` path still builds from source).
+5. Attach the **updater artifacts** so existing installs auto-update (see *In-app updates*):
+   `just release-artifacts <version>` (builds, then writes `latest.json`), then
+   `gh release upload v<version> src-tauri/target/release/bundle/macos/curator.app.tar.gz
+   src-tauri/target/release/bundle/macos/curator.app.tar.gz.sig latest.json`. The updater fetches
+   `latest.json` from the `releases/latest/download/` alias, so the newest release is found with no
+   per-release URL edit. This needs the updater signing env set (below); without it no `.sig` is
+   produced and `release-artifacts` errors rather than shipping an unsignable release.
 
 This is part of cutting a release, not a follow-up; do it without being asked.
 
@@ -297,6 +304,41 @@ pinned in `tauri.conf.json`, so a build environment without those vars silently 
 ad-hoc/unsigned bundle that other Macs block under Gatekeeper — set them before cutting a release
 meant for distribution. Verify a release artifact with `spctl -a -vvv <app>` (expect `source=Notarized
 Developer ID`) and `xcrun stapler validate <app>`.
+
+## In-app updates
+
+curator updates itself via **`tauri-plugin-updater`** (+ `tauri-plugin-process` for the relaunch).
+The chrome checks on launch and via the **curator ▸ Check for Updates…** menu item; on a hit it
+shows chrome-core's update bar and, on the user's confirm, downloads + installs + relaunches. It is
+**confirm-to-install** — nothing installs silently.
+
+- **Endpoint (zero-server):** `plugins.updater.endpoints` in `tauri.conf.json` points at
+  `https://github.com/Lockyc/curator/releases/latest/download/latest.json`. GitHub's
+  `releases/latest/download/<asset>` alias always resolves to the newest release's asset, so there
+  is no server and no per-release URL to edit.
+- **Signing key (separate from Apple):** the updater verifies its **own** minisign signature over
+  the `.app.tar.gz` — a different trust anchor from the Apple Developer ID cert. The private key
+  lives on the build machine at `~/.tauri/curator-updater.key` (never committed); its **public key**
+  is committed in `tauri.conf.json` (`plugins.updater.pubkey`). Cutting an updatable release needs
+  `TAURI_SIGNING_PRIVATE_KEY` (path or contents) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` set in the
+  build env alongside the Apple creds; `bundle.createUpdaterArtifacts: true` makes the bundler emit
+  the signed `curator.app.tar.gz` + `.sig`. Without the env, no `.sig`/`latest.json` is produced and
+  the release simply isn't auto-updatable (fail-safe).
+- **Where the code lives:** the update **bar UI** is in **chrome-core** (`setUpdate`/`clearUpdate` +
+  the `onUpdate` callback) so both apps share it; chrome-core stays Tauri-agnostic, so the actual
+  `check()`/`downloadAndInstall()`/`relaunch()` plumbing is in `src/chrome.js` (`checkForUpdate` /
+  `installUpdate`, reached via the `window.__TAURI__.updater`/`.process` globals under
+  `withGlobalTauri`). The menu item emits `check-update` to the focused chrome — the same
+  `emit_to_focused_chrome` pattern as `nav-tab`/`jump-tab`.
+- **Capability:** the chrome is granted `updater:default` + `process:allow-restart` in
+  `capabilities/default.json` — local-origin only (no `remote` block), so remote content tabs never
+  receive them, exactly like `core:event`.
+- **Arch:** these machines are Apple Silicon, so `latest.json` carries only a `darwin-aarch64`
+  platform entry (see `scripts/gen-latest-json.sh`). Add a `darwin-x86_64` entry (a second build) or
+  switch to a universal binary only if an Intel user ever needs updates.
+- **First-release bootstrap:** the release that first ships the updater must be installed the old way
+  once (`install.sh` / download the `.zip`); every release after that updates in-app. Call this out
+  in that release's notes.
 
 ## Installer & the public repo
 
