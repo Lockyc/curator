@@ -671,6 +671,9 @@ pub fn run() {
                 .with_filename(window_state_filename())
                 .build(),
         )
+        // In-app updates: the chrome checks on launch + via the menu, and installs on confirm.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(move |app| {
             // Prime native banner notifications (authorization + presentation/click delegate) and
             // capture the app handle the click delegate uses to surface a tab. The banner path is a
