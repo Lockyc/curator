@@ -59,10 +59,12 @@ uniqueness, which removes the silent `open_on_launch` first-match ambiguity).
 ## Architecture
 
 **Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
-Each window has a `window_id` (derived from `title` via `identity::window_id`) that namespaces
-its webview labels (`{window_id}:{tab_hash}`) so they're collision-free across windows. The
-window id is purely a label key — run-ephemeral, nothing persistent tied to it — so renaming a
-window's `title` is harmless.
+Each window has a `window_id` (derived from `title` via `identity::window_id`) that is the Tauri
+window label *and* the label of its **main webview** (the chrome sidebar — see *Resizable
+sidebar*). It also namespaces the content webviews' labels (`{window_id}:{tab_hash}`) so they're
+collision-free across windows, and distinct from the chrome's bare `window_id` label (the basis of
+the `require_chrome` gate). The window id is purely a label key — run-ephemeral, nothing persistent
+tied to it — so renaming a window's `title` is harmless.
 
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
 resolved `session` string via the full cascade
@@ -84,17 +86,27 @@ required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel wit
 page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
 sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
 
-**Commands are `:chrome`-gated — `withGlobalTauri` does inject the IPC bridge into content
+**Commands are chrome-gated — `withGlobalTauri` does inject the IPC bridge into content
 webviews.** `tauri.conf.json` sets `withGlobalTauri: true`, so `window.__TAURI__` (and the
 underlying invoke channel) reaches *every* webview, remote content tabs included — and
-app-defined `#[tauri::command]`s are **not** ACL/capability-gated (the capability in
-`capabilities/default.json` only grants `core:event` to `*:chrome`; the commands work regardless).
+app-defined `#[tauri::command]`s are **not** ACL/capability-gated (the `core:event` capability in
+`capabilities/default.json` is a separate concern — see below; the commands work regardless).
 The only thing stopping a remote page from invoking the whole command surface (reading sibling
 tabs' URLs via `get_tabs`, driving `select_tab`/`unload_tab`/`reset_all`/`set_sidebar_width`) is
-the `require_chrome`/`is_chrome_caller` guard at the top of every command in `commands.rs`, which
-rejects callers whose webview label doesn't end in `:chrome`. **Every new `#[tauri::command]` that
-takes a `Webview` must call `require_chrome` first** (or, for the non-`Result` ones, early-return a
-safe empty value) — dropping the guard silently re-exposes the command to remote pages.
+the `require_chrome`/`is_chrome_caller` guard at the top of every command in `commands.rs`. The
+chrome is its window's **main** webview (hole-punch — see *Resizable sidebar*), so its label *is*
+the window label; content webviews are `{window_id}:tab-<hash>`, so the guard is `label ==
+webview.window().label()` (`label_is_chrome`; the same check `layout_webviews` uses to skip the
+chrome). **Every new `#[tauri::command]` that takes a `Webview` must call `require_chrome` first**
+(or, for the non-`Result` ones, early-return a safe empty value) — dropping the guard silently
+re-exposes the command to remote pages.
+
+Separately, the chrome sidebar uses JS `listen()`, which *does* need `core:event`. The
+`capabilities/default.json` grant applies to **local** app-URL webviews only (no `remote` block =
+`local: true` default), and Tauri denies capability permissions to a webview by its live origin —
+so the chrome (an App URL) gets events while content tabs (`External`/remote URLs) never do,
+regardless of label. That local/remote origin scoping — not a label glob — is what keeps
+`core:event` off remote pages now that the chrome's label is the bare window id.
 
 **Native banners go through `UNUserNotificationCenter`, not `tauri-plugin-notification`**
 (`notification.rs`, objc2). The plugin's desktop backend (`notify-rust` → `mac-notification-sys`)
@@ -114,10 +126,10 @@ from the `on_navigation` notify-sentinel handler in `webviews.rs`, which knows b
 them into the request's `userInfo`; the same delegate's `didReceiveNotificationResponse` reads
 them back on a tap (the *default* action only — dismiss is ignored), raises that window
 (`set_focus`, which also activates curator from the background), and emits `focus-tab` to that
-window's chrome (`{window_id}:chrome`) so the sidebar selects the tab. `init` captures the
-`AppHandle` the delegate needs. The event targets the precise chrome webview label, so it reaches
-only the originating window (no per-window leak — unlike warden, whose `emit_to` leaks to siblings
-and so carries a label to filter). This surfaces curator's *own* tab; it does **not** invoke the
+window's chrome (the chrome is the window's main webview, so its label *is* the `window_id`) so the
+sidebar selects the tab. `init` captures the `AppHandle` the delegate needs. The event targets the
+precise chrome webview label, so it reaches only the originating window (no per-window leak — unlike
+warden, whose `emit_to` leaks to siblings and so carries a label to filter). This surfaces curator's *own* tab; it does **not** invoke the
 web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
 `src/inject/notification.js`).
 
@@ -155,14 +167,31 @@ release builds because `tauri`'s `devtools` feature is enabled in `Cargo.toml` �
 deliberate (this is an operator console, not a sandboxed consumer app), not a debug leftover;
 don't strip the feature.
 
-**Resizable sidebar.** The sidebar is a fixed-width child webview (default `CHROME_W`) with the
-content webviews Rust-positioned beside it, so width can't be pure CSS. Each window's width lives
-in a `WindowRuntime.chrome_w` (`Arc<AtomicU64>`, f64 bits) shared with its resize closure. The
-drag handle + per-window `localStorage` persistence now live in **chrome-core** (config
-`storageKey: "curator:sidebar-width:<title>"`); its `onResize(width)` callback invokes
-`set_sidebar_width`, which clamps Rust-side (`clamp_chrome_w`: 160–520px and ≤40% of the window)
-and `relayout_with_width`s the chrome + content. The window re-clamps on resize. The active-tab
-highlight tints with the window's accent colour (`--active-bg`), falling back to neutral blue.
+**Hole-punch layout + resizable sidebar.** The chrome is the window's **main** webview
+(`build_window` uses `WebviewWindowBuilder`, `hidden_title`, full-window under `TitleBarStyle::Overlay`),
+*not* an `add_child` child — because `data-tauri-drag-region` moves the window only from a window's
+main webview (a child webview's drag is inert; that was the original `sidebar_drag`-does-nothing bug).
+This mirrors **warden's hole-punch**: `index.html` is a flex row of a fixed-width `#sidebar` (the
+chrome-core mount) and a `#content-hole`; the Rust-positioned content webviews are `add_child`
+siblings that composite **above** the main chrome webview over the hole (guaranteed by add-order +
+`zorder::raise_to_front` on the active tab). When no content webview covers the hole, the opaque
+`#empty-state` (muted curator mark, in `index.html`) shows; `chrome.js` toggles it on `active`. No
+transparency needed (content is opaque; unlike warden's native surfaces). The traffic-light inset is
+CSS (`#sidebar { padding-top: 28px }`), owned by the frontend — Rust does not offset the chrome.
+
+The sidebar's **visible width is JS-owned CSS** (`#sidebar` inline width, set by `chrome.js`'s
+`onResize`), while Rust positions the content webviews at the matching x. They stay edge-aligned
+because both clamp with **identical bounds** — `chrome.js`'s `MIN_W`/`MAX_W`/`MAX_FRACTION` (passed
+to chrome-core as `minWidth`/`maxWidth`/`maxFraction`) mirror Rust's `clamp_chrome_w` (160–520px,
+≤40% of the window) — so a resize-drag or a window resize (each re-clamps its own copy) settles both
+on the same value with no cross-process echo. Each window's width lives in
+`WindowRuntime.chrome_w` (`Arc<AtomicU64>`, f64 bits); `set_sidebar_width` stores it and
+`relayout_with_width` writes back the *clamped* value so it tracks the JS width (this drops
+restore-on-window-grow — matching warden). chrome-core owns the drag handle + `localStorage`
+persistence (`storageKey: "curator:sidebar-width:<title>"`). Because the chrome is now full-window,
+chrome-core's `window.innerWidth` fraction cap *is* the window width (`maxFraction: 0.4`), unlike
+the old child-webview case that had to skip it. The active-tab highlight tints with the window's
+accent colour (`--active-bg`), falling back to neutral blue.
 
 **Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION
 | MAXIMIZED). Restore is handled entirely by the plugin's `window_created` hook, which runs on the
