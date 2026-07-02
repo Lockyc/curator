@@ -291,22 +291,23 @@ allow_insecure = ["10.0.0.1", "nas.local"]
 
 ## Related projects
 
-curator is one of a small family of macOS apps that share a sidebar and a config engine, so
-building it from source pulls in a couple of sibling crates — all fetched automatically, with
-nothing extra to install:
+curator is built on two shared library crates. Building it from source pulls them in
+automatically — they're pinned Git dependencies, resolved by a plain `cargo build` / `just run`
+with nothing extra to install:
 
 - **[chrome-core](https://github.com/Lockyc/chrome-core)** — the sidebar chrome (banner,
   grouped tab rows, resize drag, density tokens). A build-dependency: its CSS/JS is
   materialized into curator's bundled web assets at compile time.
 - **[config-core](https://github.com/Lockyc/config-core)** — the TOML config engine (parse,
   validate, format, hot-reload diff) behind curator's config and `curator fmt`.
-- **[warden](https://github.com/Lockyc/warden)** — a sibling app built on the same two cores
-  that curates **terminals** the way curator curates **browser tabs**.
 
-Both cores are pinned Git dependencies, so a plain `cargo build` / `just run` resolves them
-with no setup. If you want to iterate on the shared chrome, `just chrome-dev` builds curator
-against a sibling `../chrome-core` checkout (including uncommitted edits) and `just chrome-pin`
-re-pins to its pushed commit afterward.
+Those same two cores are also shared with a **sibling app, [warden](https://github.com/Lockyc/warden)**,
+which curates **terminals** the way curator curates **browser tabs**. warden is a peer project,
+not a dependency of curator — it just draws from the same cores.
+
+If you want to iterate on the shared chrome, `just chrome-dev` builds curator against a sibling
+`../chrome-core` checkout (including uncommitted edits) and `just chrome-pin` re-pins to its
+pushed commit afterward.
 
 ## License
 
