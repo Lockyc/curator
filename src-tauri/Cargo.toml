@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 # The shared sidebar chrome, embedded as string consts; build.rs writes them into ../src (the
 # frontendDist Tauri embeds). Pinned by rev — bump in lockstep with config-core + the toolchain.
-chrome-core = { git = "https://github.com/Lockyc/chrome-core", rev = "aa1cdfe9cf0770b5a0da34417ed3e7810d8aba30" }
+chrome-core = { git = "https://github.com/Lockyc/chrome-core", rev = "64d0a5d4e887debe560bab3308f3419a99931ff0" }
 
 [dependencies]
 tauri = { version = "2", features = ["unstable", "devtools"] }
@@ -33,6 +33,9 @@ dirs = "5"
 getrandom = "0.2"
 # Persist each window's size + position (+ maximized) across launches, keyed by Tauri label.
 tauri-plugin-window-state = "2"
+# In-app updates: check GitHub releases, download+verify (minisign), install and relaunch.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 # Shared, domain-free TOML config primitives (house-style `fmt`, colour parsing) used by both
 # curator and warden — git dep so the build-from-source install flow needs no extra setup.
 # Pinned by rev (same as warden's pin): the shared house formatter must format identically in
