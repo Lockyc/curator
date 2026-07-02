@@ -68,6 +68,9 @@ async function buildDto() {
     title: (id && id.title) || "",
     colour: (id && id.colour) ?? null,
     density: (id && id.density) || "comfortable",
+    // sidebar_drag (global config, default on): make the non-interactive chrome a window-move drag
+    // handle. Absent field defaults on, matching the config default.
+    windowDrag: !(id && id.sidebar_drag === false),
     // curator's Rust side owns which tab is active — pass it so chrome-core honours it (no auto-fire).
     active: (tabs.find((t) => t.active) || {}).label ?? null,
     tabs: tabs.map((t) => ({
@@ -159,9 +162,12 @@ listen("service-badge", (e) => {
 listen("nav-tab", (e) => sb.selectByOffset(e.payload, { liveOnly: false }));
 listen("jump-tab", (e) => sb.selectByIndex(e.payload));
 // A desktop-notification banner was clicked (A2): select+activate the tab that fired it.
+// Skip when it's already the active tab — re-selecting it would trip the home-on-active gesture
+// (onSelect wasActive → home_tab), navigating away from the very thing the banner was about; the
+// window raise already happened Rust-side, so surfacing an already-active tab needs no action.
 listen("focus-tab", (e) => {
   const label = e.payload && e.payload.label;
-  if (label) sb.select(label);
+  if (label && label !== activeLabel) sb.select(label);
 });
 
 mountChrome();

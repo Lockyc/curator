@@ -27,7 +27,7 @@ pub enum Density {
     Compact,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Force dark appearance app-wide (applied per window at setup). Omit/false = follow system.
@@ -51,8 +51,30 @@ pub struct Config {
     /// the chrome. See [`Density`].
     #[serde(default)]
     pub density: Density,
+    /// Whether the sidebar chrome acts as a window-move drag handle (whole-app). Default true;
+    /// `false` turns it off. The chrome maps this to the component's `windowDrag` flag.
+    #[serde(default = "default_true")]
+    pub sidebar_drag: bool,
     #[serde(default, rename = "window")]
     pub windows: Vec<WindowConfig>,
+}
+
+// Hand-written (not derived) so `sidebar_drag` defaults to `true`, matching serde's
+// `default_true` parse default — a derived `bool` default would be `false` and silently
+// disagree with parsing an empty config. The struct literal makes this drift-proof: adding
+// a field fails to compile until it's set here too.
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            dark_mode: false,
+            format_on_save: false,
+            allow_insecure: Vec::new(),
+            session: None,
+            density: Density::Comfortable,
+            sidebar_drag: true,
+            windows: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -93,6 +115,9 @@ fn is_hex_colour(s: &str) -> bool {
 /// sets none either). One store → tabs share cookies, so SSO across related services works.
 pub const DEFAULT_SESSION: &str = "default";
 
+fn default_true() -> bool {
+    true
+}
 fn default_window_width() -> u32 {
     1500
 }
@@ -424,6 +449,17 @@ reload_every = 15
         assert_eq!(cfg.density, Density::Compact);
         // An unrecognised value is a parse error (serde rejects the unknown variant).
         assert!(parse_and_validate(&format!("density = \"roomy\"\n{VALID}")).is_err());
+    }
+
+    #[test]
+    fn sidebar_drag_defaults_true_and_parses_false() {
+        assert!(parse_and_validate(VALID).unwrap().0.sidebar_drag);
+        let cfg = parse_and_validate(&format!("sidebar_drag = false\n{VALID}"))
+            .unwrap()
+            .0;
+        assert!(!cfg.sidebar_drag);
+        // The derived-vs-serde default trap: an empty config must agree with Config::default().
+        assert_eq!(Config::default().sidebar_drag, true);
     }
 
     #[test]

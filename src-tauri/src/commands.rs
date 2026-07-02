@@ -66,6 +66,9 @@ pub struct WindowIdentity {
     /// Whole-app chrome density ("comfortable" | "compact"), from the global config. The chrome
     /// sets it as `data-density` on the root so its CSS variables switch sizing.
     density: Density,
+    /// Whole-app `sidebar_drag`, from the global config → the chrome's `windowDrag` flag (makes the
+    /// non-interactive sidebar chrome a window-move drag region). Default true.
+    sidebar_drag: bool,
 }
 
 /// Return the calling window's title + accent colour so the chrome can paint a per-window
@@ -75,6 +78,7 @@ pub struct WindowIdentity {
 pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdentity {
     let wid = calling_window_id(&webview);
     let density = *state.density.lock().unwrap();
+    let sidebar_drag = state.sidebar_drag.load(Ordering::Relaxed);
     let default_width = match density {
         Density::Compact => webviews::COMPACT_CHROME_W,
         Density::Comfortable => webviews::CHROME_W,
@@ -85,6 +89,7 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
             colour: None,
             default_width,
             density,
+            sidebar_drag,
         };
     }
     let windows = state.windows.lock().unwrap();
@@ -94,12 +99,14 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
             colour: rt.cfg.colour.clone(),
             default_width,
             density,
+            sidebar_drag,
         },
         None => WindowIdentity {
             title: String::new(),
             colour: None,
             default_width,
             density,
+            sidebar_drag,
         },
     }
 }

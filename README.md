@@ -117,6 +117,7 @@ organised into groups; loose tabs render first in a headerless section, then eac
 # allow_insecure = ["192.168.1.1"] # accept self-signed TLS for these hosts
 # session       = "personal"      # app-wide default login store (bottom of the session chain)
 # density       = "compact"       # "comfortable" (default) or "compact" (condensed chrome)
+# sidebar_drag  = false           # drag the sidebar chrome to move the window (default true)
 
 [[window]]
 title         = "Keepers"          # required; must be unique across windows
@@ -180,6 +181,7 @@ window. Optional:
 | `allow_insecure` | list of hosts | `[]`    | Accept self-signed/invalid TLS certs for these hosts. Applied at launch (restart to change).  |
 | `session`        | string        | none    | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). |
 | `density`        | string        | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down proportionally for denser tab lists). Hot-reloads. |
+| `sidebar_drag`   | bool          | `true`  | Whether the sidebar chrome is a window-move drag handle (drag the banner/empty list area to move the window). `false` turns it off. Hot-reloads. |
 | `format_on_save` | bool          | `false` | Reformat `config.toml` in curator's house style on a clean hot-reload (same formatting as `curator fmt`). Leaves the file untouched if a reload fails to parse. |
 
 Run **`curator validate [path]`** to check a config without launching: it prints the resolved

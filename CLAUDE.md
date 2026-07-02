@@ -32,9 +32,12 @@ section header only for `Some`. Per-tab fields: `title`, `url` (both required, n
 `load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `session`.
 App-global keys: `dark_mode`, `allow_insecure`, `session`, `format_on_save` (bool, default
 false — reformat the file in house style on a clean hot-reload),
-and `density` (`comfortable` default / `compact`). Density is kept live in `AppState` across
-hot-reload (like `dark_mode`); `window_identity` returns it (plus a density-aware default sidebar
-width — compact is narrower) and the controller passes it in the DTO, so **chrome-core** sets
+`density` (`comfortable` default / `compact`), and `sidebar_drag` (bool, default true — the sidebar
+chrome is a window-move drag handle → the component's `windowDrag` flag; `false` turns it off).
+Both are kept live in `AppState` across hot-reload (like `dark_mode`; `sidebar_drag` is an
+`AtomicBool`, `density` a `Mutex`); `window_identity` returns them (plus a density-aware default
+sidebar width — compact is narrower) and the controller passes them in the DTO, so **chrome-core**
+applies `windowDrag` and sets
 `data-density` on `<html>` and swaps its `--cc-*` sizing tokens (`--cc-row-font`/`--cc-tile-size`/
 `--cc-dot-size`/… in chrome-core's `assets/sidebar.css`). `compact` is a proportional ~0.85× scale
 of the comfortable set. **Both apps consume chrome-core**, so the tokens live once and stay aligned
