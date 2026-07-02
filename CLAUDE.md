@@ -101,12 +101,13 @@ chrome). **Every new `#[tauri::command]` that takes a `Webview` must call `requi
 (or, for the non-`Result` ones, early-return a safe empty value) — dropping the guard silently
 re-exposes the command to remote pages.
 
-Separately, the chrome sidebar uses JS `listen()`, which *does* need `core:event`. The
+Separately, the chrome sidebar *does* need real capability permissions: `core:event` (JS `listen()`)
+and `core:window:allow-start-dragging` (the sidebar window-move drag — see *Hole-punch layout*). The
 `capabilities/default.json` grant applies to **local** app-URL webviews only (no `remote` block =
 `local: true` default), and Tauri denies capability permissions to a webview by its live origin —
-so the chrome (an App URL) gets events while content tabs (`External`/remote URLs) never do,
-regardless of label. That local/remote origin scoping — not a label glob — is what keeps
-`core:event` off remote pages now that the chrome's label is the bare window id.
+so the chrome (an App URL) gets these while content tabs (`External`/remote URLs) never do,
+regardless of label. That local/remote origin scoping — not a label glob — is what keeps these
+permissions off remote pages now that the chrome's label is the bare window id.
 
 **Native banners go through `UNUserNotificationCenter`, not `tauri-plugin-notification`**
 (`notification.rs`, objc2). The plugin's desktop backend (`notify-rust` → `mac-notification-sys`)
@@ -170,7 +171,14 @@ don't strip the feature.
 **Hole-punch layout + resizable sidebar.** The chrome is the window's **main** webview
 (`build_window` uses `WebviewWindowBuilder`, `hidden_title`, full-window under `TitleBarStyle::Overlay`),
 *not* an `add_child` child — because `data-tauri-drag-region` moves the window only from a window's
-main webview (a child webview's drag is inert; that was the original `sidebar_drag`-does-nothing bug).
+main webview (a child webview's drag is inert). **Two things are both required for the drag; each is
+a silent no-op alone** (this bit twice while fixing `sidebar_drag`): (1) the chrome must be the main
+webview, as here; and (2) `capabilities/default.json` must grant `core:window:allow-start-dragging`.
+The drag region invokes `plugin:window|start_dragging`, and **plugin** commands *are* ACL-gated
+(unlike curator's own app commands, which aren't — see the gating section) — without that permission
+the invoke is denied and nothing moves, with no error surfaced. Because the full-window webview now
+covers the native title-bar strip, this drag path is also the *only* way to move the window (there
+is no native-titlebar fallback), so the permission is load-bearing, not a nicety.
 This mirrors **warden's hole-punch**: `index.html` is a flex row of a fixed-width `#sidebar` (the
 chrome-core mount) and a `#content-hole`; the Rust-positioned content webviews are `add_child`
 siblings that composite **above** the main chrome webview over the hole (guaranteed by add-order +
