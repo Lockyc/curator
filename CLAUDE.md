@@ -172,8 +172,8 @@ don't strip the feature.
 (`build_window` uses `WebviewWindowBuilder`, `hidden_title`, full-window under `TitleBarStyle::Overlay`),
 *not* an `add_child` child — because `data-tauri-drag-region` moves the window only from a window's
 main webview (a child webview's drag is inert). **Two things are both required for the drag; each is
-a silent no-op alone** (this bit twice while fixing `sidebar_drag`): (1) the chrome must be the main
-webview, as here; and (2) `capabilities/default.json` must grant `core:window:allow-start-dragging`.
+a silent no-op alone**: (1) the chrome must be the main webview, as here; and (2)
+`capabilities/default.json` must grant `core:window:allow-start-dragging`.
 The drag region invokes `plugin:window|start_dragging`, and **plugin** commands *are* ACL-gated
 (unlike curator's own app commands, which aren't — see the gating section) — without that permission
 the invoke is denied and nothing moves, with no error surfaced. Because the full-window webview now
@@ -190,15 +190,16 @@ CSS (`#sidebar { padding-top: 28px }`), owned by the frontend — Rust does not 
 The sidebar's **visible width is JS-owned CSS** (`#sidebar` inline width, set by `chrome.js`'s
 `onResize`), while Rust positions the content webviews at the matching x. They stay edge-aligned
 because both clamp with **identical bounds** — `chrome.js`'s `MIN_W`/`MAX_W`/`MAX_FRACTION` (passed
-to chrome-core as `minWidth`/`maxWidth`/`maxFraction`) mirror Rust's `clamp_chrome_w` (160–520px,
-≤40% of the window) — so a resize-drag or a window resize (each re-clamps its own copy) settles both
-on the same value with no cross-process echo. Each window's width lives in
+to chrome-core as `minWidth`/`maxWidth`/`maxFraction`) must mirror Rust's `clamp_chrome_w` bounds
+(`MIN_CHROME_W`/`MAX_CHROME_W`/`MAX_CHROME_FRACTION`) — so a resize-drag or a window resize (each
+re-clamps its own copy) settles both on the same value with no cross-process echo. Those JS literals
+are a hand-kept copy of the Rust constants; changing one side means changing the other. Each window's width lives in
 `WindowRuntime.chrome_w` (`Arc<AtomicU64>`, f64 bits); `set_sidebar_width` stores it and
 `relayout_with_width` writes back the *clamped* value so it tracks the JS width (this drops
 restore-on-window-grow — matching warden). chrome-core owns the drag handle + `localStorage`
 persistence (`storageKey: "curator:sidebar-width:<title>"`). Because the chrome is now full-window,
-chrome-core's `window.innerWidth` fraction cap *is* the window width (`maxFraction: 0.4`), unlike
-the old child-webview case that had to skip it. The active-tab highlight tints with the window's
+chrome-core's `window.innerWidth` fraction cap *is* the window width (so `chrome.js` passes a real
+`maxFraction`), unlike the old child-webview case that had to skip it. The active-tab highlight tints with the window's
 accent colour (`--active-bg`), falling back to neutral blue.
 
 **Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION

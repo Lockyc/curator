@@ -46,9 +46,9 @@ file-driven, everything else is ephemeral.
   services (Gmail, Calendar, …). Set a tab's (or a window's) `session = "name"` to give it a
   separate account; reuse the same name elsewhere to share that login. Logins follow the
   `session` name, so renaming a window or editing a URL never signs you out.
-- **Page-first chrome** — the active page fills the window edge-to-edge, painting under an
-  overlay title bar; the native title bar (with traffic lights, draggable) is exposed only
-  as a strip above the sidebar tab list.
+- **Page-first chrome** — the active page fills the content area under an overlay title bar;
+  the traffic lights float over the top of the sidebar, which doubles as a window-move drag
+  handle (drag the banner or an empty area to move the window; toggle with `sidebar_drag`).
 - **`load_on_open` keeps a tab live** — mark a chat/service `load_on_open` and it loads at
   launch, stays live in the background, fires native banners, and rolls its unread count up
   to the dock badge. Tabs without it are lazy and stay quiet until you open them. That one
