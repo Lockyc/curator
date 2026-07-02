@@ -114,8 +114,8 @@ mod imp {
     /// an unknown window id (since closed) raises nothing; a missing/stale tab label leaves the
     /// active tab alone, so the click still lands you in the right window. `set_focus` brings the
     /// window forward and activates curator, so this surfaces the tab even from the background.
-    /// The event targets the originating window's chrome webview label (`{window_id}:chrome`)
-    /// directly, so it reaches only that window's sidebar.
+    /// The event targets the originating window's chrome webview directly — the chrome is the
+    /// window's main webview, so its label is the window id — so it reaches only that sidebar.
     fn focus_window_tab(window_id: String, tab_label: Option<String>) {
         let Some(app) = APP_HANDLE.get() else {
             return;
@@ -126,7 +126,7 @@ mod imp {
         }
         if let Some(tab) = tab_label {
             let _ = app.emit_to(
-                crate::identity::namespaced(&window_id, "chrome"),
+                window_id.as_str(),
                 "focus-tab",
                 serde_json::json!({ "label": tab }),
             );

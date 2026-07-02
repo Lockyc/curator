@@ -68,12 +68,9 @@ pub const COMPACT_CHROME_W: f64 = 200.0;
 const MIN_CHROME_W: f64 = 160.0;
 const MAX_CHROME_W: f64 = 520.0;
 /// Hard cap on the sidebar as a fraction of the window's logical width, so even a wide drag (or a
-/// stale persisted width on a now-smaller window) can't crowd out the content area.
+/// stale persisted width on a now-smaller window) can't crowd out the content area. Kept identical
+/// to the JS cap (`MAX_FRACTION` in chrome.js) so the sidebar edge and content edge agree.
 const MAX_CHROME_FRACTION: f64 = 0.4;
-/// macOS title-bar height. The title bar is an overlay (transparent, floating traffic
-/// lights); the content webview paints over it full-height while the chrome sidebar is
-/// inset by this much, leaving the native title-bar strip exposed only above the tab list.
-pub const TITLEBAR_H: f64 = 28.0;
 const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
@@ -133,28 +130,27 @@ fn clamp_chrome_w(desired: f64, win_w: f64) -> f64 {
 fn layout_webviews(window: &Window, chrome_w: f64) {
     let (w, h) = logical_inner(window);
     for wv in window.webviews() {
-        let is_chrome = wv.label().ends_with(":chrome");
-        let (pos, size) = if is_chrome {
-            (
-                LogicalPosition::new(0.0, TITLEBAR_H),
-                LogicalSize::new(chrome_w, (h - TITLEBAR_H).max(0.0)),
-            )
-        } else {
-            (content_position(chrome_w), content_size(chrome_w, w, h))
-        };
-        let _ = wv.set_position(pos);
-        let _ = wv.set_size(size);
+        // The chrome is the window's main webview (its label IS the window label); it auto-sizes to
+        // the window as the content view, and the sidebar's visible width is owned by CSS. So skip
+        // it and lay out only the content webviews, filling the hole to the right of the sidebar.
+        if wv.label() == window.label() {
+            continue;
+        }
+        let _ = wv.set_position(content_position(chrome_w));
+        let _ = wv.set_size(content_size(chrome_w, w, h));
     }
 }
 
-/// Lay out for the window's *desired* sidebar width clamped to the current window size, and return
-/// the applied (clamped) width. The atomic holds the unclamped desired width and is left
-/// untouched, so shrinking a window past the 40% cap narrows the sidebar only for display — a
-/// later grow re-clamps the same desired and restores the pre-shrink width up to the new cap.
-/// Called on window resize and on a chrome resize-drag.
+/// Lay out the content webviews for the window's sidebar width clamped to the current window size.
+/// Called on window resize and on a chrome resize-drag. The clamped width is stored back into the
+/// atomic so it stays in lockstep with the JS-owned sidebar CSS width, which chrome.js re-clamps
+/// on window resize with identical bounds — both settle on the same value from the same input, so
+/// the sidebar edge and the content webviews' left edge always agree. (This means a window-shrink
+/// past the 40% cap permanently narrows the stored width — matching warden; no restore-on-grow.)
 pub fn relayout_with_width(window: &Window, chrome_w: &AtomicU64) {
     let (w, _h) = logical_inner(window);
     let cw = clamp_chrome_w(f64::from_bits(chrome_w.load(Ordering::Relaxed)), w);
+    chrome_w.store(cw.to_bits(), Ordering::Relaxed);
     layout_webviews(window, cw);
 }
 
@@ -168,16 +164,32 @@ pub fn build_window(
     win_w: f64,
     win_h: f64,
 ) -> tauri::Result<(Window, Arc<AtomicU64>)> {
-    // Shared, lock-free *desired* sidebar width (f64 bits): captured by the resize closure below
-    // and stored in the window's runtime so the resize command and lazy-tab layout read the same
-    // value. It's the unclamped user intent — clamping to the window size happens at layout time.
+    // Shared, lock-free sidebar width (f64 bits): captured by the resize closure below and stored in
+    // the window's runtime so the resize command and lazy-tab layout read the same value. Held
+    // clamped-to-window (relayout_with_width stores the clamped result), matching the JS-owned
+    // sidebar CSS width so the content webviews line up with the sidebar edge.
     let chrome_w = Arc::new(AtomicU64::new(CHROME_W.to_bits()));
 
-    let window = tauri::window::WindowBuilder::new(app, window_id)
-        .title(title)
-        .inner_size(win_w, win_h)
-        .title_bar_style(TitleBarStyle::Overlay)
-        .build()?;
+    // The sidebar chrome is the window's MAIN webview (hole-punch, warden-style): built as the
+    // window's content view, so `data-tauri-drag-region` in it moves the window natively — a child
+    // (`add_child`) webview cannot (that's why the whole-window drag was inert before). It spans the
+    // whole window (index.html renders the sidebar in a left column and leaves a "hole" on the
+    // right); the Rust-positioned content webviews are `add_child` siblings, added later so they
+    // composite ABOVE this webview over the hole. `hidden_title` drops the OS title (the in-app
+    // banner names the window); the traffic lights float over the sidebar's padding-top inset.
+    //
+    // The main webview's label IS the window label (window_id) — Tauri ties them. Content webviews
+    // are `{window_id}:tab-<hash>`, so `label == window.label()` uniquely identifies the chrome
+    // (see `is_chrome_label` in commands.rs and the skip in `layout_webviews`). `core:event` stays
+    // off remote content because capabilities apply to local app URLs only (content is `External`).
+    let webview_window =
+        tauri::WebviewWindowBuilder::new(app, window_id, WebviewUrl::App("index.html".into()))
+            .title(title)
+            .inner_size(win_w, win_h)
+            .hidden_title(true)
+            .title_bar_style(TitleBarStyle::Overlay)
+            .build()?;
+    let window = webview_window.as_ref().window();
 
     // Saved bounds (size/position/maximized) are restored by tauri-plugin-window-state's own
     // `window_created` hook, which runs on the main thread *inside* the event loop — where its
@@ -193,25 +205,6 @@ pub fn build_window(
     // stayed invisible while no window title hashed to a persisted state entry (restore
     // short-circuited before the marshal); the first matching title — e.g. renaming a window onto an
     // old entry — froze the app.
-
-    let chrome_label = crate::identity::namespaced(window_id, "chrome");
-    let chrome = WebviewBuilder::new(&chrome_label, WebviewUrl::App("index.html".into()));
-    window.add_child(
-        chrome,
-        LogicalPosition::new(0.0, TITLEBAR_H),
-        LogicalSize::new(CHROME_W, (win_h - TITLEBAR_H).max(0.0)),
-    )?;
-
-    // Blank-screen placeholder (muted grey app icon), shown in the content area behind every
-    // content webview. Content webviews are added later, so they stack on top and cover it
-    // when a tab is open; it shows through when nothing is selected.
-    let ph_label = crate::identity::namespaced(window_id, "placeholder");
-    let placeholder = WebviewBuilder::new(&ph_label, WebviewUrl::App("placeholder.html".into()));
-    window.add_child(
-        placeholder,
-        content_position(CHROME_W),
-        content_size(CHROME_W, win_w, win_h),
-    )?;
 
     // Resize/reposition all webviews whenever the window resizes or changes DPI. The handler
     // queries webviews() live, so content webviews created later are covered too. The same

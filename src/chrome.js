@@ -89,10 +89,18 @@ async function buildDto() {
 // ── Mount + refresh ─────────────────────────────────────────────────────────
 let sb = null;
 
+// The empty-state (muted curator mark) shows only when no tab is active — otherwise a content
+// webview covers the hole. It's composited BEHIND the content webviews, so this is occluded
+// whenever a tab is shown; toggling on `active` keeps it from peeking during transitions.
+function paintEmptyState(active) {
+  document.getElementById("empty-state").style.display = active ? "none" : "flex";
+}
+
 async function refresh() {
   const dto = await buildDto();
   sb.update(dto);
   setActiveLabel(dto.active);
+  paintEmptyState(dto.active);
 }
 
 async function mountChrome() {
@@ -101,7 +109,7 @@ async function mountChrome() {
   const defaultWidth = (id && id.default_width) || 240;
 
   sb = window.ChromeSidebar.mount(
-    document.getElementById("chrome"),
+    document.getElementById("sidebar"),
     {
       onSelect(tabId, { wasActive }) {
         setActiveLabel(tabId);
@@ -115,6 +123,11 @@ async function mountChrome() {
         await refresh();
       },
       onResize(width) {
+        // The chrome is now the window's full-size main webview, so the sidebar's visible width is
+        // CSS (set here) and Rust positions the content webviews at the matching x via
+        // set_sidebar_width. Both clamp with identical bounds (see the config below ↔ Rust's
+        // clamp_chrome_w), so the sidebar edge and the content's left edge always agree.
+        setSidebarWidth(width);
         invoke("set_sidebar_width", { width: Math.round(width) }).catch(() => {});
       },
       // onKill: unused — curator sets killable:false, so the component never invokes it.
@@ -123,25 +136,46 @@ async function mountChrome() {
       header: buildNavPill(),
       storageKey: "curator:sidebar-width:" + title,
       defaultWidth,
-      minWidth: 160,
-      maxWidth: 520,
-      // 0 = skip chrome-core's JS fraction cap. curator's sidebar is an isolated child webview, so
-      // that cap's `window.innerWidth` is the sidebar's own width (not the window) and would pin every
-      // drag to the floor. Rust's `clamp_chrome_w` enforces the real ≤40%-of-window limit instead.
-      maxFraction: 0,
+      minWidth: MIN_W,
+      maxWidth: MAX_W,
+      // Matches Rust's clamp_chrome_w (≤40% of the window). Now that the chrome is the full-window
+      // main webview, chrome-core's `window.innerWidth` IS the window width, so this JS cap and the
+      // Rust cap agree — keeping the sidebar edge aligned with the content webviews' left edge.
+      maxFraction: MAX_FRACTION,
     }
   );
 
   await refresh();
 
-  // First-run width: chrome-core restores a saved width itself; if none is saved and the window is
-  // compact, apply the density-aware default (narrower than Rust's launch default — the comfortable
-  // default equals it, so skip that to avoid a redundant relayout).
+  // First-run width: chrome-core restores a saved width itself (firing onResize → CSS + Rust); if
+  // none is saved, apply the density-aware default. Rust launches content at CHROME_W (comfortable);
+  // only the narrower compact default needs to be pushed to Rust to realign the content edge.
   const saved = parseFloat(localStorage.getItem("curator:sidebar-width:" + title));
-  if (!(saved > 0) && id && id.density === "compact") {
-    invoke("set_sidebar_width", { width: Math.round(defaultWidth) }).catch(() => {});
+  if (!(saved > 0)) {
+    setSidebarWidth(defaultWidth);
+    if (id && id.density === "compact") {
+      invoke("set_sidebar_width", { width: Math.round(defaultWidth) }).catch(() => {});
+    }
   }
 }
+
+// Sidebar width bounds — kept identical to Rust's clamp_chrome_w (MIN_CHROME_W / MAX_CHROME_W /
+// MAX_CHROME_FRACTION) so the JS-owned sidebar edge and the Rust-positioned content edge agree.
+const MIN_W = 160, MAX_W = 520, MAX_FRACTION = 0.4;
+
+function setSidebarWidth(w) {
+  document.getElementById("sidebar").style.width = Math.round(w) + "px";
+}
+
+// A window resize can push the sidebar past the ≤40% cap; re-clamp it here with the same bounds
+// Rust re-clamps the content with, so the two stay edge-aligned without any extra round-trip.
+window.addEventListener("resize", () => {
+  const el = document.getElementById("sidebar");
+  const cur = parseInt(el.style.width, 10) || parseInt(getComputedStyle(el).width, 10);
+  if (!Number.isFinite(cur)) return;
+  const upper = Math.min(MAX_W, window.innerWidth * MAX_FRACTION);
+  setSidebarWidth(Math.max(MIN_W, Math.min(cur, upper)));
+});
 
 // ── Events ──────────────────────────────────────────────────────────────────
 listen("config-reloaded", () => {

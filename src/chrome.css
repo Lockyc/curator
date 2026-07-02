@@ -3,10 +3,32 @@
    nav pill (browser navigation), which chrome-core mounts into its banner via the header slot. */
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100vh; background: #1e1e1e; } /* dark overscroll/rubber-band */
+html, body { margin: 0; height: 100vh; overflow: hidden; background: #1e1e1e; } /* opaque base */
 
-/* #chrome is the chrome-core mount container; chrome-core makes it a flex column (.cc-root). */
-#chrome { height: 100vh; }
+/* Hole-punch shell: a flex row of the fixed-width sidebar + the content hole. This page is the
+   window's MAIN webview (full window); the Rust-positioned content webviews sit ABOVE it over the
+   hole. Everything painted here stays OPAQUE (the window is not transparent — content covers the
+   hole, and the empty-state covers it when no tab is open). */
+#app { height: 100vh; display: flex; flex-direction: row; }
+
+/* chrome-core mount container. `width` is the resize-controlled sidebar width (set inline by the
+   controller's onResize; defaults to chrome-core's density token). `padding-top` clears the
+   floating traffic lights (full-size Overlay content view). chrome-core adds `.cc-root`. */
+#sidebar { width: var(--cc-sidebar-w, 240px); flex: none; padding-top: 28px; }
+
+/* The content hole the content webviews cover; visible only where none does (→ #empty-state). */
+#content-hole { flex: 1; position: relative; background: #1e1e1e; }
+#empty-state {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #1e1e1e;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#empty-state svg { width: 220px; height: 220px; opacity: 0.9; }
 
 /* Nav pill (back/forward/reload/home) — curator-only browser nav, mounted in chrome-core's banner. */
 .nav-pill {

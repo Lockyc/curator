@@ -191,20 +191,21 @@ fn emit_to_all_chrome<S: serde::Serialize + Clone>(
     let state = app.state::<AppState>();
     let ids: Vec<String> = state.windows.lock().unwrap().keys().cloned().collect();
     for id in ids {
-        let _ = app.emit_to(identity::namespaced(&id, "chrome"), event, payload.clone());
+        // The chrome is the window's main webview, so its label is the window id.
+        let _ = app.emit_to(id.as_str(), event, payload.clone());
     }
 }
 
 /// Emit an event to just the focused window's chrome sidebar. Used by the keyboard tab-nav
-/// menu items (⌘1–9 jump, ⌘⇧[ / ⌘⇧] cycle), which act on whichever window has key focus — the
-/// window label *is* the window id, so its chrome is `{id}:chrome`.
+/// menu items (⌘1–9 jump, ⌘⇧[ / ⌘⇧] cycle), which act on whichever window has key focus. The
+/// chrome is the window's main webview, so its label *is* the window id (== the window label).
 fn emit_to_focused_chrome<S: serde::Serialize + Clone>(
     app: &tauri::AppHandle,
     event: &str,
     payload: S,
 ) {
     if let Some(win) = app.get_focused_window() {
-        let _ = app.emit_to(identity::namespaced(win.label(), "chrome"), event, payload);
+        let _ = app.emit_to(win.label(), event, payload);
     }
 }
 

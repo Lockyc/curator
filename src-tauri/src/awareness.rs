@@ -2,7 +2,7 @@
 //! badge and the aggregate macOS dock badge.
 
 use crate::escape::BadgeSignal;
-use crate::{identity, AppState};
+use crate::AppState;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
@@ -107,10 +107,10 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
         }
         rt.unread.insert(label.clone(), unread);
     }
-    // Per-window sidebar update → that window's chrome only.
-    let chrome = identity::namespaced(window_id, "chrome");
+    // Per-window sidebar update → that window's chrome only. The chrome is the window's main
+    // webview, so its label is the window id.
     let _ = app.emit_to(
-        chrome,
+        window_id,
         "service-badge",
         BadgeEvent {
             label,
@@ -140,9 +140,8 @@ pub fn forget_tab(app: &tauri::AppHandle, window_id: &str, label: &str) {
             rt.badge_authoritative.remove(label);
         }
     }
-    let chrome = identity::namespaced(window_id, "chrome");
     let _ = app.emit_to(
-        chrome,
+        window_id,
         "service-badge",
         BadgeEvent {
             label: label.to_string(),

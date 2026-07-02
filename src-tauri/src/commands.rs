@@ -19,22 +19,22 @@ fn calling_window_id(webview: &Webview) -> String {
     webview.window().label().to_string()
 }
 
-/// True only when the caller is a window's trusted `:chrome` sidebar webview. `withGlobalTauri`
+/// True only when the caller is a window's trusted chrome sidebar webview. `withGlobalTauri`
 /// injects the IPC bridge into *every* webview (including remote `External` content tabs) and
 /// app commands aren't ACL-gated, so without this gate a remote page could invoke the whole
 /// command surface — read sibling tabs' URLs via `get_tabs`, force-reload/unload/select tabs,
-/// etc. Chrome webviews are labelled `{window_id}:chrome`; content webviews are
-/// `{window_id}:tab-<hash>`, so the `:chrome` suffix is unique to the sidebar (the same check
+/// etc. The chrome is the window's MAIN webview (hole-punch), so its label IS the window label;
+/// content webviews are `{window_id}:tab-<hash>`, always distinct (the same check
 /// `layout_webviews` relies on).
 fn is_chrome_caller(webview: &Webview) -> bool {
-    label_is_chrome(webview.label())
+    label_is_chrome(webview.label(), webview.window().label())
 }
 
-/// Pure predicate behind [`is_chrome_caller`]: a chrome sidebar's label is `{window_id}:chrome`,
-/// content labels are `{window_id}:tab-<hash>` (`url_label` always prefixes `tab-`), so the
-/// `:chrome` suffix is exclusive to the sidebar.
-fn label_is_chrome(label: &str) -> bool {
-    label.ends_with(":chrome")
+/// Pure predicate behind [`is_chrome_caller`]: the chrome sidebar is a window's main webview, so
+/// its label equals the window label (== window id); content webviews are `{window_id}:tab-<hash>`
+/// (`url_label` always prefixes `tab-`), so they never equal the bare window label.
+fn label_is_chrome(label: &str, window_label: &str) -> bool {
+    label == window_label
 }
 
 /// Reject a command call that didn't originate from the trusted chrome sidebar.
@@ -163,10 +163,10 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     webviews::apply_active(&window, Some(&label), &views).map_err(|e| e.to_string())
 }
 
-/// Set the calling window's sidebar width from a chrome resize-drag (logical px). Stores the
-/// desired width, then clamps it Rust-side (range + ≤40% of the window) and re-lays-out the chrome
-/// and content webviews. The chrome owns persistence — it stores the desired width it sent (for
-/// grow-recovery), not Rust's clamped value — so nothing is returned here.
+/// Set the calling window's sidebar width from a chrome resize-drag (logical px), clamp it
+/// Rust-side (range + ≤40% of the window), and re-lay-out the content webviews. `relayout_with_width`
+/// stores the clamped value back so it stays edge-aligned with the JS-owned sidebar CSS width (which
+/// the chrome clamps with identical bounds and persists to its own localStorage). Nothing is returned.
 #[tauri::command]
 pub fn set_sidebar_width(
     width: f64,
@@ -361,15 +361,18 @@ mod tests {
 
     #[test]
     fn only_chrome_labels_are_callers() {
-        // The trusted sidebar.
-        assert!(label_is_chrome("w0123456789abcdef:chrome"));
-        // Content webviews (url_label always yields `tab-<hash>`) must be rejected — this is the
-        // gate keeping remote pages out of the command surface.
-        assert!(!label_is_chrome("w0123456789abcdef:tab-00112233445566ff"));
-        // A window whose id somehow embedded `:chrome` still can't smuggle a content tab through:
-        // the content label ends in the tab hash, not `:chrome`.
-        assert!(!label_is_chrome("wdead:chrome:tab-00112233445566ff"));
-        assert!(!label_is_chrome("curator-error-view"));
-        assert!(!label_is_chrome(""));
+        let wid = "w0123456789abcdef";
+        // The trusted sidebar is the window's main webview: its label equals the window label.
+        assert!(label_is_chrome(wid, wid));
+        // Content webviews (url_label always yields `{wid}:tab-<hash>`) must be rejected — this is
+        // the gate keeping remote pages out of the command surface.
+        assert!(!label_is_chrome(
+            "w0123456789abcdef:tab-00112233445566ff",
+            wid
+        ));
+        // A content webview from another window doesn't equal *this* window's label either.
+        assert!(!label_is_chrome("wdead:tab-00112233445566ff", wid));
+        assert!(!label_is_chrome("curator-error-view", "curator-error"));
+        assert!(!label_is_chrome("", wid));
     }
 }

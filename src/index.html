@@ -7,10 +7,39 @@
     <link rel="stylesheet" href="chrome.css" />
   </head>
   <body>
-    <!-- The chrome-core sidebar mounts here; the nav pill is built in chrome.js and passed as the
-         component's header slot. chrome-core.js (plain script) sets window.ChromeSidebar before the
-         module runs. -->
-    <div id="chrome"></div>
+    <!-- Hole-punch topology (warden-style): this page IS the window's MAIN webview, spanning the whole
+         window, so `data-tauri-drag-region` moves the window natively (a child webview can't). The
+         sidebar is a fixed-width column; the content area is a "hole" the Rust-positioned content
+         webviews cover (they're add_child siblings composited ABOVE this webview). When no tab covers
+         it, the opaque #empty-state shows through. -->
+    <div id="app">
+      <!-- chrome-core mounts here (adds .cc-root + banner/rows/resize). The drag attr covers the
+           `padding-top` title-bar inset (traffic-light zone) that sits ABOVE chrome-core's children;
+           the sidebar BODY drag is stamped by chrome-core per the windowDrag DTO flag. -->
+      <aside id="sidebar" data-tauri-drag-region></aside>
+      <div id="content-hole" data-tauri-drag-region>
+        <!-- Muted curator mark — shown by the controller when no tab is selected. Composited BEHIND
+             the content webviews (a live tab occludes it). Opaque. -->
+        <div id="empty-state">
+          <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="no tab selected">
+            <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#333333" />
+            <rect x="470" y="232" width="404" height="560" rx="40" fill="#555555" />
+            <g fill="#444444">
+              <rect x="520" y="300" width="240" height="34" rx="17" />
+              <rect x="520" y="378" width="304" height="22" rx="11" />
+              <rect x="520" y="430" width="304" height="22" rx="11" />
+              <rect x="520" y="482" width="220" height="22" rx="11" />
+            </g>
+            <g fill="#555555">
+              <rect x="150" y="232" width="270" height="104" rx="30" />
+              <rect x="150" y="360" width="270" height="104" rx="30" />
+              <rect x="150" y="488" width="270" height="104" rx="30" />
+              <rect x="150" y="616" width="270" height="104" rx="30" />
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
     <script src="chrome-core.js"></script>
     <script type="module" src="chrome.js"></script>
   </body>
