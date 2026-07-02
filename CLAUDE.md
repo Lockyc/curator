@@ -343,15 +343,22 @@ view: it maps the component's callbacks to curator's commands (`onSelect`→`sel
 Rust side owns selection). What stays per-app is the content-area topology (curator z-orders content
 webviews) + the controller — not the sidebar. See warden's CLAUDE.md and chrome-core's own for the
 full interface. Edit the chrome in chrome-core (`assets/sidebar.{css,js}`), never the generated
-`src/chrome-core.*`; for active chrome work use a cargo `[patch]` path override, then re-pin the rev.
+`src/chrome-core.*`.
+
+**Chrome dev loop — the `chrome-*` just recipes** (they assume the sibling `../chrome-core` ghq checkout).
+For active chrome work, **`just chrome-dev`** activates a normally-commented `[patch]` in `src-tauri/Cargo.toml`
+so curator builds against your local `../chrome-core` (uncommitted edits included); iterate, then
+**`just chrome-pin`** re-pins the rev to `../chrome-core`'s pushed HEAD and re-comments the patch.
+**Never commit an active patch** — it breaks fresh clones/CI; **`just gate` refuses to pass while it's
+active** (the safety net).
 
 **Visual feedback loop — iterate the sidebar without building curator.** chrome-core ships a checked-in
 **`preview.html`** that mounts `ChromeSidebar` in isolation against a representative DTO (loose tabs, a
-plain group, a project-tree with folders + leaves, across the dot states). Open it in a browser, or
-screenshot it headlessly, to *see* a CSS/JS change without the app round-trip —
-`chrome --headless=new --disable-gpu --force-device-scale-factor=2 --window-size=310,900 --screenshot=preview.png "file://$PWD/preview.html"`
-(`?density=compact` previews the compact scale). This is the fast loop for chrome work; the pinned-rev
-round-trip through curator is only for shipping/final integration. Note preview.html is warden-shaped
-(no `header` slot), so it doesn't render curator's nav pill — but the banner is a fixed height either way
-(chrome-core's `--cc-banner-min`), so the slot's presence doesn't change the strip height. See
-chrome-core's CLAUDE.md for the full loop + the banner-height invariant.
+plain group, a project-tree with folders + leaves, across the dot states). **`just chrome-preview`** opens
+it (or `just preview` / `just shot` inside chrome-core) so you *see* a CSS/JS change without the app
+round-trip. URL params: **`?density=compact`** previews the compact scale, and **`?header=1`** mounts a
+stand-in in the banner's `header` slot (curator fills it with the nav pill; the preview uses a neutral
+placeholder) plus a live readout of `#cc-banner`'s height — proving the banner is one fixed height with or
+without the slot (chrome-core's `--cc-banner-min`). This is the fast loop for chrome work; the pinned-rev
+round-trip through curator is only for shipping. See chrome-core's CLAUDE.md for the full loop + the
+banner-height invariant.

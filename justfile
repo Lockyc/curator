@@ -41,10 +41,47 @@ clippy:
 # Full pre-merge gate: format check (non-mutating), clippy, tests, config-format check.
 [group("check")]
 gate:
+    @grep -qE '^\[patch\.' src-tauri/Cargo.toml && { echo "✗ active [patch] in src-tauri/Cargo.toml — run 'just chrome-pin' before committing"; exit 1; } || true
     cd src-tauri && cargo fmt --check
     cd src-tauri && cargo clippy -- -D warnings
     cd src-tauri && cargo test
     cd src-tauri && cargo run -- fmt --check "{{justfile_directory()}}/examples/config.toml"
+
+# ── shared chrome-core dev loop (require the sibling ../chrome-core ghq checkout) ──
+
+# Build curator against local ../chrome-core (uncommitted edits included): activate the [patch], `just run`
+[group("chrome")]
+chrome-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    [ -d ../chrome-core ] || { echo "✗ ../chrome-core not found — ghq get github.com/Lockyc/chrome-core"; exit 1; }
+    tmp=$(mktemp); sed 's/^#PATCH#//' src-tauri/Cargo.toml > "$tmp" && mv "$tmp" src-tauri/Cargo.toml
+    echo "✓ chrome-core → local ../chrome-core (patch active). Iterate, then: just run"
+    echo "  ⚠ NEVER commit an active patch — run 'just chrome-pin' first ('just gate' will block it)."
+
+# Re-pin chrome-core to ../chrome-core's pushed HEAD + deactivate the patch (run after pushing chrome-core)
+[group("chrome")]
+chrome-pin:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    cc=../chrome-core
+    [ -d "$cc" ] || { echo "✗ $cc not found"; exit 1; }
+    [ -z "$(git -C "$cc" status --porcelain)" ] || { echo "✗ chrome-core has uncommitted changes — commit + push it first"; exit 1; }
+    git -C "$cc" fetch -q origin
+    rev=$(git -C "$cc" rev-parse HEAD)
+    git -C "$cc" branch -r --contains "$rev" | grep -q origin/ || { echo "✗ chrome-core HEAD ($rev) isn't pushed — push it first"; exit 1; }
+    dep=src-tauri/Cargo.toml
+    tmp=$(mktemp); sed -E 's|(chrome-core = \{ git = "https://github.com/Lockyc/chrome-core", rev = ")[0-9a-f]+|\1'"$rev"'|' "$dep" > "$tmp" && mv "$tmp" "$dep"
+    tmp=$(mktemp); sed -E 's|^\[patch\."https://github.com/Lockyc/chrome-core"\]$|#PATCH#&|; s|^chrome-core = \{ path = "\.\./\.\./chrome-core" \}$|#PATCH#&|' "$dep" > "$tmp" && mv "$tmp" "$dep"
+    cd src-tauri && cargo update -p chrome-core
+    echo "✓ pinned chrome-core → $rev (patch deactivated). Commit src-tauri/Cargo.toml + src-tauri/Cargo.lock."
+
+# Open chrome-core's visual preview loop (requires ../chrome-core checked out)
+[group("chrome")]
+chrome-preview:
+    @[ -f ../chrome-core/justfile ] && just -f ../chrome-core/justfile preview || echo "✗ ../chrome-core not found — ghq get github.com/Lockyc/chrome-core"
 
 # Build the release .app bundle (needs the Tauri CLI: `cargo install tauri-cli --version ^2`)
 [group("dist")]
