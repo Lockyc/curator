@@ -5,6 +5,41 @@
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+// Updater + relaunch plugins (exposed on the global under withGlobalTauri). The banner UI lives in
+// chrome-core; this controller owns the actual check/download/relaunch (chrome-core stays Tauri-free).
+const updater = window.__TAURI__.updater;
+const process = window.__TAURI__.process;
+let pendingUpdate = null; // the Update object from a successful check(), awaiting user confirm
+
+// Check GitHub for a newer release. `announce` = surface "up to date" / errors (the menu path);
+// the launch path passes false so it stays silent on no-update / offline and never nags.
+async function checkForUpdate(announce) {
+  try {
+    const update = await updater.check();
+    if (update) {
+      pendingUpdate = update;
+      sb.setUpdate({ version: update.version, notes: update.body });
+    } else if (announce) {
+      sb.setError("You're up to date.");
+      setTimeout(() => sb.clearError(), 4000);
+    }
+  } catch (e) {
+    if (announce) sb.setError("Couldn't check for updates: " + e);
+  }
+}
+
+// Download + install the pending update, then relaunch into it. Fired by chrome-core's onUpdate.
+async function installUpdate() {
+  if (!pendingUpdate) return;
+  sb.setUpdate({ version: pendingUpdate.version, notes: "Downloading…" });
+  try {
+    await pendingUpdate.downloadAndInstall();
+    await process.relaunch();
+  } catch (e) {
+    sb.clearUpdate();
+    sb.setError("Update failed: " + e);
+  }
+}
 
 // ── Nav pill (curator-only) ─────────────────────────────────────────────────
 // SVGs: exact geometry so icons align. Handlers act on the active tab (mirrored in `activeLabel`).
@@ -140,6 +175,9 @@ async function mountChrome() {
         reportRect();
       },
       // onKill: unused — curator sets killable:false, so the component never invokes it.
+      onUpdate() {
+        installUpdate();
+      },
     },
     {
       header: buildNavPill(),
@@ -164,6 +202,9 @@ async function mountChrome() {
   if (!(saved > 0)) {
     setSidebarWidth(defaultWidth);
   }
+
+  // Silently check for a newer release on launch; a hit shows the update bar (no nag on miss/offline).
+  checkForUpdate(false);
 }
 
 // Sidebar width bounds passed to chrome-core (the single clamp). The window-resize handler below
@@ -218,5 +259,7 @@ listen("focus-tab", (e) => {
   const label = e.payload && e.payload.label;
   if (label && label !== activeLabel) sb.select(label);
 });
+// Menu "Check for Updates…" → check now and announce the result (up-to-date / error / a banner).
+listen("check-update", () => checkForUpdate(true));
 
 mountChrome();
