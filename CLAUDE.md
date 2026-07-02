@@ -344,3 +344,14 @@ Rust side owns selection). What stays per-app is the content-area topology (cura
 webviews) + the controller — not the sidebar. See warden's CLAUDE.md and chrome-core's own for the
 full interface. Edit the chrome in chrome-core (`assets/sidebar.{css,js}`), never the generated
 `src/chrome-core.*`; for active chrome work use a cargo `[patch]` path override, then re-pin the rev.
+
+**Visual feedback loop — iterate the sidebar without building curator.** chrome-core ships a checked-in
+**`preview.html`** that mounts `ChromeSidebar` in isolation against a representative DTO (loose tabs, a
+plain group, a project-tree with folders + leaves, across the dot states). Open it in a browser, or
+screenshot it headlessly, to *see* a CSS/JS change without the app round-trip —
+`chrome --headless=new --disable-gpu --force-device-scale-factor=2 --window-size=310,900 --screenshot=preview.png "file://$PWD/preview.html"`
+(`?density=compact` previews the compact scale). This is the fast loop for chrome work; the pinned-rev
+round-trip through curator is only for shipping/final integration. Note preview.html is warden-shaped
+(no `header` slot), so it doesn't render curator's nav pill — but the banner is a fixed height either way
+(chrome-core's `--cc-banner-min`), so the slot's presence doesn't change the strip height. See
+chrome-core's CLAUDE.md for the full loop + the banner-height invariant.
