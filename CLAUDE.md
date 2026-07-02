@@ -86,6 +86,14 @@ required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel wit
 page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
 sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
 
+**Chrome CSP.** `tauri.conf.json`'s `app.security.csp` locks down the chrome (App-URL) webview:
+`default-src 'self'`, `script-src`/`style-src 'self' 'unsafe-inline'`, `img-src 'self' data:`,
+`connect-src 'self' ipc: http://ipc.localhost` (the Tauri IPC channel), `frame-src 'none'`,
+`object-src 'none'`. It applies to local app pages only, so remote content tabs (`External` URLs)
+are unaffected — this hardens the sidebar, not the tabs. Editing the chrome to pull an external
+script/style/font, open an iframe, or `fetch` a non-IPC origin will silently fail the CSP; widen
+the directive here rather than working around it.
+
 **Commands are chrome-gated — `withGlobalTauri` does inject the IPC bridge into content
 webviews.** `tauri.conf.json` sets `withGlobalTauri: true`, so `window.__TAURI__` (and the
 underlying invoke channel) reaches *every* webview, remote content tabs included — and
@@ -114,8 +122,9 @@ permissions off remote pages now that the chrome's label is the bare window id.
 posts via the deprecated `NSUserNotification` API, which is a **silent no-op on macOS 26** —
 `show()` returns `Ok`, nothing is delivered, and the app never registers in Notification Center.
 `notification::init` (called once in the Tauri setup hook) requests authorization and installs a
-`UNUserNotificationCenterDelegate` whose `willPresentNotification` returns `.banner`, so banners
-show even while curator is the frontmost app (the hidden-tab-in-focused-window case). It's
+`UNUserNotificationCenterDelegate` whose `willPresentNotification` returns `.banner | .sound`, so
+a banner (with sound) shows even while curator is the frontmost app (the hidden-tab-in-focused-window
+case). It's
 gated on `!tauri::is_dev()` — `currentNotificationCenter` throws on a nil bundle id, so native
 banners only fire from the packaged `curator.app` (dev still badges). Don't reintroduce the
 plugin for banners. Because the plugin is gone, `withGlobalTauri` no longer injects a notification
