@@ -325,9 +325,14 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
   lives on the build machine at `~/.tauri/curator-updater.key` (never committed); its **public key**
   is committed in `tauri.conf.json` (`plugins.updater.pubkey`). Cutting an updatable release needs
   `TAURI_SIGNING_PRIVATE_KEY` (path or contents) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` set in the
-  build env alongside the Apple creds; `bundle.createUpdaterArtifacts: true` makes the bundler emit
-  the signed `curator.app.tar.gz` + `.sig`. Without the env, no `.sig`/`latest.json` is produced and
-  the release simply isn't auto-updatable (fail-safe).
+  build env alongside the Apple creds. **`createUpdaterArtifacts` is enabled release-only via the
+  `just release-artifacts` `--config` override, NOT in the committed `tauri.conf.json`** — footgun:
+  baking it into the config makes *every* `cargo tauri build` demand the signing key, which breaks
+  `install.sh` / `just build` / `just deploy` (a keyless from-source build errors with "A public key
+  has been found, but no private key"). So the emit of the signed `curator.app.tar.gz` + `.sig`
+  happens only under the release recipe; without the key there, `gen-latest-json.sh` errors and the
+  release simply isn't auto-updatable (fail-safe). The `pubkey` stays in the committed config (it's
+  runtime-only and doesn't trigger signing on its own — only `createUpdaterArtifacts` does).
 - **Where the code lives:** the update **bar UI** is in **chrome-core** (`setUpdate`/`clearUpdate` +
   the `onUpdate` callback) so both apps share it; chrome-core stays Tauri-agnostic, so the actual
   `check()`/`downloadAndInstall()`/`relaunch()` plumbing is in `src/chrome.js` (`checkForUpdate` /

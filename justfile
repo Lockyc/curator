@@ -88,11 +88,15 @@ chrome-preview:
 build:
     cd src-tauri && cargo tauri build
 
-# Build the release bundle and emit the updater manifest (latest.json) for a GitHub release.
+# Build the release bundle (WITH updater artifacts) and emit the manifest (latest.json).
+# `createUpdaterArtifacts` is enabled here via --config, NOT in tauri.conf.json: baking it into the
+# committed config makes EVERY `cargo tauri build` demand TAURI_SIGNING_PRIVATE_KEY, which breaks
+# `install.sh`/`just build`/`just deploy` (keyless from-source builds error). So it's release-only.
 # Requires TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] (else the signed .app.tar.gz.sig is absent and
 # gen-latest-json.sh errors). Upload latest.json + curator.app.tar.gz(.sig) to the release.
 [group("dist")]
-release-artifacts version: build
+release-artifacts version:
+    cd src-tauri && cargo tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
     bash scripts/gen-latest-json.sh {{version}} latest.json
     @echo "→ upload: src-tauri/target/release/bundle/macos/curator.app.tar.gz(.sig) + latest.json"
 
