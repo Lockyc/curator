@@ -55,6 +55,11 @@ pub struct Config {
     /// `false` turns it off. The chrome maps this to the component's `windowDrag` flag.
     #[serde(default = "default_true")]
     pub sidebar_drag: bool,
+    /// Whether curator checks for a new release on launch (whole-app). Default true; `false`
+    /// suppresses the automatic launch check. The manual **Check for Updates…** menu item stays
+    /// available regardless. The chrome gates its launch check on this.
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
     #[serde(default, rename = "window")]
     pub windows: Vec<WindowConfig>,
 }
@@ -72,6 +77,7 @@ impl Default for Config {
             session: None,
             density: Density::Comfortable,
             sidebar_drag: true,
+            auto_update: true,
             windows: Vec::new(),
         }
     }
@@ -460,6 +466,16 @@ reload_every = 15
         assert!(!cfg.sidebar_drag);
         // The derived-vs-serde default trap: an empty config must agree with Config::default().
         assert!(Config::default().sidebar_drag);
+    }
+
+    #[test]
+    fn auto_update_defaults_true_and_parses_false() {
+        assert!(parse_and_validate(VALID).unwrap().0.auto_update);
+        let cfg = parse_and_validate(&format!("auto_update = false\n{VALID}"))
+            .unwrap()
+            .0;
+        assert!(!cfg.auto_update);
+        assert!(Config::default().auto_update);
     }
 
     #[test]

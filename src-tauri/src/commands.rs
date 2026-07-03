@@ -69,6 +69,9 @@ pub struct WindowIdentity {
     /// Whole-app `sidebar_drag`, from the global config → the chrome's `windowDrag` flag (makes the
     /// non-interactive sidebar chrome a window-move drag region). Default true.
     sidebar_drag: bool,
+    /// Whole-app `auto_update`, from the global config. The chrome gates its launch-time update
+    /// check on this (the manual Check-for-Updates menu path ignores it). Default true.
+    auto_update: bool,
 }
 
 /// Return the calling window's title + accent colour so the chrome can paint a per-window
@@ -79,6 +82,7 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
     let wid = calling_window_id(&webview);
     let density = *state.density.lock().unwrap();
     let sidebar_drag = state.sidebar_drag.load(Ordering::Relaxed);
+    let auto_update = state.auto_update.load(Ordering::Relaxed);
     let default_width = match density {
         Density::Compact => webviews::COMPACT_CHROME_W,
         Density::Comfortable => webviews::CHROME_W,
@@ -90,6 +94,7 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
             default_width,
             density,
             sidebar_drag,
+            auto_update,
         };
     }
     let windows = state.windows.lock().unwrap();
@@ -100,6 +105,7 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
             default_width,
             density,
             sidebar_drag,
+            auto_update,
         },
         None => WindowIdentity {
             title: String::new(),
@@ -107,6 +113,7 @@ pub fn window_identity(webview: Webview, state: State<AppState>) -> WindowIdenti
             default_width,
             density,
             sidebar_drag,
+            auto_update,
         },
     }
 }

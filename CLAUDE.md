@@ -32,10 +32,12 @@ section header only for `Some`. Per-tab fields: `title`, `url` (both required, n
 `load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `session`.
 App-global keys: `dark_mode`, `allow_insecure`, `session`, `format_on_save` (bool, default
 false — reformat the file in house style on a clean hot-reload),
-`density` (`comfortable` default / `compact`), and `sidebar_drag` (bool, default true — the sidebar
-chrome is a window-move drag handle → the component's `windowDrag` flag; `false` turns it off).
-Both are kept live in `AppState` across hot-reload (like `dark_mode`; `sidebar_drag` is an
-`AtomicBool`, `density` a `Mutex`); `window_identity` returns them (plus a density-aware default
+`density` (`comfortable` default / `compact`), `sidebar_drag` (bool, default true — the sidebar
+chrome is a window-move drag handle → the component's `windowDrag` flag; `false` turns it off), and
+`auto_update` (bool, default true — check for a new release on launch; `false` suppresses the
+automatic check, the **Check for Updates…** menu item still works — see *In-app updates*).
+These are kept live in `AppState` across hot-reload (like `dark_mode`; `sidebar_drag`/`auto_update`
+are `AtomicBool`, `density` a `Mutex`); `window_identity` returns them (plus a density-aware default
 sidebar width — compact is narrower) and the controller passes them in the DTO, so **chrome-core**
 applies `windowDrag` and sets
 `data-density` on `<html>` and swaps its `--cc-*` sizing tokens (`--cc-row-font`/`--cc-tile-size`/
@@ -308,9 +310,11 @@ Developer ID`) and `xcrun stapler validate <app>`.
 ## In-app updates
 
 curator updates itself via **`tauri-plugin-updater`** (+ `tauri-plugin-process` for the relaunch).
-The chrome checks on launch and via the **curator ▸ Check for Updates…** menu item; on a hit it
-shows chrome-core's update bar and, on the user's confirm, downloads + installs + relaunches. It is
-**confirm-to-install** — nothing installs silently.
+The chrome checks on launch (gated on the `auto_update` config key) and via the **curator ▸ Check
+for Updates…** menu item (always, ignoring `auto_update`); on a hit it shows chrome-core's update
+bar and, on the user's confirm, downloads + installs + relaunches. It is **confirm-to-install** —
+nothing installs silently. The update bar's **×** dismisses it for the session (`chrome.js`'s
+`updateDismissed` flag suppresses auto re-surfacing; the menu check clears it and re-surfaces).
 
 - **Endpoint (zero-server):** `plugins.updater.endpoints` in `tauri.conf.json` points at
   `https://github.com/Lockyc/curator/releases/latest/download/latest.json`. GitHub's

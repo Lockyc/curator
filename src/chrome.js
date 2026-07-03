@@ -10,15 +10,19 @@ const { listen } = window.__TAURI__.event;
 const updater = window.__TAURI__.updater;
 const process = window.__TAURI__.process;
 let pendingUpdate = null; // the Update object from a successful check(), awaiting user confirm
+let updateDismissed = false; // set by the banner's × — suppresses auto re-surfacing this session
 
 // Check GitHub for a newer release. `announce` = surface "up to date" / errors (the menu path);
-// the launch path passes false so it stays silent on no-update / offline and never nags.
+// the launch path passes false so it stays silent on no-update / offline and never nags. A found
+// update is shown unless the user dismissed it this session — except on the explicit menu path,
+// which re-surfaces it (and clears the dismissal, since the user is re-engaging).
 async function checkForUpdate(announce) {
   try {
     const update = await updater.check();
     if (update) {
       pendingUpdate = update;
-      sb.setUpdate({ version: update.version, notes: update.body });
+      if (announce) updateDismissed = false;
+      if (announce || !updateDismissed) sb.setUpdate({ version: update.version, notes: update.body });
     } else if (announce) {
       sb.setError("You're up to date.");
       setTimeout(() => sb.clearError(), 4000);
@@ -178,6 +182,10 @@ async function mountChrome() {
       onUpdate() {
         installUpdate();
       },
+      onUpdateDismiss() {
+        // × on the update bar — don't auto-surface it again this session (menu check overrides).
+        updateDismissed = true;
+      },
     },
     {
       header: buildNavPill(),
@@ -203,8 +211,9 @@ async function mountChrome() {
     setSidebarWidth(defaultWidth);
   }
 
-  // Silently check for a newer release on launch; a hit shows the update bar (no nag on miss/offline).
-  checkForUpdate(false);
+  // Silently check for a newer release on launch (unless auto_update is off in config); a hit shows
+  // the update bar (no nag on miss/offline). The manual Check-for-Updates menu path always runs.
+  if (id && id.auto_update !== false) checkForUpdate(false);
 }
 
 // Sidebar width bounds passed to chrome-core (the single clamp). The window-resize handler below

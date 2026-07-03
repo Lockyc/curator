@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 # The shared sidebar chrome, embedded as string consts; build.rs writes them into ../src (the
 # frontendDist Tauri embeds). Pinned by rev — bump in lockstep with config-core + the toolchain.
-chrome-core = { git = "https://github.com/Lockyc/chrome-core", rev = "afee9ae9c7355ea1a3615d2057f656a36263c99b" }
+chrome-core = { git = "https://github.com/Lockyc/chrome-core", rev = "87ac08f5e2362a468ffb5efb7bdf5d3f50915232" }
 
 [dependencies]
 tauri = { version = "2", features = ["unstable", "devtools"] }

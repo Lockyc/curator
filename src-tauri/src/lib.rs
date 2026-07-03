@@ -88,6 +88,9 @@ pub struct AppState {
     /// (re-called by the chrome on `config-reloaded`) returns the new value. Drives the
     /// component's `windowDrag` flag (default true).
     pub sidebar_drag: AtomicBool,
+    /// Current app-wide `auto_update`, kept live across hot-reload so `window_identity` returns the
+    /// new value. Gates the chrome's launch-time update check (the manual menu check ignores it).
+    pub auto_update: AtomicBool,
 }
 
 impl AppState {
@@ -259,6 +262,10 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
     state
         .sidebar_drag
         .store(new_cfg.sidebar_drag, Ordering::Relaxed);
+    // Same for auto_update — a reload can flip whether launch checks run (menu check is unaffected).
+    state
+        .auto_update
+        .store(new_cfg.auto_update, Ordering::Relaxed);
 
     // Closed windows: drop the window and its runtime, and stop its reload timers. Use
     // `destroy()` (not `close()`) so this programmatic removal bypasses `on_real_window_close` —
@@ -710,6 +717,7 @@ pub fn run() {
                 dark_mode: AtomicBool::new(cfg.dark_mode),
                 density: Mutex::new(cfg.density),
                 sidebar_drag: AtomicBool::new(cfg.sidebar_drag),
+                auto_update: AtomicBool::new(cfg.auto_update),
             });
 
             // No windows opened — either the config failed to parse or it defines no

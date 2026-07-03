@@ -122,6 +122,7 @@ organised into groups; loose tabs render first in a headerless section, then eac
 # session       = "personal"      # app-wide default login store (bottom of the session chain)
 # density       = "compact"       # "comfortable" (default) or "compact" (condensed chrome)
 # sidebar_drag  = false           # drag the sidebar chrome to move the window (default true)
+# auto_update   = false           # check for a new release on launch (default true; menu check stays)
 
 [[window]]
 title         = "Keepers"          # required; must be unique across windows
@@ -186,6 +187,7 @@ window. Optional:
 | `session`        | string        | none    | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). |
 | `density`        | string        | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down proportionally for denser tab lists). Hot-reloads. |
 | `sidebar_drag`   | bool          | `true`  | Whether the sidebar chrome is a window-move drag handle (drag the banner/empty list area to move the window). `false` turns it off. Hot-reloads. |
+| `auto_update`    | bool          | `true`  | Check for a new release on launch. `false` suppresses the automatic check; the **Check for Updates…** menu item still works, and the update banner's × dismisses it for the session. Hot-reloads. |
 | `format_on_save` | bool          | `false` | Reformat `config.toml` in curator's house style on a clean hot-reload (same formatting as `curator fmt`). Leaves the file untouched if a reload fails to parse. |
 
 Run **`curator validate [path]`** to check a config without launching: it prints the resolved
