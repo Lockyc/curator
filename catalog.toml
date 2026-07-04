@@ -1,0 +1,6 @@
+name    = "curator"
+summary = "Curated browser keeper-tabs — a macOS console of grouped webview tabs sharing warden's sidebar chrome"
+kind    = "app"
+status  = "active"
+tags    = ["browser", "webviews", "keeper-tabs", "sidebar", "macos"]
+stack   = ["rust", "tauri", "typescript"]
