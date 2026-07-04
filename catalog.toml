@@ -4,3 +4,7 @@ kind    = "app"
 status  = "active"
 tags    = ["browser", "webviews", "keeper-tabs", "sidebar", "macos"]
 stack   = ["rust", "tauri", "typescript"]
+
+[[provides]]
+name    = "keeper-tabs"
+summary = "A macOS console of grouped, persistent browser keeper-tabs (webview surfaces) in a shared sidebar"
