@@ -5,45 +5,10 @@
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
-// Updater + relaunch plugins (exposed on the global under withGlobalTauri). The banner UI lives in
-// chrome-core; this controller owns the actual check/download/relaunch (chrome-core stays Tauri-free).
-const updater = window.__TAURI__.updater;
-const process = window.__TAURI__.process;
-let pendingUpdate = null; // the Update object from a successful check(), awaiting user confirm
-let updateDismissed = false; // set by the banner's × — suppresses auto re-surfacing this session
-
-// Check GitHub for a newer release. `announce` = surface "up to date" / errors (the menu path);
-// the launch path passes false so it stays silent on no-update / offline and never nags. A found
-// update is shown unless the user dismissed it this session — except on the explicit menu path,
-// which re-surfaces it (and clears the dismissal, since the user is re-engaging).
-async function checkForUpdate(announce) {
-  try {
-    const update = await updater.check();
-    if (update) {
-      pendingUpdate = update;
-      if (announce) updateDismissed = false;
-      if (announce || !updateDismissed) sb.setUpdate({ version: update.version, notes: update.body });
-    } else if (announce) {
-      sb.setError("You're up to date.");
-      setTimeout(() => sb.clearError(), 4000);
-    }
-  } catch (e) {
-    if (announce) sb.setError("Couldn't check for updates: " + e);
-  }
-}
-
-// Download + install the pending update, then relaunch into it. Fired by chrome-core's onUpdate.
-async function installUpdate() {
-  if (!pendingUpdate) return;
-  sb.setUpdate({ version: pendingUpdate.version, notes: "Downloading…" });
-  try {
-    await pendingUpdate.downloadAndInstall();
-    await process.relaunch();
-  } catch (e) {
-    sb.clearUpdate();
-    sb.setError("Update failed: " + e);
-  }
-}
+// In-app updates are a chrome-core capability (check / install / relaunch + the 6h re-check cadence);
+// see chrome-core's dividing-line decision. This controller only passes curator's `auto_update` gate
+// (autoUpdate in the mount config) and forwards the menu event to sb.checkForUpdateNow(). curator
+// keeps its own updater identity — endpoint, pubkey, plugin registration — in tauri.conf.json / Rust.
 
 // ── Nav pill (curator-only) ─────────────────────────────────────────────────
 // SVGs: exact geometry so icons align. Handlers act on the active tab (mirrored in `activeLabel`).
@@ -179,13 +144,6 @@ async function mountChrome() {
         reportRect();
       },
       // onKill: unused — curator sets killable:false, so the component never invokes it.
-      onUpdate() {
-        installUpdate();
-      },
-      onUpdateDismiss() {
-        // × on the update bar — don't auto-surface it again this session (menu check overrides).
-        updateDismissed = true;
-      },
     },
     {
       header: buildNavPill(),
@@ -197,6 +155,8 @@ async function mountChrome() {
       // window width and this is the ≤40% cap. chrome-core is now the *sole* clamp — Rust positions
       // the content from the reported hole rect, so there's no second (Rust) cap to keep aligned.
       maxFraction: MAX_FRACTION,
+      // chrome-core's self-updater gate: run the launch + 6h checks when curator's config allows.
+      autoUpdate: id ? id.auto_update !== false : false,
     }
   );
 
@@ -211,9 +171,7 @@ async function mountChrome() {
     setSidebarWidth(defaultWidth);
   }
 
-  // Silently check for a newer release on launch (unless auto_update is off in config); a hit shows
-  // the update bar (no nag on miss/offline). The manual Check-for-Updates menu path always runs.
-  if (id && id.auto_update !== false) checkForUpdate(false);
+  // (The launch + 6h update checks are armed by chrome-core from the `autoUpdate` mount config.)
 }
 
 // Sidebar width bounds passed to chrome-core (the single clamp). The window-resize handler below
@@ -268,7 +226,7 @@ listen("focus-tab", (e) => {
   const label = e.payload && e.payload.label;
   if (label && label !== activeLabel) sb.select(label);
 });
-// Menu "Check for Updates…" → check now and announce the result (up-to-date / error / a banner).
-listen("check-update", () => checkForUpdate(true));
+// Menu "Check for Updates…" → chrome-core checks now + announces (up-to-date / error / a banner).
+listen("check-update", () => sb && sb.checkForUpdateNow());
 
 mountChrome();

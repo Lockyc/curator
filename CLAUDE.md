@@ -310,12 +310,14 @@ Developer ID`) and `xcrun stapler validate <app>`.
 ## In-app updates
 
 curator updates itself via **`tauri-plugin-updater`** (+ `tauri-plugin-process` for the relaunch).
-**The self-updater is an app-agnostic capability that belongs in chrome-core** (see chrome-core's
-CLAUDE.md dividing-line decision — an updater is an *app* feature, not a terminal/browser one), so the
-check + cadence + install flow are being consolidated there for both apps to inherit; today they still
-live in this controller (`src/chrome.js`), described below as the current state.
-The chrome checks on launch (gated on the `auto_update` config key) and via the **curator ▸ Check
-for Updates…** menu item (always, ignoring `auto_update`); on a hit it shows chrome-core's update
+**The self-updater is an app-agnostic capability owned by chrome-core** (see chrome-core's CLAUDE.md
+dividing-line decision — an updater is an *app* feature, not a terminal/browser one): the check +
+install/relaunch + the re-check cadence live there once so both apps inherit one implementation.
+curator's controller (`src/chrome.js`) only passes its `auto_update` gate to chrome-core (`autoUpdate`
+in the mount config) and forwards the menu event to `sb.checkForUpdateNow()`, keeping only curator's
+updater *identity* (endpoint/pubkey/plugin) below. So chrome-core checks on launch **and every
+`UPDATE_CHECK_INTERVAL_MS` (6h)** when `auto_update` is on, and via the **curator ▸ Check for
+Updates…** menu item (always, ignoring `auto_update`); on a hit it shows chrome-core's update
 bar and, on the user's confirm, downloads + installs + relaunches. It is **confirm-to-install** —
 nothing installs silently. The update bar's **×** dismisses it for the session (`chrome.js`'s
 `updateDismissed` flag suppresses auto re-surfacing; the menu check clears it and re-surfaces).
@@ -337,16 +339,14 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
   happens only under the release recipe; without the key there, `gen-latest-json.sh` errors and the
   release simply isn't auto-updatable (fail-safe). The `pubkey` stays in the committed config (it's
   runtime-only and doesn't trigger signing on its own — only `createUpdaterArtifacts` does).
-- **Where the code lives (migrating):** the update **bar UI** is already in **chrome-core**
-  (`setUpdate`/`clearUpdate` + the `onUpdate` callback) so both apps share it. The actual
-  `check()`/`downloadAndInstall()`/`relaunch()` + re-check cadence **currently** live in
-  `src/chrome.js` (`checkForUpdate` / `installUpdate`, reached via the `window.__TAURI__.updater`/
-  `.process` globals under `withGlobalTauri`) — but per chrome-core's dividing-line decision they are
-  being consolidated **into chrome-core**, which feature-detects the shared Tauri runtime
-  (`window.__TAURI__?.updater`) so its isolated `preview.html` still no-ops. What stays here is
-  curator's updater *identity* — endpoint, pubkey, the Rust plugin registration, the `auto_update`
-  gate. The menu item emits `check-update` to the focused chrome — the same `emit_to_focused_chrome`
-  pattern as `nav-tab`/`jump-tab`.
+- **Where the code lives:** the whole updater — the bar UI, `check()`/`downloadAndInstall()`/
+  `relaunch()`, and the re-check cadence — lives in **chrome-core** (`sidebar.js`'s self-update
+  section), which feature-detects the shared Tauri runtime (`window.__TAURI__?.updater`/`.process`)
+  so its isolated `preview.html` no-ops. `src/chrome.js` keeps only the wiring: `autoUpdate` in the
+  mount config (curator's `auto_update` gate) and forwarding the menu event to
+  `sb.checkForUpdateNow()`. curator still owns its updater *identity* — endpoint, pubkey, the Rust
+  plugin registration. The menu item emits `check-update` to the focused chrome — the same
+  `emit_to_focused_chrome` pattern as `nav-tab`/`jump-tab`.
 - **Capability:** the chrome is granted `updater:default` + `process:allow-restart` in
   `capabilities/default.json` — local-origin only (no `remote` block), so remote content tabs never
   receive them, exactly like `core:event`.
