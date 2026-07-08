@@ -471,8 +471,8 @@ that is the same for curator, warden, and any future sibling app.
   here — the local copy is overwritten on the next build. curator's `scripts/test-install-app.sh` is
   curator-specific and stays tracked.
 - **The build stamp comes from shell-core.** `build.rs` calls `shell_core::build_stamp()`, emitting
-  `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`). This replaced curator's local
-  `CURATOR_GIT_SHA`/`CURATOR_BUILD_DATE` stamp — don't reintroduce app-prefixed names.
+  `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`). These shared, un-prefixed names
+  replaced curator's former app-prefixed local stamp — use them; don't reintroduce app-prefixed names.
 - **Plugin registration comes from shell-core.** `lib.rs` registers window-state + updater + process via
   `shell_core::register_plugins(builder, window_state_filename(), &[webviews::WINDOW_ERROR])`. The three
   plugin crates stay direct deps (capability resolution + `window_state_filename` is curator's own); only
