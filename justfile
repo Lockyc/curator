@@ -14,41 +14,43 @@ default:
 # Run the app against the repo's demo config (never touches your real ~/.config/curator config)
 [group("dev")]
 run:
-    cd src-tauri && CURATOR_CONFIG="{{justfile_directory()}}/examples/config.toml" cargo tauri dev
+    CURATOR_CONFIG="{{justfile_directory()}}/examples/config.toml" cargo run -p curator
 
 # Validate a config and print the resolved window/tab tree + warnings (defaults to the demo).
 [group("dev")]
 validate path="examples/config.toml":
-    cd src-tauri && cargo run -- validate "{{justfile_directory()}}/{{path}}"
+    cargo run -p curator -- validate "{{justfile_directory()}}/{{path}}"
 
-# Run the Rust unit tests
+# Run the workspace tests
 [group("check")]
 test:
-    cd src-tauri && cargo test
+    cargo test --workspace
 
-# Type-check without producing a binary
+# Type-check the workspace without producing binaries
 [group("check")]
 check:
-    cd src-tauri && cargo check
+    cargo check --workspace
 
-# Format Rust sources
+# Format all sources
 [group("check")]
 fmt:
-    cd src-tauri && cargo fmt
+    cargo fmt --all
 
 # Lint with clippy (warnings as errors)
 [group("check")]
 clippy:
-    cd src-tauri && cargo clippy -- -D warnings
+    cargo clippy --workspace -- -D warnings
 
-# Full pre-merge gate: format check (non-mutating), clippy, tests, config-format check.
+# The active-[patch] guard also runs via .githooks/pre-commit (opt-in per clone via core.hooksPath);
+# fmt/clippy/tests have no hook/CI yet, so run this manually before committing/merging.
+# Full pre-merge gate: fmt-check, clippy, tests, config fmt-check, active-[patch] guard
 [group("check")]
 gate:
-    @grep -qE '^\[patch\.' src-tauri/Cargo.toml && { echo "✗ active [patch] in src-tauri/Cargo.toml — run 'just chrome-pin' before committing"; exit 1; } || true
-    cd src-tauri && cargo fmt --check
-    cd src-tauri && cargo clippy -- -D warnings
-    cd src-tauri && cargo test
-    cd src-tauri && cargo run -- fmt --check "{{justfile_directory()}}/examples/config.toml"
+    @grep -qE '^\[patch\.' Cargo.toml && { echo "✗ active [patch] in Cargo.toml — run 'just chrome-pin' / 'just config-pin' before committing"; exit 1; } || true
+    cargo fmt --all --check
+    cargo clippy --workspace -- -D warnings
+    cargo test --workspace
+    cargo run -p curator -- fmt --check "{{justfile_directory()}}/examples/config.toml"
 
 # ── shared chrome-core dev loop (require the sibling ../chrome-core ghq checkout) ──
 
@@ -59,7 +61,7 @@ chrome-dev:
     set -euo pipefail
     cd "{{justfile_directory()}}"
     [ -d ../chrome-core ] || { echo "✗ ../chrome-core not found — ghq get github.com/Lockyc/chrome-core"; exit 1; }
-    tmp=$(mktemp); sed 's/^#PATCH#//' src-tauri/Cargo.toml > "$tmp" && mv "$tmp" src-tauri/Cargo.toml
+    tmp=$(mktemp); sed 's/^#PATCH:chrome#//' Cargo.toml > "$tmp" && mv "$tmp" Cargo.toml
     echo "✓ chrome-core → local ../chrome-core (patch active). Iterate, then: just run"
     echo "  ⚠ NEVER commit an active patch — run 'just chrome-pin' first ('just gate' will block it)."
 
@@ -77,14 +79,49 @@ chrome-pin:
     git -C "$cc" branch -r --contains "$rev" | grep -q origin/ || { echo "✗ chrome-core HEAD ($rev) isn't pushed — push it first"; exit 1; }
     dep=src-tauri/Cargo.toml
     tmp=$(mktemp); sed -E 's|(chrome-core = \{ git = "https://github.com/Lockyc/chrome-core", rev = ")[0-9a-f]+|\1'"$rev"'|' "$dep" > "$tmp" && mv "$tmp" "$dep"
-    tmp=$(mktemp); sed -E 's|^\[patch\."https://github.com/Lockyc/chrome-core"\]$|#PATCH#&|; s|^chrome-core = \{ path = "\.\./\.\./chrome-core" \}$|#PATCH#&|' "$dep" > "$tmp" && mv "$tmp" "$dep"
-    cd src-tauri && cargo update -p chrome-core
-    echo "✓ pinned chrome-core → $rev (patch deactivated). Commit src-tauri/Cargo.toml + src-tauri/Cargo.lock."
+    grep -qF "rev = \"$rev\"" "$dep" || { echo "✗ chrome-pin: failed to write rev into $dep — dep line shape changed, re-pin by hand"; exit 1; }
+    tmp=$(mktemp); sed -E 's|^\[patch\."https://github.com/Lockyc/chrome-core"\]$|#PATCH:chrome#&|; s|^chrome-core = \{ path = "\.\./chrome-core" \}$|#PATCH:chrome#&|' Cargo.toml > "$tmp" && mv "$tmp" Cargo.toml
+    ! grep -qE '^\[patch\."https://github.com/Lockyc/chrome-core"\]$' Cargo.toml || { echo "✗ chrome-pin: chrome-core [patch] still active after re-comment — check Cargo.toml"; exit 1; }
+    cargo update -p chrome-core
+    echo "✓ pinned chrome-core → $rev (patch deactivated). Commit src-tauri/Cargo.toml + Cargo.lock."
 
 # Open chrome-core's visual preview loop (requires ../chrome-core checked out)
 [group("chrome")]
 chrome-preview:
     @[ -f ../chrome-core/justfile ] && just -f ../chrome-core/justfile preview || echo "✗ ../chrome-core not found — ghq get github.com/Lockyc/chrome-core"
+
+# ── shared config-core dev loop (mirrors chrome-*; config-core is git-pinned in curator-config) ──
+
+# Build curator against local ../config-core (uncommitted edits included): activate the [patch], `just run`
+[group("config")]
+config-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    [ -d ../config-core ] || { echo "✗ ../config-core not found — ghq get github.com/Lockyc/config-core"; exit 1; }
+    tmp=$(mktemp); sed 's/^#PATCH:config#//' Cargo.toml > "$tmp" && mv "$tmp" Cargo.toml
+    echo "✓ config-core → local ../config-core (patch active). Iterate, then: just run"
+    echo "  ⚠ NEVER commit an active patch — run 'just config-pin' first ('just gate' will block it)."
+
+# Re-pin config-core to ../config-core's pushed HEAD + deactivate the patch (run after pushing config-core)
+[group("config")]
+config-pin:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    cc=../config-core
+    [ -d "$cc" ] || { echo "✗ $cc not found"; exit 1; }
+    [ -z "$(git -C "$cc" status --porcelain)" ] || { echo "✗ config-core has uncommitted changes — commit + push it first"; exit 1; }
+    git -C "$cc" fetch -q origin
+    rev=$(git -C "$cc" rev-parse HEAD)
+    git -C "$cc" branch -r --contains "$rev" | grep -q origin/ || { echo "✗ config-core HEAD ($rev) isn't pushed — push it first"; exit 1; }
+    dep=crates/curator-config/Cargo.toml
+    tmp=$(mktemp); sed -E 's|(config-core = \{ git = "https://github.com/Lockyc/config-core", rev = ")[0-9a-f]+|\1'"$rev"'|' "$dep" > "$tmp" && mv "$tmp" "$dep"
+    grep -qF "rev = \"$rev\"" "$dep" || { echo "✗ config-pin: failed to write rev into $dep — dep line shape changed, re-pin by hand"; exit 1; }
+    tmp=$(mktemp); sed -E 's|^\[patch\."https://github.com/Lockyc/config-core"\]$|#PATCH:config#&|; s|^config-core = \{ path = "\.\./config-core" \}$|#PATCH:config#&|' Cargo.toml > "$tmp" && mv "$tmp" Cargo.toml
+    ! grep -qE '^\[patch\."https://github.com/Lockyc/config-core"\]$' Cargo.toml || { echo "✗ config-pin: config-core [patch] still active after re-comment — check Cargo.toml"; exit 1; }
+    cargo update -p config-core
+    echo "✓ pinned config-core → $rev (patch deactivated). Commit crates/curator-config/Cargo.toml + Cargo.lock."
 
 # Build the release .app bundle (needs the Tauri CLI: `cargo install tauri-cli --version ^2`)
 [group("dist")]
@@ -105,7 +142,7 @@ release:
 deploy: build
     #!/usr/bin/env bash
     set -euo pipefail
-    bash scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
+    bash scripts/install-app.sh "target/release/bundle/macos/curator.app"
     echo "→ launching"
     open "/Applications/curator.app"
     echo "✓ curator updated in /Applications"

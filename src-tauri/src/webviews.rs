@@ -41,8 +41,8 @@ impl TabState {
     }
 }
 
-use crate::config::TabView;
 use crate::escape;
+use curator_config::TabView;
 use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
     AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalSize, TitleBarStyle, WebviewUrl,

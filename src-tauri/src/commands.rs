@@ -1,4 +1,5 @@
-use crate::{config::Density, config::TabView, webviews, AppState};
+use crate::{webviews, AppState};
+use curator_config::{Density, TabView};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State, Webview, Window};

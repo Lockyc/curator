@@ -12,7 +12,7 @@ VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
 [ -n "$VERSION" ] || { echo "release: could not read version from src-tauri/Cargo.toml" >&2; exit 1; }
 TAG="v$VERSION"
 ZIP="curator-${VERSION}-macos.zip"
-APP="src-tauri/target/release/bundle/macos/curator.app"
+APP="target/release/bundle/macos/curator.app"
 
 # The artifact must match the tag: build only from a clean tree whose HEAD *is* the tag. Otherwise
 # the notarized zip attached to $TAG could silently contain uncommitted or post-tag code — the one
@@ -72,7 +72,7 @@ gh release upload "$TAG" "$ZIP" --clobber
 # Updater artifacts: the signed .app.tar.gz (+ .sig) existing installs download, and the manifest
 # the updater fetches from the releases/latest/download/ alias. createUpdaterArtifacts + the signing
 # env above produce the tarball + .sig during the build.
-TARBALL="src-tauri/target/release/bundle/macos/curator.app.tar.gz"
+TARBALL="target/release/bundle/macos/curator.app.tar.gz"
 [ -f "$TARBALL" ] && [ -f "$TARBALL.sig" ] || {
   echo "release: updater artifacts missing at ${TARBALL} (+ .sig) — is createUpdaterArtifacts on + the signing env set?" >&2
   exit 1

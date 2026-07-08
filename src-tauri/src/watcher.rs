@@ -1,5 +1,5 @@
-use crate::config::{parse_and_validate, Config, Warning};
-use crate::identity::window_id;
+use curator_config::identity::window_id;
+use curator_config::{parse_and_validate, Config, Warning};
 
 /// Parse `src`; on success return the new whole config plus any non-fatal warnings, on failure
 /// return a message. The caller keeps its last-good `Config` on error (the last-good-on-failure
@@ -31,9 +31,9 @@ pub fn diff_windows(old: &Config, new: &Config) -> WindowDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::parse_and_validate;
+    use curator_config::parse_and_validate;
 
-    fn cfg(titles: &[&str]) -> crate::config::Config {
+    fn cfg(titles: &[&str]) -> curator_config::Config {
         let mut s = String::new();
         for t in titles {
             s.push_str(&format!("[[window]]\ntitle = \"{t}\"\n[[window.group]]\nname=\"G\"\n[[window.group.tab]]\ntitle=\"T\"\nurl=\"https://x.test/\"\n"));
@@ -46,7 +46,7 @@ mod tests {
         let old = cfg(&["A", "B"]);
         let new = cfg(&["B", "C"]);
         let d = diff_windows(&old, &new);
-        let id = crate::identity::window_id;
+        let id = curator_config::identity::window_id;
         assert_eq!(d.removed, vec![id("A")]);
         assert!(d.added.contains(&id("C")));
         assert!(d.kept.contains(&id("B")));

@@ -1,9 +1,6 @@
 mod awareness;
 mod commands;
-mod config;
 mod escape;
-mod hash;
-mod identity;
 #[cfg(target_os = "macos")]
 mod insecure;
 mod notification;
@@ -26,7 +23,7 @@ fn theme_for(dark_mode: bool) -> Option<Theme> {
 /// Per-window runtime state: its config, lazy/active tab bookkeeping, and the awareness state
 /// (per-tab unread + which tabs have gone Badging-authoritative) feeding the dock badge.
 pub struct WindowRuntime {
-    pub cfg: config::WindowConfig,
+    pub cfg: curator_config::WindowConfig,
     /// App-wide session base (`Config.session`) captured for this window, so commands and reopen
     /// can re-resolve the session chain without the whole `Config`. Kept in sync on hot-reload.
     pub global_session: Option<String>,
@@ -47,7 +44,11 @@ pub struct WindowRuntime {
 /// `cancel` is set. Sleeps in 1s chunks so a cancelled timer exits promptly rather than after
 /// a full interval, and never reloads after cancellation — so closed/removed windows don't
 /// leak threads that keep poking dead webviews.
-fn spawn_reload_timers(window: &tauri::Window, views: &[config::TabView], cancel: Arc<AtomicBool>) {
+fn spawn_reload_timers(
+    window: &tauri::Window,
+    views: &[curator_config::TabView],
+    cancel: Arc<AtomicBool>,
+) {
     for v in views.iter().filter(|v| v.reload_every.is_some()) {
         let interval = std::time::Duration::from_secs(v.reload_every.unwrap() * 60);
         let label = v.label.clone();
@@ -83,7 +84,7 @@ pub struct AppState {
     pub dark_mode: AtomicBool,
     /// Current app-wide chrome `density`, kept live across hot-reload so `window_identity`
     /// (re-called by the chrome on `config-reloaded`) returns the new mode.
-    pub density: Mutex<config::Density>,
+    pub density: Mutex<curator_config::Density>,
     /// Current app-wide `sidebar_drag`, kept live across hot-reload so `window_identity`
     /// (re-called by the chrome on `config-reloaded`) returns the new value. Drives the
     /// component's `windowDrag` flag (default true).
@@ -113,9 +114,9 @@ fn open_window(
     handle: &tauri::AppHandle,
     dark_mode: bool,
     global_session: Option<&str>,
-    win_cfg: &config::WindowConfig,
+    win_cfg: &curator_config::WindowConfig,
 ) -> tauri::Result<(String, WindowRuntime)> {
-    let wid = identity::window_id(&win_cfg.title);
+    let wid = curator_config::identity::window_id(&win_cfg.title);
     let window = webviews::build_window(
         handle,
         &wid,
@@ -179,7 +180,7 @@ fn open_window(
 
 /// Print config-load warnings to stderr — shared by the initial load and the hot-reload path so
 /// the format stays in one place.
-fn log_config_warnings(warnings: &[config::Warning]) {
+fn log_config_warnings(warnings: &[curator_config::Warning]) {
     for w in warnings {
         eprintln!("config warning [{}]: {}", w.window, w.message);
     }
@@ -250,7 +251,11 @@ pub(crate) fn on_real_window_close(app: &tauri::AppHandle, window_id: &str) -> b
 /// Apply a successful config reload: close windows that disappeared (dropping their runtime),
 /// open windows that appeared, and reconcile tabs for windows that stayed. Emits
 /// `config-reloaded` to each kept/added window's chrome.
-fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &config::Config) {
+fn reload_windows(
+    app: &tauri::AppHandle,
+    old_cfg: &curator_config::Config,
+    new_cfg: &curator_config::Config,
+) {
     let diff = watcher::diff_windows(old_cfg, new_cfg);
     let state = app.state::<AppState>();
     // Keep the live dark_mode current so a later Window-menu reopen themes to match.
@@ -285,7 +290,7 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
         if let Some(win_cfg) = new_cfg
             .windows
             .iter()
-            .find(|w| &identity::window_id(&w.title) == id)
+            .find(|w| &curator_config::identity::window_id(&w.title) == id)
         {
             if let Ok((wid, rt)) =
                 open_window(app, new_cfg.dark_mode, new_cfg.session.as_deref(), win_cfg)
@@ -300,7 +305,7 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
         let Some(win_cfg) = new_cfg
             .windows
             .iter()
-            .find(|w| &identity::window_id(&w.title) == id)
+            .find(|w| &curator_config::identity::window_id(&w.title) == id)
         else {
             continue;
         };
@@ -336,7 +341,12 @@ fn reload_windows(app: &tauri::AppHandle, old_cfg: &config::Config, new_cfg: &co
     let titles: Vec<(String, String)> = new_cfg
         .windows
         .iter()
-        .map(|w| (identity::window_id(&w.title), w.title.clone()))
+        .map(|w| {
+            (
+                curator_config::identity::window_id(&w.title),
+                w.title.clone(),
+            )
+        })
         .collect();
     if let Ok(menu) = build_app_menu(app, &titles) {
         let _ = app.set_menu(menu);
@@ -362,7 +372,7 @@ fn reconcile_window_tabs(
     window: &tauri::Window,
     window_id: &str,
     global_session: Option<&str>,
-    win_cfg: &config::WindowConfig,
+    win_cfg: &curator_config::WindowConfig,
 ) {
     let views = win_cfg.tab_views(global_session);
     let keep: HashSet<String> = views.iter().map(|v| v.label.clone()).collect();
@@ -394,7 +404,7 @@ fn reconcile_window_tabs(
 
         // Eager-create newly-added load_on_open tabs so they're live immediately; others stay
         // lazy. Mark created here; build after the lock is dropped.
-        let mut to_create: Vec<config::TabView> = Vec::new();
+        let mut to_create: Vec<curator_config::TabView> = Vec::new();
         for v in &views {
             if v.load_on_open && !rt.tabs.is_created(&v.label) {
                 rt.tabs.mark_created(&v.label);
@@ -576,8 +586,8 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
 /// (with the cascaded session per tab) plus any non-fatal warnings. Exit 0 on success, 1 on a
 /// load/parse/validation error. Mirrors `warden validate`.
 pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
-    let path = path.unwrap_or_else(config::resolve_config_path);
-    match config::load_config(&path) {
+    let path = path.unwrap_or_else(curator_config::resolve_config_path);
+    match curator_config::load_config(&path) {
         Ok((cfg, warnings)) => {
             println!("ok: {} ({} window(s))", path.display(), cfg.windows.len());
             for w in &cfg.windows {
@@ -611,7 +621,7 @@ pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
 /// no-op when already formatted) and prints what it did. With `--check`, writes nothing and exits
 /// 1 if the file would be reformatted (for pre-commit/CI). Exit 0 ok / 1 on read or TOML error.
 pub fn fmt_cli(check: bool, path: Option<std::path::PathBuf>) -> i32 {
-    let path = path.unwrap_or_else(config::resolve_config_path);
+    let path = path.unwrap_or_else(curator_config::resolve_config_path);
     let src = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => {
@@ -626,14 +636,14 @@ pub fn fmt_cli(check: bool, path: Option<std::path::PathBuf>) -> i32 {
         return 1;
     }
     if check {
-        if config_core::format_str(&src) != src {
+        if curator_config::format_str(&src) != src {
             eprintln!("would reformat: {}", path.display());
             return 1;
         }
         println!("ok: {} already formatted", path.display());
         return 0;
     }
-    match config_core::format_file(&path) {
+    match curator_config::format_file(&path) {
         Ok(true) => {
             println!("formatted: {}", path.display());
             0
@@ -656,7 +666,7 @@ pub fn fmt_cli(check: bool, path: Option<std::path::PathBuf>) -> i32 {
 /// config orphans its saved bounds (acceptable; the path is otherwise stable). Mirrors warden.
 fn window_state_filename() -> String {
     use std::hash::{Hash, Hasher};
-    let path = config::resolve_config_path();
+    let path = curator_config::resolve_config_path();
     let canonical = std::fs::canonicalize(&path).unwrap_or(path);
     let mut h = std::collections::hash_map::DefaultHasher::new();
     canonical.hash(&mut h);
@@ -691,15 +701,15 @@ pub fn run() {
             // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
             notification::init(app.handle().clone());
 
-            let path = config::resolve_config_path();
-            let (mut cfg, load_err) = match config::load_config(&path) {
+            let path = curator_config::resolve_config_path();
+            let (mut cfg, load_err) = match curator_config::load_config(&path) {
                 Ok((c, warnings)) => {
                     log_config_warnings(&warnings);
                     (c, None)
                 }
                 Err(e) => {
                     eprintln!("config error: {e}");
-                    (config::Config::default(), Some(e.to_string()))
+                    (curator_config::Config::default(), Some(e.to_string()))
                 }
             };
             #[cfg(target_os = "macos")]
@@ -734,7 +744,12 @@ pub fn run() {
             let window_titles: Vec<(String, String)> = cfg
                 .windows
                 .iter()
-                .map(|w| (identity::window_id(&w.title), w.title.clone()))
+                .map(|w| {
+                    (
+                        curator_config::identity::window_id(&w.title),
+                        w.title.clone(),
+                    )
+                })
                 .collect();
 
             // Watch the config file and hot-reload on change, keeping the last-good config
@@ -781,9 +796,9 @@ pub fn run() {
                             // save, not two. Formatting only touches whitespace, so `new_cfg`
                             // (parsed pre-format) already matches the formatted file's config.
                             if new_cfg.format_on_save {
-                                let formatted = config_core::format_str(&src);
+                                let formatted = curator_config::format_str(&src);
                                 if formatted != src {
-                                    match config_core::format_file(&watch_path) {
+                                    match curator_config::format_file(&watch_path) {
                                         Ok(_) => self_write = Some(formatted),
                                         Err(e) => eprintln!("config format error: {e}"),
                                     }

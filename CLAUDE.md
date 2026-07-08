@@ -5,12 +5,12 @@ macOS-only Tauri v2 app (Rust + a static web frontend in `src/`). Build is pure 
 Built as the operator-side console for a self-hosted homelab.
 
 Dev: `just run`. Build a release `.app`: `just build`. Install/replace it in
-`/Applications` and relaunch: `just deploy`. Tests: `just test` (or `cd src-tauri &&
-cargo test`). There is no CI — run `just gate` locally (format check, clippy, tests) and
+`/Applications` and relaunch: `just deploy`. Tests: `just test` (`cargo test --workspace`).
+There is no CI — run `just gate` locally (format check, clippy, tests) and
 confirm it is green before tagging a release.
 
 The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/config.toml`
-(`config::resolve_config_path`). `just run` sets `CURATOR_CONFIG` to the repo's
+(`curator_config::resolve_config_path`). `just run` sets `CURATOR_CONFIG` to the repo's
 `examples/config.toml` so dev runs never touch a real user config.
 
 `curator validate [path]` (arg-dispatched in `main.rs` before Tauri starts → `validate_cli` in
@@ -18,7 +18,7 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 cascaded session) plus any warnings. Exit 0 ok / 1 load error / 2 unknown command.
 
 `curator fmt [--check] [path]` (same dispatch → `fmt_cli`) reformats the config in the shared
-house style (`config_core::format_file`, atomic + diff-guarded): without `--check` it rewrites in
+house style (`curator_config::format_file`, atomic + diff-guarded): without `--check` it rewrites in
 place and prints what it did; with `--check` it writes nothing and exits 1 if the file would
 change (for pre-commit/CI). Exit 0 ok / 1 read or TOML error.
 
@@ -58,10 +58,30 @@ warns). `parse_and_validate`/`load_config` return `(Config, Vec<Warning>)`; warn
 URL-hash label (`url_label`), not the title — titles are display labels (hence the new title
 uniqueness, which removes the silent `open_on_launch` first-match ambiguity).
 
+## Workspace layout
+
+curator is a Cargo **workspace** (mirrors warden's shape):
+
+- **`src-tauri/`** — the macOS Tauri app: windows, content webviews, the chrome controller,
+  commands, the hot-reload watcher, notifications. Package `curator` (lib `curator_lib`).
+- **`crates/curator-config/`** — the config parser, extracted into its own **platform-neutral**
+  crate (no Tauri/macOS deps) like warden's `warden-config`: the `window → group → tab` schema,
+  `parse_and_validate` / `load_config`, `resolve_config_path` / `default_config_path`, the `TabView`
+  resolution (`tab_views`), plus the pure `identity` + `hash` label helpers. It **re-exports**
+  config-core's shared house formatter + colour parsing, so the app reaches those as
+  `curator_config::{format_str, format_file, Colour}`. Unit-tested standalone (no GUI); the app
+  depends on it by path.
+
+The `validate` / `fmt` CLI stays in the app binary (`main.rs` dispatches `curator validate|fmt`
+into the crate) — run it via `cargo run -p curator -- validate` (`just validate`). The
+chrome-core / config-core `[patch]` overrides live in the **workspace-root `Cargo.toml`** (a
+`[patch]` must sit at the workspace root, not a member), managed by the `chrome-*`/`config-*`
+recipes below.
+
 ## Architecture
 
 **Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
-Each window has a `window_id` (derived from `title` via `identity::window_id`) that is the Tauri
+Each window has a `window_id` (derived from `title` via `curator_config::identity::window_id`) that is the Tauri
 window label *and* the label of its **main webview** (the chrome sidebar — see *Resizable
 sidebar*). It also namespaces the content webviews' labels (`{window_id}:{tab_hash}`) so they're
 collision-free across windows, and distinct from the chrome's bare `window_id` label (the basis of
@@ -71,7 +91,7 @@ tied to it — so renaming a window's `title` is harmless.
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
 resolved `session` string via the full cascade
 `tab.session → window.session → top-level Config.session → DEFAULT_SESSION`
-(`config.rs` builds `TabView::session` in `tab_views(global_session)`; `session::data_store_id`
+(`curator-config`'s `tab_views(global_session)` builds `TabView::session`; `session::data_store_id`
 hashes it). An explicit `session = ""` at any level is treated as unset and falls through to the
 next. Tabs sharing a session string share a login (even across windows); distinct strings are
 isolated accounts. With no `session` set anywhere, all tabs share one app-wide store, so SSO
@@ -385,8 +405,10 @@ build-from-source install needs no extra setup). curator uses two pieces:
 - **`colour`** — `Colour::parse` backs `is_hex_colour` (per-window accent validation).
 
 Both curator and warden consume `config-core` (warden is where `fmt`/`colour` originated, since
-retrofitted onto the shared crate — there's one implementation, not a copy per app). The crate is
-deliberately leaf-free: each app keeps its own model, validation, and session/shell cascade. Only
+retrofitted onto the shared crate — there's one implementation, not a copy per app). curator reaches
+it through its own **`curator-config`** crate, which re-exports `format_str`/`format_file`/`Colour`
+(see *Workspace layout*); warden's `warden-config` does the same. The shared crate is deliberately
+leaf-free: each app keeps its own model + validation (in its `*-config` crate) and session/shell cascade. Only
 add to `config-core` what is genuinely identical and leaf-agnostic in *both* apps — don't grow it
 into a generic config framework.
 
@@ -408,9 +430,14 @@ full interface. Edit the chrome in chrome-core (`assets/sidebar.{css,js}`), neve
 `src/chrome-core.*`.
 
 **Chrome dev loop — the `chrome-*` just recipes** (they assume the sibling `../chrome-core` ghq checkout).
-For active chrome work, **`just chrome-dev`** activates a normally-commented `[patch]` in `src-tauri/Cargo.toml`
-so curator builds against your local `../chrome-core` (uncommitted edits included); iterate, then
-**`just chrome-pin`** re-pins the rev to `../chrome-core`'s pushed HEAD and re-comments the patch.
+For active chrome work, **`just chrome-dev`** activates a normally-commented, scoped `#PATCH:chrome#`
+`[patch]` in the **workspace-root `Cargo.toml`** so curator builds against your local `../chrome-core`
+(uncommitted edits included); iterate, then **`just chrome-pin`** re-pins the rev (in
+`src-tauri/Cargo.toml`) to `../chrome-core`'s pushed HEAD and re-comments the patch. **config-core has
+the mirror pair** — **`just config-dev`** / **`just config-pin`** (rev in `crates/curator-config/Cargo.toml`),
+scoped `#PATCH:config#` — since config-core is git-pinned the same way; the two cores use separate
+sentinels so each `*-dev` uncomments only its own patch. (Both are `just`-managed — don't hand-edit
+the `#PATCH:*#` lines.)
 **Never commit an active patch** — it breaks fresh clones/CI; **`just gate` refuses to pass while it's
 active** (the safety net).
 

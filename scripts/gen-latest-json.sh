@@ -14,7 +14,7 @@ set -euo pipefail
 VERSION="${1:?usage: gen-latest-json.sh <version> <out-path>}"
 OUT="${2:?usage: gen-latest-json.sh <version> <out-path>}"
 
-BUNDLE="src-tauri/target/release/bundle/macos"
+BUNDLE="target/release/bundle/macos"
 SIG_FILE="$BUNDLE/curator.app.tar.gz.sig"
 
 if [ ! -f "$SIG_FILE" ]; then

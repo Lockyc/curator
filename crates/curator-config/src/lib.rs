@@ -1,3 +1,14 @@
+//! curator-config: parse, validate, and resolve curator's TOML config (windows + browser keeper-tabs).
+//!
+//! The house-style TOML formatter + colour parsing are shared with warden via the config-core crate,
+//! re-exported here so the app (`src-tauri`) uses `curator_config::{Colour, format_file, format_str}`.
+pub use config_core::{format_file, format_str, Colour, ColourError};
+
+// Pure label-identity helpers (FNV-1a hash + window-label namespacing), used when resolving each
+// tab's webview label below. No Tauri/macOS deps, so the crate stays platform-neutral.
+pub mod hash;
+pub mod identity;
+
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -694,7 +705,7 @@ reload_every = 15
     fn bundled_example_config_parses() {
         let src = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../examples/config.toml"
+            "/../../examples/config.toml"
         ));
         assert!(
             parse_and_validate(src).is_ok(),

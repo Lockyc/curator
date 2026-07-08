@@ -36,12 +36,11 @@ tauri-plugin-window-state = "2"
 # In-app updates: check GitHub releases, download+verify (minisign), install and relaunch.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-# Shared, domain-free TOML config primitives (house-style `fmt`, colour parsing) used by both
-# curator and warden — git dep so the build-from-source install flow needs no extra setup.
-# Pinned by rev (same as warden's pin): the shared house formatter must format identically in
-# both apps, so an unpinned dep that floats forward in only one repo would silently diverge
-# `curator fmt` from `warden fmt`. Bump this in lockstep with warden + config-core's own pin.
-config-core = { git = "https://github.com/Lockyc/config-core", rev = "4742ec48499ade023dbfc14014cbcd9482d22aba" }
+# curator's config parser, extracted into its own platform-neutral crate (mirrors warden's
+# warden-config). It re-exports config-core's shared house formatter + colour parsing, so the app
+# reaches those via `curator_config::{format_str, format_file, Colour}` — config-core is a transitive
+# dep through it, pinned in crates/curator-config/Cargo.toml (config-pin edits it there).
+curator-config = { path = "../crates/curator-config" }
 
 # For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate, and
 # for posting native banners via UserNotifications (tauri-plugin-notification's NSUserNotification
@@ -60,10 +59,6 @@ objc2-user-notifications = { version = "0.3", features = [
     "block2",
 ] }
 
-# ── chrome-core local-dev override (managed by `just chrome-dev` / `just chrome-pin`) ──
-# Leave COMMENTED in git — an active path patch breaks fresh clones & CI. `just chrome-dev`
-# uncomments it to build against a local ../../chrome-core (incl. uncommitted edits); `just chrome-pin`
-# re-pins the rev above to ../../chrome-core's HEAD and re-comments this. `just gate` refuses to pass
-# while it's active. Do not hand-edit these two lines — use the recipes.
-#PATCH#[patch."https://github.com/Lockyc/chrome-core"]
-#PATCH#chrome-core = { path = "../../chrome-core" }
+# The chrome-core / config-core [patch] local-dev overrides live in the workspace-root Cargo.toml
+# (../Cargo.toml), scoped #PATCH:chrome# / #PATCH:config# — managed by `just chrome-dev`/`chrome-pin`
+# + `config-dev`/`config-pin`. A [patch] must sit in the workspace root, not a member manifest.

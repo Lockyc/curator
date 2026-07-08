@@ -3,7 +3,7 @@
 //! login, distinct strings are isolated. Decoupled from window/URL, so renaming a window or
 //! editing a URL never changes a login.
 
-use crate::hash::fnv1a_64;
+use curator_config::hash::fnv1a_64;
 
 fn salted(seed: &str, salt: u8) -> u64 {
     let mut buf = Vec::with_capacity(seed.len() + 1);
