@@ -2,7 +2,7 @@
 //!
 //! The house-style TOML formatter + colour parsing are shared with warden via the config-core crate,
 //! re-exported here so the app (`src-tauri`) uses `curator_config::{Colour, format_file, format_str}`.
-pub use config_core::{format_file, format_str, Colour, ColourError};
+pub use config_core::{fmt_cli, format_file, format_str, Colour, ColourError};
 
 // Pure label-identity helpers (FNV-1a hash + window-label namespacing), used when resolving each
 // tab's webview label below. No Tauri/macOS deps, so the crate stays platform-neutral.

@@ -17,10 +17,12 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 `lib.rs`) loads + validates a config and prints the resolved window/tab tree (with each tab's
 cascaded session) plus any warnings. Exit 0 ok / 1 load error / 2 unknown command.
 
-`curator fmt [--check] [path]` (same dispatch → `fmt_cli`) reformats the config in the shared
-house style (`curator_config::format_file`, atomic + diff-guarded): without `--check` it rewrites in
-place and prints what it did; with `--check` it writes nothing and exits 1 if the file would
-change (for pre-commit/CI). Exit 0 ok / 1 read or TOML error.
+`curator fmt [--check] [path]` reformats the config in the shared house style: without `--check` it
+rewrites in place (atomic, diff-guarded) and prints what it did; with `--check` it writes nothing and
+exits 1 if the file would change (for pre-commit/CI). Exit 0 ok / 1 read or TOML error. `fmt` is
+**schema-free**, so `main.rs` only resolves the default config path and delegates to config-core's
+shared **`fmt_cli`** (re-exported via `curator_config`) — the same implementation `warden fmt` uses.
+(`validate` stays curator's own — it prints curator's leaf schema.)
 
 ## Config schema
 

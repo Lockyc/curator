@@ -12,4 +12,4 @@ dirs = "5"
 # Shared house-style TOML formatter + colour parsing, shared with warden. Pinned by rev — the shared
 # formatter must format identically in both apps, so an unpinned dep floating forward in only one repo
 # would silently diverge `curator fmt` from `warden fmt`. Bump in lockstep with warden + config-core.
-config-core = { git = "https://github.com/Lockyc/config-core", rev = "4742ec48499ade023dbfc14014cbcd9482d22aba" }
+config-core = { git = "https://github.com/Lockyc/config-core", rev = "3c7d79565d30aa835b74f93716b39f7e302594f6" }

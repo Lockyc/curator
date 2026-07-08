@@ -616,49 +616,6 @@ pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
     }
 }
 
-/// `curator fmt [--check] [path]`: reformat the config file in curator's house style (shared with
-/// warden via `config_core`). Without `--check`, rewrites in place (atomic, diff-guarded — a
-/// no-op when already formatted) and prints what it did. With `--check`, writes nothing and exits
-/// 1 if the file would be reformatted (for pre-commit/CI). Exit 0 ok / 1 on read or TOML error.
-pub fn fmt_cli(check: bool, path: Option<std::path::PathBuf>) -> i32 {
-    let path = path.unwrap_or_else(curator_config::resolve_config_path);
-    let src = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: cannot read {}: {e}", path.display());
-            return 1;
-        }
-    };
-    // Only format well-formed TOML: taplo error-recovers on malformed input and would otherwise
-    // silently return it unchanged, masking the breakage.
-    if let Err(e) = toml::from_str::<toml::Value>(&src) {
-        eprintln!("error: {} is not valid TOML: {e}", path.display());
-        return 1;
-    }
-    if check {
-        if curator_config::format_str(&src) != src {
-            eprintln!("would reformat: {}", path.display());
-            return 1;
-        }
-        println!("ok: {} already formatted", path.display());
-        return 0;
-    }
-    match curator_config::format_file(&path) {
-        Ok(true) => {
-            println!("formatted: {}", path.display());
-            0
-        }
-        Ok(false) => {
-            println!("ok: {} already formatted", path.display());
-            0
-        }
-        Err(e) => {
-            eprintln!("error: cannot format {}: {e}", path.display());
-            1
-        }
-    }
-}
-
 /// Filename for the window-state plugin's saved bounds, scoped per config file. The plugin keys
 /// window state by Tauri label *within one file*; two different configs can reuse a window title,
 /// so scope the filename by a stable hash of the (canonicalized) config path to keep their bounds

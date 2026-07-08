@@ -15,7 +15,10 @@ fn main() {
                     p => path = Some(std::path::PathBuf::from(p)),
                 }
             }
-            std::process::exit(curator_lib::fmt_cli(check, path));
+            // `fmt` is schema-free — delegate to config-core's shared fmt_cli (re-exported by
+            // curator-config); only the default config path is curator's.
+            let path = path.unwrap_or_else(curator_config::resolve_config_path);
+            std::process::exit(curator_config::fmt_cli(check, &path));
         }
         Some(other) => {
             eprintln!(
