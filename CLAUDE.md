@@ -334,8 +334,8 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
   lives on the build machine at `~/.tauri/curator-updater.key` (never committed); its **public key**
   is committed in `tauri.conf.json` (`plugins.updater.pubkey`). Cutting an updatable release needs
   `TAURI_SIGNING_PRIVATE_KEY` (path or contents) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` set in the
-  build env alongside the Apple creds. **`createUpdaterArtifacts` is enabled release-only via the
-  `just release-artifacts` `--config` override, NOT in the committed `tauri.conf.json`** — footgun:
+  build env alongside the Apple creds. **`createUpdaterArtifacts` is enabled release-only via
+  `scripts/release.sh`'s (`just release`) `--config` override, NOT in the committed `tauri.conf.json`** — footgun:
   baking it into the config makes *every* `cargo tauri build` demand the signing key, which breaks
   `install.sh` / `just build` / `just deploy` (a keyless from-source build errors with "A public key
   has been found, but no private key"). So the emit of the signed `curator.app.tar.gz` + `.sig`
