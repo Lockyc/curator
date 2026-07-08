@@ -480,11 +480,11 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     let about_meta = AboutMetadataBuilder::new()
         .name(Some("curator"))
         .version(Some(env!("CARGO_PKG_VERSION")))
-        .short_version(Some(env!("CURATOR_GIT_SHA")))
+        .short_version(Some(env!("BUILD_GIT_SHA")))
         .comments(Some(format!(
             "commit {} · built {}",
-            env!("CURATOR_GIT_SHA"),
-            env!("CURATOR_BUILD_DATE"),
+            env!("BUILD_GIT_SHA"),
+            env!("BUILD_DATE"),
         )))
         .build();
     let reload_tab = MenuItemBuilder::with_id("reload_active", "Reload Tab")
@@ -631,27 +631,17 @@ fn window_state_filename() -> String {
 }
 
 pub fn run() {
-    tauri::Builder::default()
-        // Persist each window's size + position (+ maximized) across launches, keyed by Tauri
-        // label within a per-config state file (window_state_filename) so two configs that share a
-        // window title don't share bounds. Both save (on close/exit) and restore (the plugin's
-        // window_created hook, on the main event loop) are automatic — build_window must NOT restore
-        // by hand (that call marshals off the loop and deadlocks; see the footgun there). The
-        // transient error window is excluded — its throwaway bounds must not seed a real window.
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::POSITION
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
-                )
-                .skip_initial_state(webviews::WINDOW_ERROR)
-                .with_filename(window_state_filename())
-                .build(),
-        )
-        // In-app updates: the chrome checks on launch + via the menu, and installs on confirm.
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+    // Register the shell-core plugins (window-state + updater + process) — the set every sibling app
+    // installs identically. Window-state persists each window's size/position/maximized keyed by
+    // Tauri label within a per-config state file (window_state_filename) so two configs sharing a
+    // window title don't share bounds; both save and restore (the plugin's window_created hook, on
+    // the main loop) are automatic — build_window must NOT restore by hand (deadlocks; see the
+    // footgun there). The transient error window is excluded from state restore.
+    shell_core::register_plugins(
+        tauri::Builder::default(),
+        window_state_filename(),
+        &[webviews::WINDOW_ERROR],
+    )
         .setup(move |app| {
             // Prime native banner notifications (authorization + presentation/click delegate) and
             // capture the app handle the click delegate uses to surface a tab. The banner path is a

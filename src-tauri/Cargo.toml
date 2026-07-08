@@ -20,6 +20,10 @@ tauri-build = { version = "2", features = [] }
 # The shared sidebar chrome, embedded as string consts; build.rs writes them into ../src (the
 # frontendDist Tauri embeds). Pinned by rev — bump in lockstep with config-core + the toolchain.
 chrome-core = { git = "https://github.com/Lockyc/chrome-core", rev = "723e57ecd0ee010d925021dd8a08b69adbad9dea" }
+# Shared release tooling + build_stamp. build.rs materializes scripts/*.sh (git-ignored) and stamps
+# BUILD_GIT_SHA/BUILD_DATE. default-features=false keeps the build-dep zero-tauri (resolver 2 keeps
+# it separate from the runtime-featured [dependencies] entry below). Pinned by rev.
+shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "ca4e728aa275c2b7582234f9722fdae8818cae51", default-features = false }
 
 [dependencies]
 tauri = { version = "2", features = ["unstable", "devtools"] }
@@ -31,11 +35,14 @@ notify = "6"
 dirs = "5"
 # OS CSPRNG for the per-webview sentinel anti-forgery nonce (webviews.rs::random_nonce).
 getrandom = "0.2"
-# Persist each window's size + position (+ maximized) across launches, keyed by Tauri label.
+# window-state/updater/process are kept explicit so their capability permissions resolve, but plugin
+# *registration* now flows through shell_core::register_plugins (runtime feature), not the builder.
 tauri-plugin-window-state = "2"
-# In-app updates: check GitHub releases, download+verify (minisign), install and relaunch.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Shared Tauri runtime helpers (register_plugins). runtime feature pulls tauri; the build-dep above
+# stays zero-tauri. Same rev as the build-dep — bump both in lockstep.
+shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "ca4e728aa275c2b7582234f9722fdae8818cae51", features = ["runtime"] }
 # curator's config parser, extracted into its own platform-neutral crate (mirrors warden's
 # warden-config). It re-exports config-core's shared house formatter + colour parsing, so the app
 # reaches those via `curator_config::{format_str, format_file, Colour}` — config-core is a transitive

@@ -547,6 +547,7 @@ dependencies = [
  "objc2-user-notifications",
  "serde",
  "serde_json",
+ "shell-core",
  "tauri",
  "tauri-build",
  "tauri-plugin-process",
@@ -3237,6 +3238,17 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "shell-core"
+version = "0.1.0"
+source = "git+https://github.com/Lockyc/shell-core?rev=ca4e728aa275c2b7582234f9722fdae8818cae51#ca4e728aa275c2b7582234f9722fdae8818cae51"
+dependencies = [
+ "tauri",
+ "tauri-plugin-process",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
 ]
 
 [[package]]
