@@ -276,26 +276,29 @@ the owner reopening it.
 
 ## Releases
 
-Every release gets a matching GitHub release — don't just push `main`. To cut one:
+Every release gets a matching GitHub release — don't just push `main`. `main` tracks the latest
+release and stays a clean ancestor of `dev`; if a doc/chore commit landed straight on `main`,
+back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. To cut one:
 
-1. Bump the version in `src-tauri/Cargo.toml` (the single source of version truth — `package.json`
-   no longer exists) and commit it.
-2. Confirm the release gate is green: `just gate`.
-3. Tag the release commit `v<version>` (matching the bumped version) and publish:
-   `gh release create v<version> --target main --title v<version> --notes "<changelog>"`,
-   where the notes summarise what shipped since the previous release.
-4. There is no CI to build artifacts, so attach the locally built app: `just build`,
-   then zip the `.app` and `gh release upload v<version> <app>.zip` so the release
-   carries an installable binary (the `install.sh` path still builds from source).
-5. Attach the **updater artifacts** so existing installs auto-update (see *In-app updates*):
-   `just release-artifacts <version>` (builds, then writes `latest.json`), then
-   `gh release upload v<version> src-tauri/target/release/bundle/macos/curator.app.tar.gz
-   src-tauri/target/release/bundle/macos/curator.app.tar.gz.sig latest.json`. The updater fetches
-   `latest.json` from the `releases/latest/download/` alias, so the newest release is found with no
-   per-release URL edit. This needs the updater signing env set (below); without it no `.sig` is
-   produced and `release-artifacts` errors rather than shipping an unsignable release.
+1. On `dev`, bump the version in `src-tauri/Cargo.toml` (the single source of version truth —
+   `package.json` no longer exists), refresh `Cargo.lock`, and commit `chore(release): curator <v>`.
+2. Confirm the release gate is green: `just gate` (the notarized build doesn't run the tests).
+3. Tag the release commit `v<version>`, fast-forward `main` to it, and push `dev` + `main` + the tag.
+4. Publish the notes: `gh release create v<version> --target main --title v<version> --notes "<changelog>"`,
+   summarising what shipped since the previous tag.
+5. Attach the notarized binaries: **`just release`** (= `scripts/release.sh`) — **one command** that
+   builds + notarizes `curator.app`, `ditto`-zips it to `curator-<v>-macos.zip`, and attaches it
+   **plus the updater artifacts** (`curator.app.tar.gz` + `.sig` + `latest.json`, via
+   `gen-latest-json.sh`) so existing installs auto-update. It **refuses to run** unsigned (no
+   `APPLE_SIGNING_IDENTITY`) or without the updater key (no `TAURI_SIGNING_PRIVATE_KEY`), and only
+   from a clean tree whose **HEAD is the tag** — so no un-notarized or post-tag artifact can
+   masquerade as official. This mirrors **warden's `just release`** exactly (only paths/names differ);
+   keep the two `scripts/release.sh` in step.
 
-This is part of cutting a release, not a follow-up; do it without being asked.
+This is part of cutting a release, not a follow-up; do it without being asked. The updater-signing
+**password lives only in the vault**, so `just release` needs a vault-unlock to hand
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to the build env (the Apple notary creds are already exported in
+the shell env, so they need no paste).
 
 `just build` **signs with Developer ID and notarizes + staples automatically** when the
 Apple signing/notary env vars are present in the build environment — `APPLE_SIGNING_IDENTITY`
