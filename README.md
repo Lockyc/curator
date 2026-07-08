@@ -308,7 +308,7 @@ allow_insecure = ["10.0.0.1", "nas.local"]
 
 ## Related projects
 
-curator is built on two shared library crates. Building it from source pulls them in
+curator is built on three shared library crates. Building it from source pulls them in
 automatically — they're pinned Git dependencies, resolved by a plain `cargo build` / `just run`
 with nothing extra to install:
 
@@ -317,14 +317,18 @@ with nothing extra to install:
   materialized into curator's bundled web assets at compile time.
 - **[config-core](https://github.com/Lockyc/config-core)** — the TOML config engine (parse,
   validate, format, hot-reload diff) behind curator's config and `curator fmt`.
+- **[shell-core](https://github.com/Lockyc/shell-core)** — the shared release tooling + a sliver
+  of Tauri runtime setup. `build.rs` materializes the release scripts (git-ignored) and stamps the
+  build; the app registers window-state/updater/process via its `register_plugins`.
 
-Those same two cores are also shared with a **sibling app, [warden](https://github.com/Lockyc/warden)**,
+Those same cores are also shared with a **sibling app, [warden](https://github.com/Lockyc/warden)**,
 which curates **terminals** the way curator curates **browser tabs**. warden is a peer project,
 not a dependency of curator — it just draws from the same cores.
 
-If you want to iterate on the shared chrome, `just chrome-dev` builds curator against a sibling
+If you want to iterate on a shared core, `just chrome-dev` builds curator against a sibling
 `../chrome-core` checkout (including uncommitted edits) and `just chrome-pin` re-pins to its
-pushed commit afterward.
+pushed commit afterward; `just config-dev` / `just config-pin` and `just shell-dev` / `just shell-pin`
+are the same pair for `../config-core` and `../shell-core`.
 
 ## License
 

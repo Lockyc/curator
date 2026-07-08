@@ -314,8 +314,11 @@ back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. 
    `gen-latest-json.sh`) so existing installs auto-update. It **refuses to run** unsigned (no
    `APPLE_SIGNING_IDENTITY`) or without the updater key (no `TAURI_SIGNING_PRIVATE_KEY`), and only
    from a clean tree whose **HEAD is the tag** — so no un-notarized or post-tag artifact can
-   masquerade as official. This mirrors **warden's `just release`** exactly (only paths/names differ);
-   keep the two `scripts/release.sh` in step.
+   masquerade as official. These three scripts are **generated from shell-core**, not tracked here:
+   `build.rs` materializes `scripts/{release,gen-latest-json,install-app}.sh` (git-ignored) from the
+   pinned shell-core rev, and the tracked `scripts/tooling.env` supplies curator's params
+   (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`). So warden and curator run **one** shared release
+   script — edit it in shell-core, never here (the local copy is regenerated on the next build).
 
 This is part of cutting a release, not a follow-up; do it without being asked. The updater-signing
 **password lives only in the vault**, so `just release` needs a vault-unlock to hand
@@ -437,9 +440,10 @@ For active chrome work, **`just chrome-dev`** activates a normally-commented, sc
 (uncommitted edits included); iterate, then **`just chrome-pin`** re-pins the rev (in
 `src-tauri/Cargo.toml`) to `../chrome-core`'s pushed HEAD and re-comments the patch. **config-core has
 the mirror pair** — **`just config-dev`** / **`just config-pin`** (rev in `crates/curator-config/Cargo.toml`),
-scoped `#PATCH:config#` — since config-core is git-pinned the same way; the two cores use separate
-sentinels so each `*-dev` uncomments only its own patch. (Both are `just`-managed — don't hand-edit
-the `#PATCH:*#` lines.)
+scoped `#PATCH:config#` — since config-core is git-pinned the same way. **shell-core has a third pair** —
+**`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped `#PATCH:shell#`). Each
+core uses its own sentinel so each `*-dev` uncomments only its own patch. (All are `just`-managed —
+don't hand-edit the `#PATCH:*#` lines.)
 **Never commit an active patch** — it breaks fresh clones/CI; **`just gate` refuses to pass while it's
 active** (the safety net).
 
@@ -453,3 +457,29 @@ placeholder) plus a live readout of `#cc-banner`'s height — proving the banner
 without the slot (chrome-core's `--cc-banner-min`). This is the fast loop for chrome work; the pinned-rev
 round-trip through curator is only for shipping. See chrome-core's CLAUDE.md for the full loop + the
 banner-height invariant.
+
+## Shared release tooling + Tauri runtime: `shell-core`
+
+The third shared core (`https://github.com/Lockyc/shell-core`), alongside config-core and chrome-core,
+consumed by git-rev pin. It owns the build/release tooling and the byte-identical sliver of Tauri setup
+that is the same for curator, warden, and any future sibling app.
+
+- **Release scripts are generated, not tracked.** `src-tauri/build.rs` calls
+  `shell_core::materialize_scripts("../scripts")`, writing `scripts/{release,gen-latest-json,install-app}.sh`
+  **git-ignored** from the pinned rev. The generic scripts read the tracked `scripts/tooling.env`
+  (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`); everything else derives. **Edit them in shell-core**, never
+  here — the local copy is overwritten on the next build. curator's `scripts/test-install-app.sh` is
+  curator-specific and stays tracked.
+- **The build stamp comes from shell-core.** `build.rs` calls `shell_core::build_stamp()`, emitting
+  `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`). This replaced curator's local
+  `CURATOR_GIT_SHA`/`CURATOR_BUILD_DATE` stamp — don't reintroduce app-prefixed names.
+- **Plugin registration comes from shell-core.** `lib.rs` registers window-state + updater + process via
+  `shell_core::register_plugins(builder, window_state_filename(), &[webviews::WINDOW_ERROR])`. The three
+  plugin crates stay direct deps (capability resolution + `window_state_filename` is curator's own); only
+  the registration is shared. The `runtime` feature pulls tauri; the `build.rs` build-dep uses
+  `default-features = false` so it stays zero-tauri (resolver 2 keeps the two separate).
+- **Deliberately NOT shared** (each diverges per app, don't consolidate): IPC fan-out, the config watcher,
+  menu construction, and the chrome-caller command gate (`is_chrome_caller` is curator-only — warden hosts
+  no untrusted webviews). See shell-core's CLAUDE.md for the full dividing line.
+- Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
+  `#PATCH:shell#`), mirroring the chrome-/config- pairs.
