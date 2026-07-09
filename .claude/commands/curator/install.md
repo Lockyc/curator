@@ -18,30 +18,36 @@ Check whether the current working directory is a curator checkout:
 [ -f install.sh ] && [ -f src-tauri/tauri.conf.json ] && echo "IN_REPO" || echo "NOT_IN_REPO"
 ```
 
-**If IN_REPO:** you will run the local `install.sh` in step 4.
-**If NOT_IN_REPO:** you will run the published installer over curl in step 4.
+**If IN_REPO:** you will run the local `install.sh` in step 4 (it builds this checkout).
+**If NOT_IN_REPO:** you will run the published installer over curl in step 4 (it manages a `~/.curator` clone).
 
 ### 2. Check prerequisites and offer to install
 
 Probe each build prerequisite:
 
 ```bash
-command -v git   >/dev/null 2>&1 && echo "git: ok"   || echo "git: MISSING"
-command -v cargo >/dev/null 2>&1 && echo "cargo: ok" || echo "cargo: MISSING"
-xcode-select -p  >/dev/null 2>&1 && echo "clt: ok"   || echo "clt: MISSING"
-command -v brew  >/dev/null 2>&1 && echo "brew: ok"  || echo "brew: MISSING"
+command -v git         >/dev/null 2>&1 && echo "git: ok"       || echo "git: MISSING"
+command -v cargo       >/dev/null 2>&1 && echo "cargo: ok"     || echo "cargo: MISSING"
+command -v cargo-tauri >/dev/null 2>&1 && echo "tauri-cli: ok" || echo "tauri-cli: MISSING"
+xcode-select -p        >/dev/null 2>&1 && echo "clt: ok"       || echo "clt: MISSING"
+command -v brew        >/dev/null 2>&1 && echo "brew: ok"      || echo "brew: MISSING"
 ```
 
 For each MISSING prerequisite (other than brew), use AskUserQuestion to offer to install it.
 Only run an install command on confirmation:
 
 - **Xcode Command Line Tools** (also provides `git`): `xcode-select --install`
-  (this opens a GUI installer — tell the user to finish it, then continue).
+  (opens a GUI installer — tell the user to finish it, then continue).
 - **Rust** (`cargo`): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`,
   then advise sourcing `~/.cargo/env` or restarting the shell.
+- **Tauri CLI** (`cargo-tauri`): `cargo install tauri-cli --version '^2' --locked`
+  (compiles the CLI — takes a few minutes). `install.sh` backstops this too, so it
+  is safe to skip here and let the core install handle it.
 
-If a prerequisite the user declined to install is still missing, warn that `install.sh`
-will refuse to build until it is present, and ask whether to continue anyway.
+curator has **no Node/npm dependency** — do not probe for it. If a prerequisite the user
+declined to install is still missing (other than the Tauri CLI, which `install.sh` installs
+anyway), warn that `install.sh` will refuse to build until it is present, and ask whether to
+continue anyway.
 
 ### 3. Probe current state
 
@@ -56,7 +62,7 @@ pgrep -f "/Applications/curator.app/" >/dev/null && echo "running: yes" || echo 
 ```
 
 If `src: not-a-clone`, tell the user `~/.curator` exists but is not a git clone; `install.sh`
-will refuse to touch it. They must move it aside before continuing.
+will refuse to touch it. They must move it aside before continuing (NOT_IN_REPO path only).
 
 ### 4. Run the core install
 
@@ -72,15 +78,14 @@ PATH="$HOME/.cargo/bin:$PATH" bash install.sh
 curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | PATH="$HOME/.cargo/bin:$PATH" bash
 ```
 
-(The `PATH="$HOME/.cargo/bin:$PATH"` prefix ensures a Rust toolchain you may have just
-installed via rustup in step 2 is found — a fresh shell won't have picked up rustup's
-profile changes yet.)
+(The `PATH="$HOME/.cargo/bin:$PATH"` prefix ensures a Rust toolchain / Tauri CLI you may
+have just installed via rustup/cargo in step 2 is found — a fresh shell won't have picked
+up rustup's profile changes yet.)
 
-This clones/updates `~/.curator`, backstops the Tauri CLI if absent (`cargo install tauri-cli
---version '^2'`), then builds with `cargo tauri build` (requires Rust/cargo). It installs the
-built app to `/Applications/curator.app` and seeds `~/.config/curator/config.toml` if absent.
-The build takes a few minutes. **If it fails, show the full output and stop** — do not run
-later steps.
+IN_REPO builds the current checkout; NOT_IN_REPO clones/updates `~/.curator` and builds from it.
+Both back the Tauri CLI install if absent, run `cargo tauri build`, install the app to
+`/Applications/curator.app`, and seed `~/.config/curator/config.toml` if absent. The build takes
+a few minutes. **If it fails, show the full output and stop** — do not run later steps.
 
 ### 5. Configure
 
@@ -124,7 +129,7 @@ Print:
 
 **Installed**
 - curator vX.Y.Z → `/Applications/curator.app` ✓
-- Source clone → `~/.curator`
+- Source clone → `~/.curator` (NOT_IN_REPO) or "built from checkout" (IN_REPO)
 - Config → `~/.config/curator/config.toml` (seeded from example / already existed)
 
 **Next steps**
