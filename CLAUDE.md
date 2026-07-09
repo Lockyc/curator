@@ -483,3 +483,11 @@ that is the same for curator, warden, and any future sibling app.
   no untrusted webviews). See shell-core's CLAUDE.md for the full dividing line.
 - Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
   `#PATCH:shell#`), mirroring the chrome-/config- pairs.
+- **Follow-up — a scriptable "open window by title" entry point belongs here (shared).** Nothing outside the
+  app can open/raise/reopen a specific window today: it's GUI-only (the Window menu), and a second
+  `open -a curator --args …` is silently dropped — there's no `tauri-plugin-single-instance`,
+  `tauri-plugin-deep-link`, or CLI-arg handling. Build the entry point **in shell-core** so curator, warden,
+  and future siblings inherit one implementation (same shape as `register_plugins`): single-instance argv
+  (`--window <title>`) or a `<scheme>://window/<title>` deep link, forwarded to the already-running instance
+  and mapped title → open-or-focus. Concrete driver on the warden side: its `work` window is
+  `open_on_start = false`, so `work_startup.sh` needs a command to open it on demand.
