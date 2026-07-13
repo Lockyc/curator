@@ -642,217 +642,216 @@ pub fn run() {
         window_state_filename(),
         &[webviews::WINDOW_ERROR],
     )
-        .setup(move |app| {
-            // Prime native banner notifications (authorization + presentation/click delegate) and
-            // capture the app handle the click delegate uses to surface a tab. The banner path is a
-            // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
-            notification::init(app.handle().clone());
+    .setup(move |app| {
+        // Prime native banner notifications (authorization + presentation/click delegate) and
+        // capture the app handle the click delegate uses to surface a tab. The banner path is a
+        // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
+        notification::init(app.handle().clone());
 
-            let path = curator_config::resolve_config_path();
-            let (mut cfg, load_err) = match curator_config::load_config(&path) {
-                Ok((c, warnings)) => {
-                    log_config_warnings(&warnings);
-                    (c, None)
-                }
-                Err(e) => {
-                    eprintln!("config error: {e}");
-                    (curator_config::Config::default(), Some(e.to_string()))
-                }
+        let path = curator_config::resolve_config_path();
+        let (mut cfg, load_err) = match curator_config::load_config(&path) {
+            Ok((c, warnings)) => {
+                log_config_warnings(&warnings);
+                (c, None)
+            }
+            Err(e) => {
+                eprintln!("config error: {e}");
+                (curator_config::Config::default(), Some(e.to_string()))
+            }
+        };
+        #[cfg(target_os = "macos")]
+        insecure::set_allowlist(cfg.allow_insecure.clone());
+
+        let handle = app.handle().clone();
+        let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
+        for win_cfg in &cfg.windows {
+            let (wid, rt) = open_window(&handle, cfg.dark_mode, cfg.session.as_deref(), win_cfg)?;
+            runtimes.insert(wid, rt);
+        }
+        app.manage(AppState {
+            windows: Mutex::new(runtimes),
+            dark_mode: AtomicBool::new(cfg.dark_mode),
+            density: Mutex::new(cfg.density),
+            sidebar_drag: AtomicBool::new(cfg.sidebar_drag),
+            auto_update: AtomicBool::new(cfg.auto_update),
+        });
+
+        // No windows opened — either the config failed to parse or it defines no
+        // `[[window]]` blocks. Show a visible error window instead of launching invisibly;
+        // editing + saving the config hot-reloads the real windows (and closes this one).
+        if cfg.windows.is_empty() {
+            let msg =
+                load_err.unwrap_or_else(|| "Your config defines no [[window]] blocks.".to_string());
+            webviews::build_error_window(&handle, &msg)?;
+        }
+
+        // Extract what we need from cfg before the watcher thread takes ownership of it.
+        // (dark_mode lives in AppState now so reopen reads the live value, not this snapshot.)
+        let window_titles: Vec<(String, String)> = cfg
+            .windows
+            .iter()
+            .map(|w| {
+                (
+                    curator_config::identity::window_id(&w.title),
+                    w.title.clone(),
+                )
+            })
+            .collect();
+
+        // Watch the config file and hot-reload on change, keeping the last-good config
+        // (and surfacing an error banner on each open window) if the new contents don't
+        // parse/validate.
+        let watch_path = path.clone();
+        let app_handle = app.handle().clone();
+        std::thread::spawn(move || {
+            use notify::{RecursiveMode, Watcher};
+            let (tx, rx) = std::sync::mpsc::channel();
+            let Ok(mut watcher) = notify::recommended_watcher(tx) else {
+                return;
             };
-            #[cfg(target_os = "macos")]
-            insecure::set_allowlist(cfg.allow_insecure.clone());
-
-            let handle = app.handle().clone();
-            let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
-            for win_cfg in &cfg.windows {
-                let (wid, rt) =
-                    open_window(&handle, cfg.dark_mode, cfg.session.as_deref(), win_cfg)?;
-                runtimes.insert(wid, rt);
+            // Watch the parent dir, not the file: editors that atomic-save (write temp +
+            // rename) replace the inode, which silently breaks a single-file watch.
+            let dir = watch_path.parent().unwrap_or(&watch_path);
+            if Watcher::watch(&mut watcher, dir, RecursiveMode::NonRecursive).is_err() {
+                return;
             }
-            app.manage(AppState {
-                windows: Mutex::new(runtimes),
-                dark_mode: AtomicBool::new(cfg.dark_mode),
-                density: Mutex::new(cfg.density),
-                sidebar_drag: AtomicBool::new(cfg.sidebar_drag),
-                auto_update: AtomicBool::new(cfg.auto_update),
-            });
-
-            // No windows opened — either the config failed to parse or it defines no
-            // `[[window]]` blocks. Show a visible error window instead of launching invisibly;
-            // editing + saving the config hot-reloads the real windows (and closes this one).
-            if cfg.windows.is_empty() {
-                let msg = load_err
-                    .unwrap_or_else(|| "Your config defines no [[window]] blocks.".to_string());
-                webviews::build_error_window(&handle, &msg)?;
-            }
-
-            // Extract what we need from cfg before the watcher thread takes ownership of it.
-            // (dark_mode lives in AppState now so reopen reads the live value, not this snapshot.)
-            let window_titles: Vec<(String, String)> = cfg
-                .windows
-                .iter()
-                .map(|w| {
-                    (
-                        curator_config::identity::window_id(&w.title),
-                        w.title.clone(),
-                    )
-                })
-                .collect();
-
-            // Watch the config file and hot-reload on change, keeping the last-good config
-            // (and surfacing an error banner on each open window) if the new contents don't
-            // parse/validate.
-            let watch_path = path.clone();
-            let app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                use notify::{RecursiveMode, Watcher};
-                let (tx, rx) = std::sync::mpsc::channel();
-                let Ok(mut watcher) = notify::recommended_watcher(tx) else {
-                    return;
-                };
-                // Watch the parent dir, not the file: editors that atomic-save (write temp +
-                // rename) replace the inode, which silently breaks a single-file watch.
-                let dir = watch_path.parent().unwrap_or(&watch_path);
-                if Watcher::watch(&mut watcher, dir, RecursiveMode::NonRecursive).is_err() {
-                    return;
+            // The exact bytes of our own most recent format-on-save write, so we can swallow
+            // the watch event it triggers and reload exactly once per user save (see below).
+            let mut self_write: Option<String> = None;
+            for res in rx {
+                let Ok(event) = res else { continue };
+                if !event.paths.iter().any(|p| p == &watch_path) {
+                    continue;
                 }
-                // The exact bytes of our own most recent format-on-save write, so we can swallow
-                // the watch event it triggers and reload exactly once per user save (see below).
-                let mut self_write: Option<String> = None;
-                for res in rx {
-                    let Ok(event) = res else { continue };
-                    if !event.paths.iter().any(|p| p == &watch_path) {
-                        continue;
-                    }
-                    let Ok(src) = std::fs::read_to_string(&watch_path) else {
-                        continue;
-                    };
-                    // If this event is the echo of our own format write, consume it and skip — the
-                    // user save that prompted the rewrite already reloaded. `take()` clears the
-                    // marker either way, so at worst a missed echo costs one redundant no-op reload.
-                    if self_write.take().as_deref() == Some(src.as_str()) {
-                        continue;
-                    }
-                    match watcher::reconcile(&src) {
-                        Ok((new_cfg, warnings)) => {
-                            log_config_warnings(&warnings);
-                            // Format-on-save: rewrite in house style on a clean reload. The write
-                            // is diff-guarded, so an already-formatted file is a no-op. When it does
-                            // rewrite, remember the formatted bytes as `self_write` so the watch
-                            // event the write triggers is swallowed above — one reload per user
-                            // save, not two. Formatting only touches whitespace, so `new_cfg`
-                            // (parsed pre-format) already matches the formatted file's config.
-                            if new_cfg.format_on_save {
-                                let formatted = curator_config::format_str(&src);
-                                if formatted != src {
-                                    match curator_config::format_file(&watch_path) {
-                                        Ok(_) => self_write = Some(formatted),
-                                        Err(e) => eprintln!("config format error: {e}"),
-                                    }
+                let Ok(src) = std::fs::read_to_string(&watch_path) else {
+                    continue;
+                };
+                // If this event is the echo of our own format write, consume it and skip — the
+                // user save that prompted the rewrite already reloaded. `take()` clears the
+                // marker either way, so at worst a missed echo costs one redundant no-op reload.
+                if self_write.take().as_deref() == Some(src.as_str()) {
+                    continue;
+                }
+                match watcher::reconcile(&src) {
+                    Ok((new_cfg, warnings)) => {
+                        log_config_warnings(&warnings);
+                        // Format-on-save: rewrite in house style on a clean reload. The write
+                        // is diff-guarded, so an already-formatted file is a no-op. When it does
+                        // rewrite, remember the formatted bytes as `self_write` so the watch
+                        // event the write triggers is swallowed above — one reload per user
+                        // save, not two. Formatting only touches whitespace, so `new_cfg`
+                        // (parsed pre-format) already matches the formatted file's config.
+                        if new_cfg.format_on_save {
+                            let formatted = curator_config::format_str(&src);
+                            if formatted != src {
+                                match curator_config::format_file(&watch_path) {
+                                    Ok(_) => self_write = Some(formatted),
+                                    Err(e) => eprintln!("config format error: {e}"),
                                 }
                             }
-                            reload_windows(&app_handle, &cfg, &new_cfg);
-                            cfg = new_cfg;
                         }
-                        Err(msg) => {
-                            // Surface in each window's sidebar, and refresh the standalone error
-                            // window if we're in the window-less error state.
-                            webviews::refresh_error_window(&app_handle, &msg);
-                            emit_to_all_chrome(&app_handle, "config-error", msg);
+                        reload_windows(&app_handle, &cfg, &new_cfg);
+                        cfg = new_cfg;
+                    }
+                    Err(msg) => {
+                        // Surface in each window's sidebar, and refresh the standalone error
+                        // window if we're in the window-less error state.
+                        webviews::refresh_error_window(&app_handle, &msg);
+                        emit_to_all_chrome(&app_handle, "config-error", msg);
+                    }
+                }
+            }
+        });
+
+        // We replace Tauri's default menu, so we re-add the standard macOS menus (the Edit
+        // submenu owns the clipboard accelerators ⌘C/⌘V/⌘X/⌘A/⌘Z that content webviews
+        // need). Built here and rebuilt on hot-reload so the Window submenu tracks windows.
+        let menu = build_app_menu(app, &window_titles)?;
+        app.set_menu(menu)?;
+
+        let cfg_path = path.clone();
+        app.on_menu_event(move |app, event| match event.id().as_ref() {
+            "reload_active" => {
+                commands::reload_active_tab(app);
+            }
+            "reset_all" => {
+                let _ = commands::reset_all_tabs(app);
+            }
+            "open_devtools" => {
+                commands::open_active_devtools(app);
+            }
+            "check_updates" => emit_to_focused_chrome(app, "check-update", ()),
+            "tab_next" => emit_to_focused_chrome(app, "nav-tab", 1i32),
+            "tab_prev" => emit_to_focused_chrome(app, "nav-tab", -1i32),
+            id if id.starts_with("tab_jump:") => {
+                if let Ok(n) = id["tab_jump:".len()..].parse::<usize>() {
+                    emit_to_focused_chrome(app, "jump-tab", n);
+                }
+            }
+            "edit_config" => {
+                let _ = std::process::Command::new("open").arg(&cfg_path).spawn();
+            }
+            "reveal_config" => {
+                let _ = std::process::Command::new("open")
+                    .arg("-R")
+                    .arg(&cfg_path)
+                    .spawn();
+            }
+            "close_window" => {
+                // Close the focused window via `close()` so it flows through the same
+                // `CloseRequested` path as the native red button: that handler wipes the
+                // closed window's unread/timers (the runtime stays registered so its cfg
+                // survives for reopen via the menu items below) and quits curator if this was
+                // the last window.
+                if let Some(win) = app.get_focused_window() {
+                    let _ = win.close();
+                }
+            }
+            id if id.starts_with("open_window:") => {
+                let wid = &id["open_window:".len()..];
+                if let Some(win) = app.get_window(wid) {
+                    // Window is already open — just focus it.
+                    let _ = win.set_focus();
+                } else {
+                    // Window was closed; reopen it from the retained cfg in the registry.
+                    // Clone the cfg and drop the lock before calling open_window to avoid
+                    // holding the registry lock across webview construction.
+                    let state = app.state::<AppState>();
+                    let snapshot = {
+                        let windows = state.windows.lock().unwrap();
+                        windows
+                            .get(wid)
+                            .map(|rt| (rt.cfg.clone(), rt.global_session.clone()))
+                    };
+                    if let Some((cfg, global_session)) = snapshot {
+                        // Read the live dark_mode (not the launch-time capture) so a reopened
+                        // window matches the theme of every other window after a config flip.
+                        let dark_mode = state.dark_mode.load(Ordering::Relaxed);
+                        if let Ok((new_wid, rt)) =
+                            open_window(app, dark_mode, global_session.as_deref(), &cfg)
+                        {
+                            state.windows.lock().unwrap().insert(new_wid, rt);
                         }
                     }
                 }
-            });
+            }
+            _ => {}
+        });
 
-            // We replace Tauri's default menu, so we re-add the standard macOS menus (the Edit
-            // submenu owns the clipboard accelerators ⌘C/⌘V/⌘X/⌘A/⌘Z that content webviews
-            // need). Built here and rebuilt on hot-reload so the Window submenu tracks windows.
-            let menu = build_app_menu(app, &window_titles)?;
-            app.set_menu(menu)?;
-
-            let cfg_path = path.clone();
-            app.on_menu_event(move |app, event| match event.id().as_ref() {
-                "reload_active" => {
-                    commands::reload_active_tab(app);
-                }
-                "reset_all" => {
-                    let _ = commands::reset_all_tabs(app);
-                }
-                "open_devtools" => {
-                    commands::open_active_devtools(app);
-                }
-                "check_updates" => emit_to_focused_chrome(app, "check-update", ()),
-                "tab_next" => emit_to_focused_chrome(app, "nav-tab", 1i32),
-                "tab_prev" => emit_to_focused_chrome(app, "nav-tab", -1i32),
-                id if id.starts_with("tab_jump:") => {
-                    if let Ok(n) = id["tab_jump:".len()..].parse::<usize>() {
-                        emit_to_focused_chrome(app, "jump-tab", n);
-                    }
-                }
-                "edit_config" => {
-                    let _ = std::process::Command::new("open").arg(&cfg_path).spawn();
-                }
-                "reveal_config" => {
-                    let _ = std::process::Command::new("open")
-                        .arg("-R")
-                        .arg(&cfg_path)
-                        .spawn();
-                }
-                "close_window" => {
-                    // Close the focused window via `close()` so it flows through the same
-                    // `CloseRequested` path as the native red button: that handler wipes the
-                    // closed window's unread/timers (the runtime stays registered so its cfg
-                    // survives for reopen via the menu items below) and quits curator if this was
-                    // the last window.
-                    if let Some(win) = app.get_focused_window() {
-                        let _ = win.close();
-                    }
-                }
-                id if id.starts_with("open_window:") => {
-                    let wid = &id["open_window:".len()..];
-                    if let Some(win) = app.get_window(wid) {
-                        // Window is already open — just focus it.
-                        let _ = win.set_focus();
-                    } else {
-                        // Window was closed; reopen it from the retained cfg in the registry.
-                        // Clone the cfg and drop the lock before calling open_window to avoid
-                        // holding the registry lock across webview construction.
-                        let state = app.state::<AppState>();
-                        let snapshot = {
-                            let windows = state.windows.lock().unwrap();
-                            windows
-                                .get(wid)
-                                .map(|rt| (rt.cfg.clone(), rt.global_session.clone()))
-                        };
-                        if let Some((cfg, global_session)) = snapshot {
-                            // Read the live dark_mode (not the launch-time capture) so a reopened
-                            // window matches the theme of every other window after a config flip.
-                            let dark_mode = state.dark_mode.load(Ordering::Relaxed);
-                            if let Ok((new_wid, rt)) =
-                                open_window(app, dark_mode, global_session.as_deref(), &cfg)
-                            {
-                                state.windows.lock().unwrap().insert(new_wid, rt);
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            });
-
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::get_tabs,
-            commands::window_identity,
-            commands::select_tab,
-            commands::reset_all,
-            commands::reload_tab,
-            commands::unload_tab,
-            commands::home_tab,
-            commands::nav_back,
-            commands::nav_forward,
-            commands::set_hole_rect
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running curator");
+        Ok(())
+    })
+    .invoke_handler(tauri::generate_handler![
+        commands::get_tabs,
+        commands::window_identity,
+        commands::select_tab,
+        commands::reset_all,
+        commands::reload_tab,
+        commands::unload_tab,
+        commands::home_tab,
+        commands::nav_back,
+        commands::nav_forward,
+        commands::set_hole_rect
+    ])
+    .run(tauri::generate_context!())
+    .expect("error while running curator");
 }
