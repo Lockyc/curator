@@ -24,3 +24,6 @@ docs/superpowers/
 
 # Generated updater manifest (built by scripts/gen-latest-json.sh for a release upload)
 /latest.json
+
+# Release zips built by scripts/release.sh for upload — the release carries them, not the tree
+/curator-*-macos.zip
