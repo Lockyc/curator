@@ -76,9 +76,9 @@ curator is a Cargo **workspace** (mirrors warden's shape):
 
 The `validate` / `fmt` CLI stays in the app binary (`main.rs` dispatches `curator validate|fmt`
 into the crate) — run it via `cargo run -p curator -- validate` (`just validate`). The
-chrome-core / config-core `[patch]` overrides live in the **workspace-root `Cargo.toml`** (a
-`[patch]` must sit at the workspace root, not a member), managed by the `chrome-*`/`config-*`
-recipes below.
+chrome-core / config-core / shell-core `[patch]` overrides live in the **workspace-root
+`Cargo.toml`** (a `[patch]` must sit at the workspace root, not a member), managed by the
+`chrome-*`/`config-*`/`shell-*` recipes below.
 
 ## Architecture
 
