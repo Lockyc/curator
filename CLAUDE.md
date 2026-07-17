@@ -44,8 +44,9 @@ sidebar width — compact is narrower) and the controller passes them in the DTO
 applies `windowDrag` and sets
 `data-density` on `<html>` and swaps its `--cc-*` sizing tokens (`--cc-row-font`/`--cc-tile-size`/
 `--cc-dot-size`/… in chrome-core's `assets/sidebar.css`). `compact` is a proportional ~0.85× scale
-of the comfortable set. **Both apps consume chrome-core**, so the tokens live once and stay aligned
-by construction. Accent-colour validation delegates to `config_core::Colour::parse` (shared with warden).
+of the comfortable set. **All three apps consume chrome-core**, so the tokens live once and stay
+aligned by construction. Accent-colour validation delegates to `config_core::Colour::parse`
+(shared with warden and lector).
 
 Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
 window title, zero window dimension, invalid colour, empty group name, dup group name within a
@@ -317,8 +318,9 @@ back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. 
    masquerade as official. These three scripts are **generated from shell-core**, not tracked here:
    `build.rs` materializes `scripts/{release,gen-latest-json,install-app}.sh` (git-ignored) from the
    pinned shell-core rev, and the tracked `scripts/tooling.env` supplies curator's params
-   (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`). So warden and curator run **one** shared release
-   script — edit it in shell-core, never here (the local copy is regenerated on the next build).
+   (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`). So warden, curator, and lector all run **one**
+   shared release script — edit it in shell-core, never here (the local copy is regenerated on the
+   next build).
 
 This is part of cutting a release, not a follow-up; do it without being asked. The updater-signing
 **password lives only in the vault**, so `just release` needs a vault-unlock to hand
@@ -340,7 +342,7 @@ Developer ID`) and `xcrun stapler validate <app>`.
 curator updates itself via **`tauri-plugin-updater`** (+ `tauri-plugin-process` for the relaunch).
 **The self-updater is an app-agnostic capability owned by chrome-core** (see chrome-core's CLAUDE.md
 dividing-line decision — an updater is an *app* feature, not a terminal/browser one): the check +
-install/relaunch + the re-check cadence live there once so both apps inherit one implementation.
+install/relaunch + the re-check cadence live there once so every app inherits one implementation.
 curator's controller (`src/chrome.js`) only passes its `auto_update` gate to chrome-core (`autoUpdate`
 in the mount config) and forwards the menu event to `sb.checkForUpdateNow()`, keeping only curator's
 updater *identity* (endpoint/pubkey/plugin) below. So chrome-core checks on launch **and every
@@ -398,8 +400,8 @@ and any CI only have what's in the tree.
 
 ## Shared config primitives: `config-core`
 
-curator and warden share the same `window → group → tab` config shape and house style, so the
-domain-free primitives live in the **`config-core`** crate
+curator, warden, and lector share the same `window → group → tab` config shape and house style,
+so the domain-free primitives live in the **`config-core`** crate
 (`https://github.com/Lockyc/config-core`) — a git dependency (cargo fetches it at build, so the
 build-from-source install needs no extra setup). curator uses two pieces:
 
@@ -409,20 +411,22 @@ build-from-source install needs no extra setup). curator uses two pieces:
   `format_on_save = true`) can't loop its own watcher.
 - **`colour`** — `Colour::parse` backs `is_hex_colour` (per-window accent validation).
 
-Both curator and warden consume `config-core` (warden is where `fmt`/`colour` originated, since
+All three apps consume `config-core` (warden is where `fmt`/`colour` originated, since
 retrofitted onto the shared crate — there's one implementation, not a copy per app). curator reaches
 it through its own **`curator-config`** crate, which re-exports `format_str`/`format_file`/`Colour`
-(see *Workspace layout*); warden's `warden-config` does the same. The shared crate is deliberately
-leaf-free: each app keeps its own model + validation (in its `*-config` crate) and session/shell cascade. Only
-add to `config-core` what is genuinely identical and leaf-agnostic in *both* apps — don't grow it
+(see *Workspace layout*); warden's `warden-config` and lector's `lector-config` do the same. The
+shared crate is deliberately leaf-free: each app keeps its own model + validation (in its
+`*-config` crate) and session/shell cascade. Only
+add to `config-core` what is genuinely identical and leaf-agnostic in *all three* apps — don't grow it
 into a generic config framework.
 
 ## Shared sidebar chrome: `chrome-core`
 
 The sidebar chrome — banner, grouped tab rows (tile, title, dot slots), kill-confirm overlay,
 density tokens, resize-drag, error bar — is the shared **`chrome-core`** component
-(`https://github.com/Lockyc/chrome-core`), consumed by both curator and warden so a look/behaviour
-change is made once. It's a *build-dependency* pinned by `rev` (like config-core); `src-tauri/build.rs`
+(`https://github.com/Lockyc/chrome-core`), consumed by curator, warden, and lector so a
+look/behaviour change is made once. It's a *build-dependency* pinned by `rev` (like config-core);
+`src-tauri/build.rs`
 writes `SIDEBAR_CSS`/`SIDEBAR_JS` into `src/chrome-core.{css,js}` (git-ignored) before Tauri embeds
 `src/`. curator's `src/chrome.js` is now a **thin controller** over chrome-core's `ChromeSidebar`
 view: it maps the component's callbacks to curator's commands (`onSelect`→`select_tab`/`home_tab`,
@@ -462,7 +466,7 @@ banner-height invariant.
 
 The third shared core (`https://github.com/Lockyc/shell-core`), alongside config-core and chrome-core,
 consumed by git-rev pin. It owns the build/release tooling and the byte-identical sliver of Tauri setup
-that is the same for curator, warden, and any future sibling app.
+that is the same for curator, warden, lector, and any future sibling app.
 
 - **Release scripts are generated, not tracked.** `src-tauri/build.rs` calls
   `shell_core::materialize_scripts("../scripts")`, writing `scripts/{release,gen-latest-json,install-app}.sh`

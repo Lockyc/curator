@@ -321,9 +321,10 @@ with nothing extra to install:
   of Tauri runtime setup. `build.rs` materializes the release scripts (git-ignored) and stamps the
   build; the app registers window-state/updater/process via its `register_plugins`.
 
-Those same cores are also shared with a **sibling app, [warden](https://github.com/Lockyc/warden)**,
-which curates **terminals** the way curator curates **browser tabs**. warden is a peer project,
-not a dependency of curator — it just draws from the same cores.
+Those same cores are also shared with two **sibling apps, [warden](https://github.com/Lockyc/warden)**
+(curates **terminals**) and **[lector](https://github.com/Lockyc/lector)** (curates **local
+documentation sites**), the way curator curates **browser tabs**. Neither is a dependency of
+curator — they're peer projects that just draw from the same cores.
 
 If you want to iterate on a shared core, `just chrome-dev` builds curator against a sibling
 `../chrome-core` checkout (including uncommitted edits) and `just chrome-pin` re-pins to its
