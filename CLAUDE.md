@@ -4,6 +4,9 @@ macOS-only Tauri v2 app (Rust + a static web frontend in `src/`). Build is pure 
 
 Built as the operator-side console for a self-hosted homelab.
 
+**What's next:** `docs/FOLLOWUPS.md` — the durable record of intentionally-deferred work. Start
+there before planning new work; add to it rather than leaving a deferral in a session or a plan.
+
 Dev: `just run`. Build a release `.app`: `just build`. Install/replace it in
 `/Applications` and relaunch: `just deploy`. Tests: `just test` (`cargo test --workspace`).
 There is no CI — run `just gate` locally (format check, clippy, tests) and
@@ -495,12 +498,11 @@ that is the same for curator, warden, lector, and any future sibling app.
 - **The menu spine and the home surface come from shell-core** (`menu::build_spine` /
   `home::{home_state, show_home, close_home}`, both behind the `runtime` feature). `build_app_menu`
   calls `build_spine` for the App/Config/Window submenus and interleaves curator's own Edit and Tabs
-  (see *App menu* / *Window menu* above). The home surface **replaces curator's former error
-  window** — `webviews::build_error_window`/`refresh_error_window`, `WINDOW_ERROR`/`ERROR_VIEW`, and
-  `src/error.html` are all deleted, not kept alongside the shared one. `reconcile_home` (`lib.rs`)
-  calls `home_state` after every load/reload and shows/closes the surface accordingly, covering the
-  no-config and load-error states the old error window handled, plus the window-list state it
-  couldn't express. The surface's "Create a starter config" button is curator's own
+  (see *App menu* / *Window menu* above). `reconcile_home` (`lib.rs`) calls `home_state` after every
+  load/reload and shows/closes the surface accordingly. **The shared home surface is curator's only
+  no-config/load-error surface — don't build a per-app error window alongside it.** It already covers
+  both of those states plus a window-list state a per-app window can't express, and a second surface
+  would drift from the shared one. The surface's "Create a starter config" button is curator's own
   `shell_home_create_config` command, which calls `config_core::write_default_config` with
   curator's tracked `src/default-config.toml` template — shell-core never touches config-core (the
   three cores stay mutually independent; see the constellation `CLAUDE.md`).
@@ -516,11 +518,5 @@ that is the same for curator, warden, lector, and any future sibling app.
   the spine that now wraps them. See shell-core's CLAUDE.md for the full dividing line.
 - Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
   `#PATCH:shell#`), mirroring the chrome-/config- pairs.
-- **Follow-up — a scriptable "open window by title" entry point belongs here (shared).** Nothing outside the
-  app can open/raise/reopen a specific window today: it's GUI-only (the Window menu), and a second
-  `open -a curator --args …` is silently dropped — there's no `tauri-plugin-single-instance`,
-  `tauri-plugin-deep-link`, or CLI-arg handling. Build the entry point **in shell-core** so curator, warden,
-  and future siblings inherit one implementation (same shape as `register_plugins`): single-instance argv
-  (`--window <title>`) or a `<scheme>://window/<title>` deep link, forwarded to the already-running instance
-  and mapped title → open-or-focus. Concrete driver on the warden side: its `work` window is
-  `open_on_start = false`, so `work_startup.sh` needs a command to open it on demand.
+- A scriptable "open window by title" entry point belongs here (shared), not in curator — see
+  `docs/FOLLOWUPS.md`.

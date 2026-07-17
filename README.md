@@ -90,15 +90,21 @@ build from source.
 
 ## Setup
 
-1. Copy the sample config into place:
+1. Get a config in place. Launch curator with no config and it opens its **home** screen, which
+   names the path it expects and offers a **Create a starter config** button — click it and
+   curator writes a minimal starter to `~/.config/curator/config.toml` for you. (It never
+   overwrites: if a config is already there, it says so and leaves it untouched.)
+
+   Prefer to start from the fuller two-window example instead, or want it in place before first
+   launch:
 
    ```sh
    mkdir -p ~/.config/curator
    cp examples/config.toml ~/.config/curator/config.toml
    ```
 
-   It lives under `~/.config/` so it slots into a dotfiles workflow — your curated tab set
-   becomes versioned, portable config.
+   Either way it lives under `~/.config/` so it slots into a dotfiles workflow — your curated tab
+   set becomes versioned, portable config.
 
 2. Run it (requires Rust + the Tauri CLI; the installer backstops this via `cargo install tauri-cli`):
 

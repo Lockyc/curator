@@ -156,6 +156,19 @@ shell-pin:
     cargo update -p shell-core
     echo "✓ pinned shell-core → $rev (patch deactivated). Commit src-tauri/Cargo.toml + Cargo.lock."
 
+# Re-render docs/social-preview.png (GitHub's repo social preview) from its .svg source of truth.
+# docs/social-preview.svg is the source — edit that, never the .png, then run this.
+# Needs librsvg (`brew install librsvg` / `apt-get install librsvg2-bin`); ImageMagick is NOT a
+# substitute here — it has no rsvg delegate and fails on this file's text elements.
+[group("dist")]
+social-preview:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    command -v rsvg-convert >/dev/null 2>&1 || { echo "✗ rsvg-convert not found — brew install librsvg"; exit 1; }
+    rsvg-convert -w 1280 -h 640 docs/social-preview.svg -o docs/social-preview.png
+    echo "✓ docs/social-preview.png ← docs/social-preview.svg (1280×640, GitHub's social-preview size)"
+
 # Build the release .app bundle (needs the Tauri CLI: `cargo install tauri-cli --version ^2`)
 [group("dist")]
 build:
