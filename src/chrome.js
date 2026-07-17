@@ -116,6 +116,16 @@ async function refresh() {
   reportRect();
 }
 
+// Shared by chrome-core's own row-unload control (onUnload below) and the ⌘W menu shortcut's
+// "close-tab" event (below) — both mean the same thing (unload the given/active tab to cold), so
+// this is the one place that does it rather than two copies.
+async function unloadTab(tabId) {
+  await invoke("unload_tab", { label: tabId }).catch(() => {});
+  // Unloading may make Rust promote a load_on_open tab to active (or clear it) — re-render so
+  // the highlight + loaded dots follow the new state (get_tabs carries the new active).
+  await refresh();
+}
+
 async function mountChrome() {
   const id = await invoke("window_identity");
   const title = (id && id.title) || "";
@@ -129,12 +139,7 @@ async function mountChrome() {
         // Re-clicking the active tab snaps it home (curator's home-on-active); otherwise select it.
         invoke(wasActive ? "home_tab" : "select_tab", { label: tabId }).catch(() => {});
       },
-      async onUnload(tabId) {
-        await invoke("unload_tab", { label: tabId }).catch(() => {});
-        // Unloading may make Rust promote a load_on_open tab to active (or clear it) — re-render so
-        // the highlight + loaded dots follow the new state (get_tabs carries the new active).
-        await refresh();
-      },
+      onUnload: unloadTab,
       onResize(width) {
         // The chrome is the window's full-size main webview: the sidebar's visible width is CSS
         // (set here); the flex #content-hole follows, and reportRect tells Rust where to put the
@@ -147,6 +152,7 @@ async function mountChrome() {
     },
     {
       header: buildNavPill(),
+      appName: "curator",
       storageKey: "curator:sidebar-width:" + title,
       defaultWidth,
       minWidth: MIN_W,
@@ -218,6 +224,11 @@ listen("service-badge", (e) => {
 // ⌘1–9 jump. The component resolves the target and routes it through the normal select path.
 listen("nav-tab", (e) => sb.selectByOffset(e.payload, { liveOnly: false }));
 listen("jump-tab", (e) => sb.selectByIndex(e.payload));
+// The menu spine's ⌘W (Tabs ▸ Close Tab): unloads whichever tab is active in THIS window. lib.rs
+// routes it via emit_to_focused_chrome, so only the focused window's chrome receives it.
+listen("close-tab", () => {
+  if (activeLabel) unloadTab(activeLabel);
+});
 // A desktop-notification banner was clicked (A2): select+activate the tab that fired it.
 // Skip when it's already the active tab — re-selecting it would trip the home-on-active gesture
 // (onSelect wasActive → home_tab), navigating away from the very thing the banner was about; the

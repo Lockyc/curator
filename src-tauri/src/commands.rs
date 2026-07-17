@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State, Webview, Window};
 
+/// curator's starter config. Tracked, and `include_str!`'d so a missing/renamed template is a
+/// build error rather than a runtime surprise.
+const DEFAULT_CONFIG: &str = include_str!("../../src/default-config.toml");
+
 /// A tab plus its runtime state: whether its content webview is warm, and whether it's the
 /// active (visible) tab.
 #[derive(Serialize)]
@@ -384,6 +388,52 @@ pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     };
     reset_window_tabs(app, &wid)
+}
+
+/// The home surface's "Create a starter config" button. This is where config-core is called (via
+/// `curator_config`'s re-export — this crate never pins config-core directly, the same one-source
+/// rule as its other re-exported house helpers) — shell-core owns the surface but never touches
+/// config-core (the cores stay independent).
+///
+/// Routes through the exact same [`crate::reload_windows`] the config-file watcher uses (not a
+/// bespoke "build windows from scratch" path): `reload_windows` diffs against `AppState.last_cfg`,
+/// which is still `Config::default()` here (this button only shows when no config existed at all),
+/// so the diff naturally treats every window the fresh config defines as newly added.
+#[tauri::command]
+pub fn shell_home_create_config(app: AppHandle) -> Result<(), String> {
+    let path = curator_config::resolve_config_path();
+    match curator_config::write_default_config(&path, DEFAULT_CONFIG) {
+        // A config already existed — say so rather than report a success that didn't happen.
+        Ok(false) => Err(format!(
+            "{} already exists — left untouched",
+            path.display()
+        )),
+        Ok(true) => match curator_config::load_config(&path) {
+            Ok((cfg, warnings)) => {
+                crate::log_config_warnings(&warnings);
+                crate::reload_windows(&app, &cfg);
+                Ok(())
+            }
+            Err(e) => Err(e.to_string()),
+        },
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// The home surface's "Edit Config" button (shown for a `Broken` config). Reuses the spine's own
+/// Edit Config action rather than a second `open` spawn — same one-source-of-truth reason the menu
+/// handler consumes `handle_spine_event` first.
+#[tauri::command]
+pub fn shell_home_edit_config() {
+    let path = curator_config::resolve_config_path();
+    shell_core::menu::handle_spine_event(shell_core::menu::ids::EDIT_CONFIG, &path);
+}
+
+/// The home surface's per-window button (shown for the `Windows` list state): open, or focus if
+/// already open. Same path the menu spine's Window submenu uses for the same id.
+#[tauri::command]
+pub fn shell_home_open_window(id: String, app: AppHandle) {
+    crate::open_or_focus_window(&app, &id);
 }
 
 #[cfg(test)]

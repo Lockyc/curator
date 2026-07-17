@@ -13,9 +13,9 @@
          webviews cover (they're add_child siblings composited ABOVE this webview). When no tab covers
          it, the opaque #empty-state shows through. -->
     <div id="app">
-      <!-- chrome-core mounts here (adds .cc-root + banner/rows/resize). The drag attr covers the
-           `padding-top` title-bar inset (traffic-light zone) that sits ABOVE chrome-core's children;
-           the sidebar BODY drag is stamped by chrome-core per the windowDrag DTO flag. -->
+      <!-- chrome-core mounts here (adds .cc-root + banner/rows/resize), including its own
+           `#cc-titlebar` strip (the `appName` mount config) over the traffic-light zone; the
+           sidebar BODY drag is stamped by chrome-core per the windowDrag DTO flag. -->
       <aside id="sidebar" data-tauri-drag-region></aside>
       <div id="content-hole" data-tauri-drag-region>
         <!-- Muted curator mark — shown by the controller when no tab is selected. Composited BEHIND

@@ -1,0 +1,20 @@
+# curator config — one tab per web app. Edit and save; curator hot-reloads.
+
+[[window]]
+  title = "Web"
+
+  # A tab is a URL. `load_on_open` keeps it live so it keeps syncing and can notify in the
+  # background; without it the tab loads lazily on first click.
+  # [[window.tab]]
+  #   title        = "Gmail"
+  #   url          = "https://mail.google.com/"
+  #   load_on_open = true
+
+  # Every tab shares one login store by default. Give a tab its own account with `session`;
+  # reuse the same name elsewhere to share that login.
+  # [[window.group]]
+  #   name = "Work"
+  #   [[window.group.tab]]
+  #     title   = "Calendar"
+  #     url     = "https://calendar.google.com/"
+  #     session = "work"

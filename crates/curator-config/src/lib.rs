@@ -2,7 +2,9 @@
 //!
 //! The house-style TOML formatter + colour parsing are shared with warden via the config-core crate,
 //! re-exported here so the app (`src-tauri`) uses `curator_config::{Colour, format_file, format_str}`.
-pub use config_core::{fmt_cli, format_file, format_str, Colour, ColourError};
+pub use config_core::{
+    fmt_cli, format_file, format_str, write_default_config, Colour, ColourError, SeedError,
+};
 
 // Pure label-identity helpers (FNV-1a hash + window-label namespacing), used when resolving each
 // tab's webview label below. No Tauri/macOS deps, so the crate stays platform-neutral.
@@ -315,26 +317,19 @@ pub fn load_config(path: &Path) -> Result<(Config, Vec<Warning>), ConfigError> {
     parse_and_validate(&src)
 }
 
-/// Config path to load at launch: `$CURATOR_CONFIG` if set, else [`default_config_path`].
-///
-/// The env override lets `just dev` point at the repo's `examples/config.toml` so iterating
-/// on curator never touches the developer's real `~/.config/curator/config.toml`.
+const CONFIG_ENV: &str = "CURATOR_CONFIG";
+const CONFIG_DIR: &str = "curator";
+
+/// Config path to load at launch: `$CURATOR_CONFIG` if set and non-empty, else
+/// [`default_config_path`]. Shared with warden and lector via config-core — including the
+/// set-but-empty fall-through, which this app previously got wrong.
 pub fn resolve_config_path() -> std::path::PathBuf {
-    std::env::var_os("CURATOR_CONFIG")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(default_config_path)
+    config_core::resolve_config_path(CONFIG_ENV, CONFIG_DIR)
 }
 
 /// Default config location: `~/.config/curator/config.toml`.
-///
-/// Deliberately `~/.config` (not `dirs::config_dir()`, which on macOS is
-/// `~/Library/Application Support`) so the config slots into the dotfiles bare-repo workflow.
 pub fn default_config_path() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".config")
-        .join("curator")
-        .join("config.toml")
+    config_core::default_config_path(CONFIG_DIR)
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -646,6 +641,16 @@ reload_every = 15
             resolve_config_path(),
             std::path::PathBuf::from("/tmp/curator-dev.toml")
         );
+        std::env::remove_var("CURATOR_CONFIG");
+    }
+
+    #[test]
+    fn a_set_but_empty_env_var_falls_through_to_the_default() {
+        // curator shipped this bug: `var_os(..).map(PathBuf::from)` turned an empty
+        // CURATOR_CONFIG into PathBuf::from(""), whose only symptom was
+        // "cannot read config: No such file or directory".
+        std::env::set_var("CURATOR_CONFIG", "");
+        assert_eq!(resolve_config_path(), default_config_path());
         std::env::remove_var("CURATOR_CONFIG");
     }
 

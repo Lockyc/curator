@@ -12,9 +12,10 @@ html, body { margin: 0; height: 100vh; overflow: hidden; background: #1e1e1e; } 
 #app { height: 100vh; display: flex; flex-direction: row; }
 
 /* chrome-core mount container. `width` is the resize-controlled sidebar width (set inline by the
-   controller's onResize; defaults to chrome-core's density token). `padding-top` clears the
-   floating traffic lights (full-size Overlay content view). chrome-core adds `.cc-root`. */
-#sidebar { width: var(--cc-sidebar-w, 240px); flex: none; padding-top: 28px; }
+   controller's onResize; defaults to chrome-core's density token). chrome-core's own banner strip
+   now owns the traffic-light inset (full-size Overlay content view) — no page-level padding-top
+   here. chrome-core adds `.cc-root`. */
+#sidebar { width: var(--cc-sidebar-w, 240px); flex: none; }
 
 /* The content hole the content webviews cover; visible only where none does (→ #empty-state). */
 #content-hole { flex: 1; position: relative; background: #1e1e1e; }

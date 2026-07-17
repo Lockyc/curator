@@ -45,15 +45,9 @@ use crate::escape;
 use curator_config::TabView;
 use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
-    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalSize, TitleBarStyle, WebviewUrl,
-    Window, WindowEvent,
+    AppHandle, LogicalPosition, LogicalSize, Manager, TitleBarStyle, WebviewUrl, Window,
+    WindowEvent,
 };
-
-/// Window label for the fallback error window (config failed to load / no windows defined).
-/// Not a real window id, so it never collides with a `w<hex>` window.
-pub const WINDOW_ERROR: &str = "curator-error";
-/// Webview label inside the error window (so we can refresh its message on a later failure).
-const ERROR_VIEW: &str = "curator-error-view";
 
 /// Default sidebar width, delivered to the chrome via `window_identity` as its reset/first-run
 /// default. It is *only* a default: the chrome (chrome-core) owns the sidebar width and its clamp,
@@ -91,13 +85,6 @@ fn random_nonce() -> String {
         let _ = write!(s, "{b:02x}");
     }
     s
-}
-
-/// Current inner size of the window in logical px.
-fn logical_inner(window: &Window) -> (f64, f64) {
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let size = window.inner_size().unwrap_or(PhysicalSize::new(1280, 860));
-    (size.width as f64 / scale, size.height as f64 / scale)
 }
 
 /// The content hole's rect in logical px (top-left origin), exactly as the chrome measures its
@@ -177,8 +164,9 @@ pub fn build_window(
     // Saved bounds (size/position/maximized) are restored by tauri-plugin-window-state's own
     // `window_created` hook, which runs on the main thread *inside* the event loop — where its
     // `set_size`/`set_position` (and the monitor-intersection check that keeps a stale off-screen
-    // position from stranding the window) resolve inline. Every window is covered except WINDOW_ERROR
-    // (`skip_initial_state` in lib.rs, which must not restore its throwaway bounds).
+    // position from stranding the window) resolve inline. Every window is covered except the shared
+    // home surface (`shell_core::home::HOME_LABEL`, passed to `skip_initial_state` in lib.rs, which
+    // must not restore its throwaway bounds).
     //
     // FOOTGUN: do NOT call `window.restore_state(...)` here. It looks right — windows are built at
     // runtime, so restore them by hand — but `restore_state` reads/sets geometry via calls that
@@ -306,58 +294,6 @@ pub fn create_content_webview(
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
     }
     Ok(())
-}
-
-/// Escape a string for embedding inside a double-quoted JS string literal.
-fn js_string_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 8);
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// Build a standalone error window shown when the config can't be loaded or defines no windows.
-/// A single webview fills it and displays `message`; the app menu (incl. Config ▸ Edit Config)
-/// still works, so the user can fix the config — after which hot-reload opens the real windows
-/// and closes this one. Labelled `WINDOW_ERROR` so the reload path can find and close it.
-pub fn build_error_window(app: &AppHandle, message: &str) -> tauri::Result<Window> {
-    let window = tauri::window::WindowBuilder::new(app, WINDOW_ERROR)
-        .title("curator")
-        .inner_size(720.0, 420.0)
-        .title_bar_style(TitleBarStyle::Overlay)
-        .build()?;
-
-    let view = WebviewBuilder::new(ERROR_VIEW, WebviewUrl::App("error.html".into()))
-        .initialization_script(format!(
-            "window.__CURATOR_ERROR__ = \"{}\";",
-            js_string_escape(message)
-        ));
-    let (w, h) = logical_inner(&window);
-    window.add_child(view, LogicalPosition::new(0.0, 0.0), LogicalSize::new(w, h))?;
-    Ok(window)
-}
-
-/// Update the open error window's message in place (a later config save that still fails). Eval
-/// is a Rust→webview push, so it needs no capability. No-op if the error window isn't open.
-pub fn refresh_error_window(app: &AppHandle, message: &str) {
-    if let Some(view) = app
-        .get_window(WINDOW_ERROR)
-        .and_then(|w| w.get_webview(ERROR_VIEW))
-    {
-        let _ = view.eval(format!(
-            "var m=document.getElementById('msg'); if (m) m.textContent = \"{}\";",
-            js_string_escape(message)
-        ));
-    }
 }
 
 /// Navigate a content webview back to its canonical URL (reset / periodic reload).
