@@ -27,3 +27,7 @@ docs/superpowers/
 
 # Release zips built by scripts/release.sh for upload — the release carries them, not the tree
 /curator-*-macos.zip
+
+# Agent worktrees (<repo>/.claude/worktrees/<branch>) — full checkouts of this repo's own
+# branches; committing them would be circular. Tracked here so a fresh clone is covered.
+.claude/worktrees/
