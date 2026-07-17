@@ -177,8 +177,10 @@ pub fn build_window(
     // short-circuited before the marshal); the first matching title — e.g. renaming a window onto an
     // old entry — froze the app.
 
-    // Route a user close (native red button or ⌘W) through the shared close logic so it can't
-    // strand the app and doesn't leak the window's unread/timers (see lib.rs). Content-webview
+    // Route a user close (native red button or ⌘⇧W) through the shared close logic so it can't
+    // strand the app and doesn't leak the window's unread/timers (see lib.rs). ⌘W no longer closes
+    // the window — it unloads the active tab (the spine's Close Tab item) — so it never reaches
+    // here. Content-webview
     // repositioning is NOT wired here: the chrome's `#content-hole` is a flex child, so a window
     // resize reflows it in the webview, the chrome's ResizeObserver fires `reportRect`, and the
     // resulting `set_hole_rect` repositions the content — the same JS-reported path warden uses.

@@ -179,19 +179,32 @@ active tab, keep `load_on_open` tabs shown, hide the rest.
 
 **Dock badge** aggregates the unread count across every window's loaded tabs.
 
-**Window menu** — a real **Window** submenu lets the user close a window (⌘W) and reopen any
-closed window from the list. All configured windows open at launch; closed windows can be
-reopened from the Window menu while the app is still running. Both ⌘W and the native red button
-flow through `on_real_window_close`, which wipes the closed window's unread/timers while keeping
-its `WindowRuntime` registered so its cfg survives for reopen — and **quits curator when the last
-window closes** (last-window-quit, matching warden), rather than lingering as a menu-bar-only app.
-Config-reload window removal uses `destroy()` (not the user-close path), so a reload that drops a
-window doesn't trip last-window-quit mid-reconcile.
+**Window menu** — the shared spine's **Window** submenu (`shell_core::menu::build_spine`) lets the
+user close the focused window (**⌘⇧W**) and reopen any closed window from the list (checked when
+open, `"{title}  (closed)"` when not — warden's shape, adopted here). All configured windows open
+at launch; closed windows can be reopened from the Window menu while the app is still running.
+Both ⌘⇧W and the native red button flow through `on_real_window_close`, which wipes the closed
+window's unread/timers while keeping its `WindowRuntime` registered so its cfg survives for reopen
+— and **quits curator when the last window closes** (last-window-quit, matching warden), rather
+than lingering as a menu-bar-only app. Config-reload window removal uses `destroy()` (not the
+user-close path), so a reload that drops a window doesn't trip last-window-quit mid-reconcile.
 
-**App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must
-be re-added by hand. The **Edit** submenu is load-bearing: its predefined items own the
-clipboard accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content
-webviews. Keep Edit (and Window/Hide) when touching the menu.
+**⌘W is now Close Tab, not Close Window — a user-visible behaviour change to a shipped, notarized
+app.** Before the family menu spine landed, curator's ⌘W closed the whole window; that was the
+bug, not a legitimate divergence. ⌘W now unloads the active tab to cold (kill the webview → it
+respawns on next select) via the spine's `Close Tab` item, which curator places in its own **Tabs**
+submenu (see below) — matching warden, which always had this right, and lector, which adopted it
+fresh. ⌘⇧W closes the window.
+
+**App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must be
+re-added by hand. **The App, Config, and Window submenus are the shared spine**
+(`shell_core::menu::build_spine`, called from `build_app_menu`) — About, Check for Updates…, Edit
+Config, Reveal Config in Finder, and the window list/reopen are identical across curator, warden,
+and lector and live in shell-core now; curator only supplies its name, config path, and window
+list. **Edit and Tabs stay curator's own** — genuinely not app-agnostic, so the spine doesn't touch
+them. The **Edit** submenu is load-bearing: its predefined items own the clipboard accelerators
+(⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content webviews. Keep Edit (and
+Window/Hide) when touching the menu.
 
 The **Tabs** submenu also carries keyboard tab navigation: **⌘1–9** jump to a tab position and
 **⌘⇧]** / **⌘⇧[** cycle next/previous. The handlers `emit_to_focused_chrome` a `nav-tab` /
@@ -219,7 +232,9 @@ siblings that composite **above** the main chrome webview over the hole (guarant
 `zorder::raise_to_front` on the active tab). When no content webview covers the hole, the opaque
 `#empty-state` (muted curator mark, in `index.html`) shows; `chrome.js` toggles it on `active`. No
 transparency needed (content is opaque; unlike warden's native surfaces). The traffic-light inset is
-CSS (`#sidebar { padding-top: 28px }`), owned by the frontend — Rust does not offset the chrome.
+owned by chrome-core's own `#cc-titlebar` strip now (the `appName: "curator"` mount-config field,
+which also names the app beside the lights) — curator's `#sidebar` carries no `padding-top` of its
+own; Rust does not offset the chrome.
 
 The sidebar's **visible width is JS-owned CSS** (`#sidebar` inline width, set by `chrome.js`'s
 `onResize`); the content webviews' geometry is **whatever the chrome reports**, not something Rust
@@ -259,7 +274,8 @@ entry — froze the app. State is keyed by Tauri label (== `window_id`,
 derived from the title, stable across launches) *within a per-config state file*
 (`window_state_filename` hashes the config path) so two configs that reuse a window title don't
 share bounds. The config `width`/`height` is only the first-run default — saved bounds override it
-once present. The transient error window is `skip_initial_state`-excluded. Renaming a window's
+once present. The transient home surface (`shell_core::home::HOME_LABEL`) is
+`skip_initial_state`-excluded. Renaming a window's
 `title` changes its id/label, so it normally restores fresh default bounds — unless the new title
 happens to hash to a label already in the state file, which is how the rename-onto-old-entry case
 above arises. Sidebar width is separate (per-title `localStorage`, above).
@@ -476,14 +492,28 @@ that is the same for curator, warden, lector, and any future sibling app.
 - **The build stamp comes from shell-core.** `build.rs` calls `shell_core::build_stamp()`, emitting
   `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`). These shared, un-prefixed names
   replaced curator's former app-prefixed local stamp — use them; don't reintroduce app-prefixed names.
+- **The menu spine and the home surface come from shell-core** (`menu::build_spine` /
+  `home::{home_state, show_home, close_home}`, both behind the `runtime` feature). `build_app_menu`
+  calls `build_spine` for the App/Config/Window submenus and interleaves curator's own Edit and Tabs
+  (see *App menu* / *Window menu* above). The home surface **replaces curator's former error
+  window** — `webviews::build_error_window`/`refresh_error_window`, `WINDOW_ERROR`/`ERROR_VIEW`, and
+  `src/error.html` are all deleted, not kept alongside the shared one. `reconcile_home` (`lib.rs`)
+  calls `home_state` after every load/reload and shows/closes the surface accordingly, covering the
+  no-config and load-error states the old error window handled, plus the window-list state it
+  couldn't express. The surface's "Create a starter config" button is curator's own
+  `shell_home_create_config` command, which calls `config_core::write_default_config` with
+  curator's tracked `src/default-config.toml` template — shell-core never touches config-core (the
+  three cores stay mutually independent; see the constellation `CLAUDE.md`).
 - **Plugin registration comes from shell-core.** `lib.rs` registers window-state + updater + process via
-  `shell_core::register_plugins(builder, window_state_filename(), &[webviews::WINDOW_ERROR])`. The three
-  plugin crates stay direct deps (capability resolution + `window_state_filename` is curator's own); only
-  the registration is shared. The `runtime` feature pulls tauri; the `build.rs` build-dep uses
+  `shell_core::register_plugins(builder, window_state_filename(), &[shell_core::home::HOME_LABEL])`.
+  The three plugin crates stay direct deps (capability resolution + `window_state_filename` is curator's
+  own); only the registration is shared. The `runtime` feature pulls tauri; the `build.rs` build-dep uses
   `default-features = false` so it stays zero-tauri (resolver 2 keeps the two separate).
 - **Deliberately NOT shared** (each diverges per app, don't consolidate): IPC fan-out, the config watcher,
-  menu construction, and the chrome-caller command gate (`is_chrome_caller` is curator-only — warden hosts
-  no untrusted webviews). See shell-core's CLAUDE.md for the full dividing line.
+  the chrome-caller command gate (`is_chrome_caller` is curator-only — warden hosts no untrusted
+  webviews), and the **app-specific menu items** — curator's Edit (clipboard accelerators) and Tabs
+  (keyboard nav, Reload Tab, Reset All Tabs, Open Developer Tools) genuinely aren't app-agnostic, unlike
+  the spine that now wraps them. See shell-core's CLAUDE.md for the full dividing line.
 - Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
   `#PATCH:shell#`), mirroring the chrome-/config- pairs.
 - **Follow-up — a scriptable "open window by title" entry point belongs here (shared).** Nothing outside the
