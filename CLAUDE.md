@@ -322,10 +322,9 @@ back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. 
    shared release script — edit it in shell-core, never here (the local copy is regenerated on the
    next build).
 
-This is part of cutting a release, not a follow-up; do it without being asked. The updater-signing
-**password lives only in the vault**, so `just release` needs a vault-unlock to hand
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to the build env (the Apple notary creds are already exported in
-the shell env, so they need no paste).
+This is part of cutting a release, not a follow-up; do it without being asked. `just release` needs
+`TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD`) present in the build env alongside the Apple notary creds
+— see *In-app updates* below for where the key lives and what it signs.
 
 `just build` **signs with Developer ID and notarizes + staples automatically** when the
 Apple signing/notary env vars are present in the build environment — `APPLE_SIGNING_IDENTITY`
