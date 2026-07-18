@@ -58,7 +58,7 @@ file-driven, everything else is ephemeral.
 - **Window menu** — close a window (⌘⇧W); reopen any closed window from the Window menu.
   Closing the last open window quits curator.
 
-## Quick install
+## Install
 
 In **Claude Code**, run `/curator:install` — it checks prerequisites (offering to install
 any that are missing), builds curator from source into `~/.curator`, installs `curator.app`
