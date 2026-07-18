@@ -16,6 +16,10 @@ pub struct TabItem {
     view: TabView,
     loaded: bool,
     active: bool,
+    /// Popped out into its own detached window (`pop_out_tab`). The chrome renders a ⤢ mark and
+    /// maps a click on the row to "raise the popped-out window" (`raise_popped_window`) rather than
+    /// selecting it. Invisible to the component until `chrome.js`'s DTO mapping forwards it.
+    detached: bool,
 }
 
 /// The window id of the window owning the invoking webview. A command is invoked from a
@@ -140,10 +144,12 @@ pub fn get_tabs(webview: Webview, state: State<AppState>) -> Vec<TabItem> {
         .map(|view| {
             let loaded = rt.tabs.is_created(&view.label);
             let active = active.as_deref() == Some(view.label.as_str());
+            let detached = rt.tabs.is_detached(&view.label);
             TabItem {
                 view,
                 loaded,
                 active,
+                detached,
             }
         })
         .collect()
@@ -211,6 +217,14 @@ pub fn set_hole_rect(
         width: rect.width,
         height: rect.height,
     };
+    // A detached (popped-out) window reports its own hole via this same command (shell-core's
+    // `detach.html`, whose primary webview label == the detached window label, so `require_chrome`
+    // passes). It's NOT in `AppState.windows` — its bookkeeping lives in `AppState.detached` — so
+    // skip the runtime store and just position its recreated content webview under the banner.
+    if shell_core::detach::is_detached_label(&wid) {
+        webviews::layout_webviews(&window, hole);
+        return Ok(());
+    }
     // Store under the lock, then reposition after releasing it (webview ops marshal to the main
     // thread; `set_hole_rect` is a sync command so they run inline, but keeping them off the lock
     // matches the window-mutex discipline in the rest of this file).
@@ -351,6 +365,143 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     Ok(())
 }
 
+/// Pop the tab `label` out of the calling window into its own detached window. curator can't move a
+/// webview, so the tab's content webview is *recreated* on the new window — login survives because
+/// the WKWebsiteDataStore is keyed on `view.session`, independent of window/webview identity. The
+/// origin's content webview is closed and the row stays as a popped-out placeholder (⤢) until the
+/// detached window closes, at which point [`crate::redock`] recreates the tab back on the origin.
+///
+/// Lock discipline: the `windows` lock is held only to resolve the view + mark the tab detached
+/// (phase 1); it is never held across the webview close, the detached-window build, or the wiring.
+#[tauri::command]
+pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
+    require_chrome(&webview)?;
+    let (origin_window, origin_wid) = calling_window(&webview)?;
+    let app = webview.app_handle().clone();
+
+    // Phase 1 — under the lock: resolve the TabView + accent + size + hole, mark the tab detached
+    // (drops it from created/active), and if it was active pick the neighbour to promote.
+    let (view, colour, width, height, origin_hole, relayout) = {
+        let mut windows = state.windows.lock().unwrap();
+        let rt = windows.get_mut(&origin_wid).ok_or("no such window")?;
+        let views = rt.cfg.tab_views(rt.global_session.as_deref());
+        let view = views
+            .iter()
+            .find(|v| v.label == label)
+            .ok_or("unknown tab")?
+            .clone();
+        let colour = rt.cfg.colour.clone();
+        let (width, height) = (rt.cfg.width as f64, rt.cfg.height as f64);
+        let origin_hole = rt.hole;
+        let was_active = rt.tabs.active() == Some(label.as_str());
+        rt.tabs.mark_detached(&label);
+        let relayout = if was_active {
+            let created: Vec<bool> = views.iter().map(|v| rt.tabs.is_created(&v.label)).collect();
+            let new_active = fallback_active(&views, &label, &created);
+            if let Some(a) = &new_active {
+                rt.tabs.set_active(a);
+            }
+            Some((views, new_active))
+        } else {
+            None
+        };
+        (view, colour, width, height, origin_hole, relayout)
+    };
+
+    // Phase 2 — lock released: close the origin's content webview (its app-global label must be free
+    // before the same tab is recreated on the detached window), drop its unread contribution, and
+    // relayout the origin around the promoted neighbour if the popped tab was the active one.
+    if let Some(wv) = origin_window.get_webview(&label) {
+        let _ = wv.close();
+    }
+    crate::awareness::forget_tab(&app, &origin_wid, &label);
+    if let Some((views, new_active)) = &relayout {
+        let _ = webviews::apply_active(&origin_window, new_active.as_deref(), views);
+    }
+
+    // Phase 3 — build the detached window; its birth closure recreates the tab's webview under the
+    // banner (collision-free now the origin's copy is closed). detach.html reports the exact content
+    // hole via set_hole_rect shortly after; birth_hole just places it sensibly for the first frame.
+    let spec = shell_core::detach::DetachSpec {
+        title: view.title.clone(),
+        colour,
+        width,
+        height,
+    };
+    let token = crate::detach_window_token(&label);
+    let birth_hole = webviews::HoleRect {
+        x: 0.0,
+        y: crate::DETACH_BANNER_H,
+        width,
+        height: (height - crate::DETACH_BANNER_H).max(0.0),
+    };
+    let view_for_birth = view.clone();
+    let build = shell_core::detach::open_detached(&app, &token, &spec, "curator", |win| {
+        let w = win.as_ref().window();
+        webviews::create_content_webview(&w, &view_for_birth, birth_hole)
+    });
+
+    let detached_label = match build {
+        Ok(l) => l,
+        Err(e) => {
+            // Build/recreate failed: the tab has no webview anywhere (origin's is closed, and
+            // open_detached tore its own window back down). Restore it on the origin so it isn't a
+            // permanent placeholder, then report the failure.
+            {
+                let mut windows = state.windows.lock().unwrap();
+                if let Some(rt) = windows.get_mut(&origin_wid) {
+                    rt.tabs.clear_detached(&label);
+                    rt.tabs.mark_created(&label);
+                }
+            }
+            let _ = webviews::create_content_webview(&origin_window, &view, origin_hole);
+            return Err(format!("couldn't pop out tab: {e}"));
+        }
+    };
+
+    // Phase 4 — record the bookkeeping and wire the return-on-close.
+    state.detached.lock().unwrap().insert(
+        detached_label.clone(),
+        crate::CuratorDetached {
+            origin_wid: origin_wid.clone(),
+            tab_label: label.clone(),
+            view,
+        },
+    );
+    if let Some(win) = app.get_webview_window(&detached_label) {
+        let app2 = app.clone();
+        let label2 = detached_label.clone();
+        shell_core::detach::wire_return(&win, move || crate::redock(&app2, &label2));
+    }
+    Ok(())
+}
+
+/// Raise the detached window hosting tab `label` (popped out of the calling window). The chrome
+/// calls this instead of `select_tab` when a *detached* row is clicked — there is no local webview
+/// to select, so "select" means "bring its popped-out window forward". No-op if the tab isn't
+/// actually popped out (a stale click) or its window is gone.
+#[tauri::command]
+pub fn raise_popped_window(label: String, webview: Webview, state: State<AppState>) {
+    if !is_chrome_caller(&webview) {
+        return;
+    }
+    let origin_wid = calling_window_id(&webview);
+    let app = webview.app_handle();
+    let target = state
+        .detached
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(_, d)| d.origin_wid == origin_wid && d.tab_label == label)
+        .map(|(l, _)| l.clone());
+    if let Some(l) = target {
+        if let Some(win) = app.get_window(&l) {
+            let _ = win.unminimize();
+            let _ = win.set_focus();
+        }
+    }
+}
+
 /// Window id to drive from a menu command: the focused window (menu items act on whichever
 /// window has key focus).
 fn focused_window_id(app: &AppHandle) -> Option<String> {
@@ -449,7 +600,33 @@ pub fn shell_home_open_window(id: String, app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::label_is_chrome;
+    use super::{label_is_chrome, TabItem};
+    use curator_config::TabView;
+
+    #[test]
+    fn tab_item_serializes_the_detached_flag() {
+        // The chrome renders the ⤢ popped-out mark off this field; if it stops being serialized the
+        // sidebar silently can't distinguish a detached tab (the "invisible until forwarded" trap,
+        // Rust side). Flattened TabView fields sit alongside it.
+        let item = TabItem {
+            view: TabView {
+                label: "w0:tab-abc".into(),
+                group: None,
+                title: "Mail".into(),
+                url: "https://mail.example/".into(),
+                load_on_open: false,
+                reload_every: None,
+                session: String::new(),
+            },
+            loaded: false,
+            active: false,
+            detached: true,
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["detached"], serde_json::json!(true));
+        assert_eq!(json["loaded"], serde_json::json!(false));
+        assert_eq!(json["label"], serde_json::json!("w0:tab-abc")); // flattened view field
+    }
 
     #[test]
     fn only_chrome_labels_are_callers() {

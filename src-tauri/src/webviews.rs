@@ -6,6 +6,14 @@ use std::collections::HashSet;
 pub struct TabState {
     created: HashSet<String>,
     active: Option<String>,
+    /// Tabs currently popped out into their own detached window (`pop_out_tab`). Its origin
+    /// content webview is closed — so it is NOT `created` — but it is not gone either: the row
+    /// stays in the sidebar as a popped-out placeholder (`detached: true` in the DTO, rendered
+    /// with the ⤢ mark), and reconcile/select/neighbour logic skip it (never recreate it on the
+    /// origin, never promote it active). Cleared by `clear_detached` when the tab redocks. Kept
+    /// distinct from `created` so `is_created` (the sidebar live dot / neighbour signal) reads
+    /// false for a detached tab while `is_detached` still marks it present.
+    detached: HashSet<String>,
 }
 
 impl TabState {
@@ -26,6 +34,25 @@ impl TabState {
         if self.active.as_deref() == Some(label) {
             self.active = None;
         }
+    }
+    /// Whether `label` is currently popped out into its own detached window.
+    pub fn is_detached(&self, label: &str) -> bool {
+        self.detached.contains(label)
+    }
+    /// Mark `label` popped out: its origin content webview is closed (so it's no longer `created`)
+    /// and it can't be the active tab (its content isn't on this window). The caller closes the
+    /// webview and, if it was active, promotes a neighbour. Idempotent.
+    pub fn mark_detached(&mut self, label: &str) {
+        self.created.remove(label);
+        self.detached.insert(label.to_string());
+        if self.active.as_deref() == Some(label) {
+            self.active = None;
+        }
+    }
+    /// Clear the popped-out mark when the tab redocks (its detached window closed). The caller
+    /// recreates the origin webview and re-marks it `created`.
+    pub fn clear_detached(&mut self, label: &str) {
+        self.detached.remove(label);
     }
     /// Created-webview labels absent from `keep` (the new config's labels) — orphaned by a
     /// reload that changed a tab's URL (its hash-derived label moves) or removed the tab.
@@ -363,6 +390,55 @@ mod tests {
         s.mark_unloaded("tab-0");
         assert!(!s.is_created("tab-0"));
         assert_eq!(s.active(), None);
+    }
+
+    #[test]
+    fn detaching_the_active_tab_clears_created_and_active_and_marks_detached() {
+        let mut s = TabState::default();
+        s.mark_created("tab-0");
+        s.set_active("tab-0");
+        s.mark_detached("tab-0");
+        // The origin webview is closed → no longer created, no longer active…
+        assert!(!s.is_created("tab-0"));
+        assert_eq!(s.active(), None);
+        // …but present as a popped-out placeholder so the DTO/sidebar still shows the row.
+        assert!(s.is_detached("tab-0"));
+    }
+
+    #[test]
+    fn detaching_a_background_tab_keeps_the_active_one() {
+        let mut s = TabState::default();
+        s.mark_created("tab-0");
+        s.mark_created("tab-1");
+        s.set_active("tab-1");
+        s.mark_detached("tab-0");
+        assert!(s.is_detached("tab-0"));
+        assert!(!s.is_created("tab-0"));
+        assert_eq!(s.active(), Some("tab-1")); // untouched
+    }
+
+    #[test]
+    fn redocking_clears_the_detached_mark() {
+        let mut s = TabState::default();
+        s.mark_created("tab-0");
+        s.mark_detached("tab-0");
+        assert!(s.is_detached("tab-0"));
+        // Redock: the origin webview is recreated and the mark cleared.
+        s.clear_detached("tab-0");
+        s.mark_created("tab-0");
+        assert!(!s.is_detached("tab-0"));
+        assert!(s.is_created("tab-0"));
+    }
+
+    #[test]
+    fn a_detached_tab_is_not_an_orphan() {
+        // A popped-out tab isn't `created`, so a reconcile against the (unchanged) config must not
+        // treat it as an orphan to close — its webview lives on the detached window.
+        let mut s = TabState::default();
+        s.mark_created("tab-0");
+        s.mark_detached("tab-0");
+        let keep: HashSet<String> = ["tab-0"].iter().map(|s| s.to_string()).collect();
+        assert!(s.orphans(&keep).is_empty());
     }
 
     #[test]

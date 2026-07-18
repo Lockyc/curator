@@ -19,6 +19,9 @@ const HOME_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" st
 
 let activeLabel = null; // controller mirror of the component's active tab (the nav pill acts on it)
 let navBtns = [];
+// Labels currently popped out into their own detached window (from the DTO). A click on a detached
+// row means "raise its window" (raise_popped_window), not "select" — so onSelect consults this.
+const detachedLabels = new Set();
 
 function buildNavPill() {
   const pill = document.createElement("div");
@@ -68,6 +71,10 @@ async function buildDto() {
   // reusing the label doesn't inherit a stale count with no fresh service-badge (mirrors warden).
   const labels = new Set(tabs.map((t) => t.label));
   [...badges.keys()].forEach((l) => { if (!labels.has(l)) badges.delete(l); });
+  // Refresh the detached-label mirror so onSelect can tell a popped-out row (raise its window) from
+  // a normal one (select). Rebuilt each DTO so it clears when a tab redocks.
+  detachedLabels.clear();
+  tabs.forEach((t) => { if (t.detached) detachedLabels.add(t.label); });
   return {
     title: (id && id.title) || "",
     colour: (id && id.colour) ?? null,
@@ -85,6 +92,9 @@ async function buildDto() {
       attention: badgeToAttention(badges.get(t.label)),
       presence: null, // curator has no session-presence concept
       killable: false, // curator has no kill concept
+      // Popped out into its own window: chrome-core renders the ⤢ mark and routes a row click to
+      // onSelect, which the controller maps to "raise the window". Invisible unless forwarded here.
+      detached: !!t.detached,
       warn: false,
     })),
   };
@@ -126,6 +136,14 @@ async function unloadTab(tabId) {
   await refresh();
 }
 
+// Shared by chrome-core's per-row ⤢ control (onPopOut) and the ⌘⇧O menu shortcut's "pop-out-tab"
+// event — both pop the given/active tab out into its own window. Refresh so the origin's sidebar
+// shows the row's ⤢ detached mark and its newly-promoted active tab (get_tabs carries both).
+async function popOutTab(tabId) {
+  await invoke("pop_out_tab", { label: tabId }).catch(() => {});
+  await refresh();
+}
+
 async function mountChrome() {
   const id = await invoke("window_identity");
   const title = (id && id.title) || "";
@@ -135,11 +153,19 @@ async function mountChrome() {
     document.getElementById("sidebar"),
     {
       onSelect(tabId, { wasActive }) {
+        // A popped-out row has no local webview to select — a click raises its detached window.
+        if (detachedLabels.has(tabId)) {
+          invoke("raise_popped_window", { label: tabId }).catch(() => {});
+          return;
+        }
         setActiveLabel(tabId);
         // Re-clicking the active tab snaps it home (curator's home-on-active); otherwise select it.
         invoke(wasActive ? "home_tab" : "select_tab", { label: tabId }).catch(() => {});
       },
       onUnload: unloadTab,
+      // Pop the tab out into its own window (recreated webview; login survives via the session
+      // store). Refresh so the row picks up its ⤢ detached mark and the origin's new active tab.
+      onPopOut: popOutTab,
       onResize(width) {
         // The chrome is the window's full-size main webview: the sidebar's visible width is CSS
         // (set here); the flex #content-hole follows, and reportRect tells Rust where to put the
@@ -228,6 +254,11 @@ listen("jump-tab", (e) => sb.selectByIndex(e.payload));
 // routes it via emit_to_focused_chrome, so only the focused window's chrome receives it.
 listen("close-tab", () => {
   if (activeLabel) unloadTab(activeLabel);
+});
+// The menu spine's ⌘⇧O (Tabs ▸ Pop Out Tab): pop THIS window's active tab out into its own window.
+// lib.rs routes it via emit_to_focused_chrome, so only the focused window's chrome receives it.
+listen("pop-out-tab", () => {
+  if (activeLabel) popOutTab(activeLabel);
 });
 // A desktop-notification banner was clicked (A2): select+activate the tab that fired it.
 // Skip when it's already the active tab — re-selecting it would trip the home-on-active gesture
