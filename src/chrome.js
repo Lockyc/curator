@@ -166,6 +166,11 @@ async function mountChrome() {
       // Pop the tab out into its own window (recreated webview; login survives via the session
       // store). Refresh so the row picks up its ⤢ detached mark and the origin's new active tab.
       onPopOut: popOutTab,
+      // Dock a popped-out tab back in (the ↩ overlay on a detached row's tile): close its window,
+      // whose Destroyed handler runs redock — the same return path as closing it by hand.
+      onPopIn(tabId) {
+        invoke("pop_in_tab", { label: tabId }).catch(() => {});
+      },
       onResize(width) {
         // The chrome is the window's full-size main webview: the sidebar's visible width is CSS
         // (set here); the flex #content-hole follows, and reportRect tells Rust where to put the

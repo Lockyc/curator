@@ -1068,6 +1068,7 @@ pub fn run() {
         commands::set_hole_rect,
         commands::pop_out_tab,
         commands::raise_popped_window,
+        commands::pop_in_tab,
         commands::shell_home_create_config,
         commands::shell_home_edit_config,
         commands::shell_home_open_window,

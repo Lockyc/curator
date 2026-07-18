@@ -512,6 +512,30 @@ pub fn raise_popped_window(label: String, webview: Webview, state: State<AppStat
     }
 }
 
+/// Dock tab `label` back into its origin window — the ↩ pop-in overlay on a detached row. Closes
+/// the tab's detached window, whose `Destroyed` handler runs `redock` (recreating the tab's webview
+/// here); the same return path as closing the popped-out window by hand. No-op on a stale click.
+#[tauri::command]
+pub fn pop_in_tab(label: String, webview: Webview, state: State<AppState>) {
+    if !is_chrome_caller(&webview) {
+        return;
+    }
+    let origin_wid = calling_window_id(&webview);
+    let app = webview.app_handle();
+    let target = state
+        .detached
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(_, d)| d.origin_wid == origin_wid && d.tab_label == label)
+        .map(|(l, _)| l.clone());
+    if let Some(l) = target {
+        if let Some(win) = app.get_window(&l) {
+            let _ = win.close();
+        }
+    }
+}
+
 /// Window id to drive from a menu command: the focused window (menu items act on whichever
 /// window has key focus).
 fn focused_window_id(app: &AppHandle) -> Option<String> {
