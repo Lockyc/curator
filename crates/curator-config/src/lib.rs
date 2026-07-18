@@ -14,7 +14,7 @@ pub mod identity;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// What to open when a window launches. `false` (default) → blank; `true` → its first tab;
+/// What to open when a window launches. `true` (default) → its first tab; `false` → blank;
 /// a string → the tab whose `title` matches (falling back to the first).
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -24,7 +24,8 @@ pub enum OpenOnLaunch {
 }
 impl Default for OpenOnLaunch {
     fn default() -> Self {
-        OpenOnLaunch::Toggle(false)
+        // Fleet default: open on the first tab (matching warden, which always does; and lector).
+        OpenOnLaunch::Toggle(true)
     }
 }
 
@@ -600,8 +601,18 @@ reload_every = 15
 
     #[test]
     fn startup_label_resolves_per_window() {
+        // Default (no `open_on_launch` key) opens the first tab — the fleet default.
         let cfg = parse_and_validate(VALID).unwrap().0;
+        assert_eq!(
+            cfg.windows[0].startup_label(None),
+            Some(cfg.windows[0].tab_views(None)[0].label.clone())
+        );
+        // Explicit `open_on_launch = false` opts out → blank.
+        let cfg = parse_and_validate(&with_window_keys("Comms", "open_on_launch = false"))
+            .unwrap()
+            .0;
         assert_eq!(cfg.windows[0].startup_label(None), None);
+        // `open_on_launch = true` is the explicit form of the default → first tab.
         let cfg = parse_and_validate(&with_window_keys("Comms", "open_on_launch = true"))
             .unwrap()
             .0;
