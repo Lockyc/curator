@@ -298,6 +298,19 @@ pub fn nav_forward(label: String, webview: Webview) -> Result<(), String> {
     Ok(())
 }
 
+/// The label to promote to active after `unloaded` is closed, given the window's tabs in render
+/// order and which of them are created (curator's loaded-tab signal — the same `is_created` that
+/// drives the sidebar live dot). Delegates the index policy to shell-core so warden/curator/lector
+/// agree: nearest created neighbour, background only if none. `created` is parallel to `views`.
+pub(crate) fn fallback_active(
+    views: &[TabView],
+    unloaded: &str,
+    created: &[bool],
+) -> Option<String> {
+    let idx = views.iter().position(|v| v.label == unloaded)?;
+    shell_core::pick_live_neighbour(idx, created).map(|n| views[n].label.clone())
+}
+
 /// Destroy a tab's content webview, freeing its memory. The tab stays in the sidebar and
 /// reloads lazily on next selection. No-op if it isn't loaded.
 #[tauri::command]
@@ -307,10 +320,10 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     if let Some(wv) = window.get_webview(&label) {
         wv.close().map_err(|e| e.to_string())?;
     }
-    // Mark unloaded. If this was the active tab, promote an already-live `load_on_open` tab to
-    // active (mirroring launch's active-resolution) and relayout after the lock drops — without
-    // this the content area would strand a still-shown `load_on_open` webview behind a sidebar
-    // that highlights nothing. If it wasn't active, the layout is untouched.
+    // Mark unloaded. If this was the active tab, promote the nearest created neighbour to active
+    // (`fallback_active`, shell-core's `pick_live_neighbour` policy) and relayout after the lock
+    // drops — without this the content area would strand a still-shown loaded webview behind a
+    // sidebar that highlights nothing. If it wasn't active, the layout is untouched.
     let relayout = {
         let mut windows = state.windows.lock().unwrap();
         windows.get_mut(&wid).and_then(|rt| {
@@ -320,10 +333,8 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
                 return None;
             }
             let views = rt.cfg.tab_views(rt.global_session.as_deref());
-            let new_active = views
-                .iter()
-                .find(|v| v.load_on_open && v.label != label && rt.tabs.is_created(&v.label))
-                .map(|v| v.label.clone());
+            let created: Vec<bool> = views.iter().map(|v| rt.tabs.is_created(&v.label)).collect();
+            let new_active = fallback_active(&views, &label, &created);
             if let Some(a) = &new_active {
                 rt.tabs.set_active(a);
             }

@@ -376,6 +376,49 @@ mod tests {
         assert_eq!(s.active(), Some("tab-1"));
     }
 
+    /// Minimal `TabView` fixture for the fallback-selection tests below — only `label` and
+    /// `load_on_open` vary between cases.
+    fn tv(label: &str, load_on_open: bool) -> TabView {
+        TabView {
+            label: label.to_string(),
+            group: None,
+            title: label.to_string(),
+            url: format!("https://{label}.example"),
+            load_on_open,
+            reload_every: None,
+            session: String::new(),
+        }
+    }
+
+    #[test]
+    fn unload_fallback_picks_nearest_created_neighbour_not_first_in_list() {
+        // tab-0 and tab-2 are both created (loaded); tab-1 is active and gets unloaded. The old
+        // first-in-list, load_on_open-gated scan would skip tab-0 (load_on_open: false) and land
+        // on tab-2 (load_on_open: true) — the first list entry satisfying the old predicate.
+        // shell-core's nearest-neighbour policy instead promotes tab-0: it's the nearest created
+        // neighbour to the unloaded index, regardless of list order or load_on_open.
+        let views = vec![tv("tab-0", false), tv("tab-1", true), tv("tab-2", true)];
+        let created = [true, false, true];
+        assert_eq!(
+            crate::commands::fallback_active(&views, "tab-1", &created),
+            Some("tab-0".to_string())
+        );
+    }
+
+    #[test]
+    fn unload_fallback_accepts_a_created_tab_that_is_not_load_on_open() {
+        // The only other created tab is not load_on_open. The previous fallback gated on
+        // `load_on_open` and would have skipped it, dropping to the empty background even
+        // though a loaded tab existed. The new predicate is `is_created` alone, matching
+        // curator's own sidebar live dot, so it's accepted.
+        let views = vec![tv("tab-0", true), tv("tab-1", false)];
+        let created = [false, true];
+        assert_eq!(
+            crate::commands::fallback_active(&views, "tab-0", &created),
+            Some("tab-1".to_string())
+        );
+    }
+
     #[test]
     fn orphans_are_created_labels_missing_from_new_config() {
         // A tab's URL was edited: its label moved from nextdns-old to nextdns-new while a

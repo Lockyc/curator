@@ -199,6 +199,14 @@ respawns on next select) via the spine's `Close Tab` item, which curator places 
 submenu (see below) — matching warden, which always had this right, and lector, which adopted it
 fresh. ⌘⇧W closes the window.
 
+**Unloading the active tab promotes the nearest created neighbour, via shell-core's
+`pick_live_neighbour`** (`commands.rs`'s `fallback_active`) — the shared warden/curator/lector
+policy, not a curator-only first-in-list scan. The eligibility predicate is `is_created` (any
+loaded tab, matching curator's own sidebar live dot), not `load_on_open` — a loaded-but-not-
+`load_on_open` tab (created, just throttled/hidden in the background) is a valid fallback, where
+it was previously skipped and could strand the content area on an empty background despite a
+loaded tab existing.
+
 **App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must be
 re-added by hand. **The App, Config, and Window submenus are the shared spine**
 (`shell_core::menu::build_spine`, called from `build_app_menu`) — About, Check for Updates…, Edit
