@@ -212,6 +212,44 @@ loaded tab, matching curator's own sidebar live dot), not `load_on_open` — a l
 it was previously skipped and could strand the content area on an empty background despite a
 loaded tab existing.
 
+**Pop-out tabs (⤢ / ⌘⇧O) — RECREATE, not reparent, because curator has no native surface to
+move.** The chrome-core row control and the spine's **Pop Out Tab** menu item (shell-core
+`ACCEL_POP_OUT_TAB` = `Shift+Cmd+KeyO`) both pop the active/given tab into its own **banner-only
+detached window** (shell-core's shared `detach.html` shell, the same mechanism warden uses for its
+native surfaces). curator's tabs are webviews, not a movable native handle, so `pop_out_tab`
+(`commands.rs`) can't reparent one across windows — it **closes** the origin's content webview and
+**recreates** a fresh one on the detached window from the same resolved `TabView`. Login/cookies
+survive because `WKWebsiteDataStore` is keyed on `view.session` (independent of window/webview
+identity, per *Sessions* above); **in-memory page state — scroll position, SPA route, unsent form
+input — does not**, since recreation reloads the service from its canonical URL. Closing the
+detached window (`shell_core::detach::wire_return` → `crate::redock`) reverses the same way:
+closes the detached webview, recreates it on the origin (another reload), and reopens the origin
+window first if the user closed it while the tab was out.
+
+- **`AppState.detached: Mutex<HashMap<String, CuratorDetached>>`** (keyed by the detached window's
+  label) is deliberately **separate from `AppState.windows`**, so hot-reload reconcile and
+  window-state persistence never see these ephemeral windows. `CuratorDetached` holds just what
+  `redock` needs to return the tab: `origin_wid`, `tab_label`, and the `TabView` to recreate from
+  (no live webview handle — there's nothing to hold).
+- **`TabState.detached`, kept distinct from `created`** (`webviews.rs`): a popped-out tab is
+  `is_detached` but not `is_created`, so reconcile's create-list, the active-tab fallback, and
+  `orphans()` all skip it — it's never recreated on the origin, never promoted active, while
+  it's out. The row stays in the sidebar as a placeholder (`TabItem.detached` in the DTO) until it
+  redocks.
+- **`reconcile_home` counts detached windows** (`lib.rs`: `has_windows = !entries.is_empty() ||
+  !detached.is_empty()`) — a popped-out tab is a real surface on screen, so the shared home
+  surface must stay closed while one is open even if every configured window happens to be closed.
+- **`chrome.js`'s DTO mapping forwards `detached`**, and a detached row's click routes to
+  `raise_popped_window` (bring its window forward) instead of `select_tab` — there is no local
+  webview to select.
+- **`pop_out_tab` never holds the `windows` lock across a webview op or the detached-window
+  build** — phase 1 resolves the view + marks the tab detached under the lock; the lock is
+  released before the origin webview close, `shell_core::detach::open_detached`, and the
+  return-wiring (same discipline as the rest of `commands.rs`'s *AppState.windows footgun* above).
+- **`⌘Q` teardown:** `RunEvent::ExitRequested` fires before every window's `Destroyed`, so `redock`
+  checks `crate::is_quitting()` (set once from that event) first and no-ops — otherwise a detached
+  window closing mid-quit would reopen its already-closing origin.
+
 **App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must be
 re-added by hand. **The App, Config, and Window submenus are the shared spine**
 (`shell_core::menu::build_spine`, called from `build_app_menu`) — About, Check for Updates…, Edit
@@ -460,8 +498,9 @@ look/behaviour change is made once. It's a *build-dependency* pinned by `rev` (l
 `src-tauri/build.rs`
 writes `SIDEBAR_CSS`/`SIDEBAR_JS` into `src/chrome-core.{css,js}` (git-ignored) before Tauri embeds
 `src/`. curator's `src/chrome.js` is now a **thin controller** over chrome-core's `ChromeSidebar`
-view: it maps the component's callbacks to curator's commands (`onSelect`→`select_tab`/`home_tab`,
-`onUnload`→`unload_tab`, `onResize`→sidebar CSS width + `reportRect`→`set_hole_rect`) and events to its setters
+view: it maps the component's callbacks to curator's commands (`onSelect`→`select_tab`/`home_tab`
+(or `raise_popped_window` for a `detached` row — see *Pop-out tabs* above), `onUnload`→`unload_tab`,
+`onPopOut`→`pop_out_tab`, `onResize`→sidebar CSS width + `reportRect`→`set_hole_rect`) and events to its setters
 (`service-badge`→`setAttention`, `config-error`→`setError`, `nav-tab`/`jump-tab`→nav). The nav pill
 (browser-only) mounts into the component's `header` slot; curator passes `active` in the DTO (its
 Rust side owns selection). What stays per-app is the content-area topology (curator z-orders content
