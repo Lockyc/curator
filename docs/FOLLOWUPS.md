@@ -1,3 +1,11 @@
+---
+type: reference
+description: Conscious, intentionally-deferred follow-ups for curator.
+links:
+  - rel: part-of
+    to: CLAUDE.md
+---
+
 # curator — deferred follow-ups
 
 Known, intentionally-deferred work. Each item is a conscious deferral, not an oversight — recorded

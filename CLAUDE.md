@@ -1,3 +1,8 @@
+---
+type: architecture
+description: Agent orientation for curator — architecture, shared cores, conventions, and footguns.
+---
+
 # curator — agent notes
 
 macOS-only Tauri v2 app (Rust + a static web frontend in `src/`). Build is pure cargo / `cargo tauri`.
