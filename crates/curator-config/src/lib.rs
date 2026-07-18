@@ -14,8 +14,10 @@ pub mod identity;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// What to open when a window launches. `true` (default) → its first tab; `false` → blank;
-/// a string → the tab whose `title` matches (falling back to the first).
+/// What to open when a window launches. The default (`false` / unset) opens the first
+/// `load_on_open` (loaded) tab, else the blank background — the first tab isn't always loaded, so
+/// it isn't forced. `true` opens the first tab even if it isn't loaded; a string opens the tab
+/// whose `title` matches (falling back to the first).
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum OpenOnLaunch {
@@ -24,8 +26,7 @@ pub enum OpenOnLaunch {
 }
 impl Default for OpenOnLaunch {
     fn default() -> Self {
-        // Fleet default: open on the first tab (matching warden, which always does; and lector).
-        OpenOnLaunch::Toggle(true)
+        OpenOnLaunch::Toggle(false)
     }
 }
 
@@ -415,11 +416,16 @@ impl WindowConfig {
         views
     }
 
-    /// Label of the tab to open on launch (per `open_on_launch`). `None` = blank.
+    /// Label of the tab to make active on launch. Default (`false`/unset): the first `load_on_open`
+    /// (loaded) tab, else `None` (blank) — the first tab isn't always loaded, so it isn't forced.
+    /// `true`: the first tab even if cold. A title string: the matching tab (else the first).
     pub fn startup_label(&self, global_session: Option<&str>) -> Option<String> {
         let views = self.tab_views(global_session);
         match &self.open_on_launch {
-            OpenOnLaunch::Toggle(false) => None,
+            OpenOnLaunch::Toggle(false) => views
+                .iter()
+                .find(|v| v.load_on_open)
+                .map(|v| v.label.clone()),
             OpenOnLaunch::Toggle(true) => views.first().map(|v| v.label.clone()),
             OpenOnLaunch::Tab(title) => views
                 .iter()
@@ -601,25 +607,30 @@ reload_every = 15
 
     #[test]
     fn startup_label_resolves_per_window() {
-        // Default (no `open_on_launch` key) opens the first tab — the fleet default.
-        let cfg = parse_and_validate(VALID).unwrap().0;
+        // Default (no `open_on_launch`) opens the first LOADED (load_on_open) tab — not necessarily
+        // the first. Here Gmail is cold and Calendar is load_on_open, so Calendar wins.
+        let loaded = "[[window]]\ntitle = \"Comms\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\nload_on_open = true\n";
+        let cfg = parse_and_validate(loaded).unwrap().0;
+        let cal = cfg.windows[0]
+            .tab_views(None)
+            .into_iter()
+            .find(|v| v.title == "Calendar")
+            .unwrap()
+            .label;
+        assert_eq!(cfg.windows[0].startup_label(None), Some(cal));
+
+        // `open_on_launch = true` forces the first tab even though it's cold (Gmail).
+        let forced = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = true\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\nload_on_open = true\n";
+        let cfg = parse_and_validate(forced).unwrap().0;
         assert_eq!(
             cfg.windows[0].startup_label(None),
             Some(cfg.windows[0].tab_views(None)[0].label.clone())
         );
-        // Explicit `open_on_launch = false` opts out → blank.
-        let cfg = parse_and_validate(&with_window_keys("Comms", "open_on_launch = false"))
-            .unwrap()
-            .0;
+
+        // No loaded tab anywhere → blank background, nothing forced.
+        let cold = "[[window]]\ntitle = \"Comms\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n";
+        let cfg = parse_and_validate(cold).unwrap().0;
         assert_eq!(cfg.windows[0].startup_label(None), None);
-        // `open_on_launch = true` is the explicit form of the default → first tab.
-        let cfg = parse_and_validate(&with_window_keys("Comms", "open_on_launch = true"))
-            .unwrap()
-            .0;
-        assert_eq!(
-            cfg.windows[0].startup_label(None),
-            Some(cfg.windows[0].tab_views(None)[0].label.clone())
-        );
 
         // named tab → that tab
         let named = "[[window]]\ntitle = \"Comms\"\nopen_on_launch = \"Calendar\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n[[window.group.tab]]\ntitle = \"Calendar\"\nurl = \"https://calendar.google.com/\"\n";

@@ -179,7 +179,7 @@ title = "Comms"
 |-------------------|--------------------------|---------------|----------------------------------------------------------------------------|
 | `title`           | string                   | **required**  | Window title; must be unique across all windows.                           |
 | `width`/`height`  | int                      | `1500`/`1000` | First-run window size in logical pixels. After that, curator remembers each window's size + position across launches, so this is only the initial default (move/resize a window and it reopens where you left it). |
-| `open_on_launch`  | bool \| tab title string | `true`        | `true` (default) opens the first tab; a string opens the named tab; `false` = blank screen. |
+| `open_on_launch`  | bool \| tab title string | *(unset)*     | Unset (default) opens the first `load_on_open` tab, else a blank screen. `true` opens the first tab even if it isn't loaded; a string opens the named tab. |
 | `colour`          | `#rgb` / `#rrggbb` hex    | none          | Accent colour for this window — colours the title bar (nav pill + window name), giving each window a distinct identity. |
 | `session`         | string                   | none          | Default login store for this window's tabs (overridden per tab). See sessions below. |
 

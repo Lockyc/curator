@@ -146,14 +146,9 @@ fn open_window(
         tabs.mark_created(&v.label);
     }
 
-    // Active tab: whatever `open_on_launch` resolves to, else the first load_on_open tab (so a
-    // window of background services opens showing one of them rather than the blank placeholder).
-    let active = win_cfg.startup_label(global_session).or_else(|| {
-        views
-            .iter()
-            .find(|v| v.load_on_open)
-            .map(|v| v.label.clone())
-    });
+    // Active tab: whatever `startup_label` resolves to — by default the first load_on_open tab (so
+    // a window of background services opens showing one of them), else the blank placeholder.
+    let active = win_cfg.startup_label(global_session);
     if let Some(label) = &active {
         if let Some(v) = views.iter().find(|v| &v.label == label) {
             if !tabs.is_created(label) {
@@ -493,19 +488,13 @@ fn reconcile_window_tabs(
         }
 
         // Resolve the active tab: keep the current one if it survived (mark_unloaded already
-        // cleared it if it was orphaned), else fall back to open_on_launch or the first
-        // load_on_open tab. Ensure it's created.
+        // cleared it if it was orphaned), else fall back to startup_label (by default the first
+        // load_on_open tab). Ensure it's created.
         let active = rt
             .tabs
             .active()
             .map(str::to_string)
-            .or_else(|| win_cfg.startup_label(global_session))
-            .or_else(|| {
-                views
-                    .iter()
-                    .find(|v| v.load_on_open)
-                    .map(|v| v.label.clone())
-            });
+            .or_else(|| win_cfg.startup_label(global_session));
         if let Some(a) = &active {
             if !rt.tabs.is_created(a) {
                 rt.tabs.mark_created(a);
