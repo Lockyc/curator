@@ -418,6 +418,21 @@ mod tests {
     }
 
     #[test]
+    fn is_detached_pins_the_double_pop_guard_invariant() {
+        // pop_out_tab's #[tauri::command] wrapper needs a real Webview/AppHandle to invoke (not
+        // unit-testable here), but its up-front guard condition — "is this tab already popped
+        // out" — is exactly `rt.tabs.is_detached(&label)`, which is. This pins the invariant the
+        // guard relies on: a tab marked detached must read as such (so a raced second pop is
+        // rejected as a clean no-op) regardless of what else is going on in `TabState`, and an
+        // unrelated tab must not be caught by it.
+        let mut s = TabState::default();
+        s.mark_created("tab-a");
+        s.mark_detached("tab-a");
+        assert!(s.is_detached("tab-a"));
+        assert!(!s.is_detached("tab-b"));
+    }
+
+    #[test]
     fn redocking_clears_the_detached_mark() {
         let mut s = TabState::default();
         s.mark_created("tab-0");

@@ -384,6 +384,16 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
     let (view, colour, width, height, origin_hole, relayout) = {
         let mut windows = state.windows.lock().unwrap();
         let rt = windows.get_mut(&origin_wid).ok_or("no such window")?;
+        // Defensive: the chrome already suppresses the pop-out control on a row it knows is
+        // detached (`!t.detached` in chrome-core), but a stale double-click could still race the
+        // DTO refresh. A second pop of the same label would try to build a second Tauri window
+        // under the SAME label (the token is derived from the tab label) —
+        // `WindowLabelAlreadyExists` — which would then trip the failure-path restore below and
+        // stomp the first, still-live detached window's content webview. Reject up front instead,
+        // before any mutation (`mark_detached`) or teardown.
+        if rt.tabs.is_detached(&label) {
+            return Err(format!("{label} is already popped out"));
+        }
         let views = rt.cfg.tab_views(rt.global_session.as_deref());
         let view = views
             .iter()
