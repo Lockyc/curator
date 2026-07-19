@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/Lockyc/curator/releases/latest"><img src="https://img.shields.io/github/v/release/Lockyc/curator?sort=semver&label=release" alt="Latest release"></a>
+  <a href="https://github.com/Lockyc/curator/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Lockyc/curator/ci.yml?branch=dev&label=CI" alt="CI status"></a>
   <img src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" alt="Platform: macOS">
   <img src="https://img.shields.io/badge/built%20with-Tauri%20v2-24C8DB?logo=tauri&logoColor=white" alt="Built with Tauri v2">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Lockyc/curator" alt="License: MIT"></a>
@@ -55,6 +56,12 @@ file-driven, everything else is ephemeral.
   per-tab flag is the only knob today — no per-window modes (yet).
 - **Dock badge aggregates across windows** — the badge total sums unread across every
   window's loaded tabs.
+- **Pop a tab out** — pop the active tab into its own banner-only window with **⌘⇧O** (or the ⤢
+  control on its row); a ⇱ control pops it back in from the sidebar. Your **login survives** —
+  sessions are keyed independently of the window — but the page reloads from its canonical URL, so
+  in-page state (scroll position, SPA route, unsent form input) doesn't carry across. Closing the
+  popped-out window returns the tab to where it came from, reopening its origin window first if you
+  closed it.
 - **Window menu** — close a window (⌘⇧W); reopen any closed window from the Window menu.
   Closing the last open window quits curator.
 
