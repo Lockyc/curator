@@ -1,5 +1,5 @@
 name    = "curator"
-summary = "Curated browser keeper-tabs — a macOS console of grouped webview tabs sharing warden's sidebar chrome"
+summary = "Curated browser keeper-tabs — a macOS console of grouped webview tabs, useful for dashboards, chat, and other persistent webview surfaces"
 kind    = "app"
 status  = "active"
 tags    = ["browser", "webviews", "keeper-tabs", "sidebar", "macos"]
