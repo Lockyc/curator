@@ -177,7 +177,7 @@ warden, whose `emit_to` leaks to siblings and so carries a label to filter). Thi
 web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
 `src/inject/notification.js`).
 
-**Loading is driven solely by per-tab `load_on_open`** — there are no per-window mode flags.
+**Loading is driven by per-tab `load_on_open`** — currently the only loading knob; there are no per-window mode flags today (a window-level default could be added if a need arises).
 Every content webview gets the full shim set (escape-click, visibility, notification, badge),
 so any *loaded* tab can fire native banners and report unread. `load_on_open` tabs are created
 at launch and kept live (never hidden — `apply_active` in `webviews.rs` shows them behind the
@@ -486,9 +486,7 @@ retrofitted onto the shared crate — there's one implementation, not a copy per
 it through its own **`curator-config`** crate, which re-exports `format_str`/`format_file`/`Colour`
 (see *Workspace layout*); warden's `warden-config` and lector's `lector-config` do the same. The
 shared crate is deliberately leaf-free: each app keeps its own model + validation (in its
-`*-config` crate) and session/shell cascade. Only
-add to `config-core` what is genuinely identical and leaf-agnostic in *all three* apps — don't grow it
-into a generic config framework.
+`*-config` crate) and session/shell cascade. (config-core's own CLAUDE.md owns its scope charter.)
 
 ## Shared sidebar chrome: `chrome-core`
 

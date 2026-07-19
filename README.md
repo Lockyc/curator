@@ -52,7 +52,7 @@ file-driven, everything else is ephemeral.
 - **`load_on_open` keeps a tab live** — mark a chat/service `load_on_open` and it loads at
   launch, stays live in the background, fires native banners, and rolls its unread count up
   to the dock badge. Tabs without it are lazy and stay quiet until you open them. That one
-  per-tab flag is the only knob — no per-window modes.
+  per-tab flag is the only knob today — no per-window modes (yet).
 - **Dock badge aggregates across windows** — the badge total sums unread across every
   window's loaded tabs.
 - **Window menu** — close a window (⌘⇧W); reopen any closed window from the Window menu.
