@@ -82,7 +82,7 @@ chrome-pin:
     grep -qF "rev = \"$rev\"" "$dep" || { echo "✗ chrome-pin: failed to write rev into $dep — dep line shape changed, re-pin by hand"; exit 1; }
     tmp=$(mktemp); sed -E 's|^\[patch\."https://github.com/Lockyc/chrome-core"\]$|#PATCH:chrome#&|; s|^chrome-core = \{ path = "\.\./chrome-core" \}$|#PATCH:chrome#&|' Cargo.toml > "$tmp" && mv "$tmp" Cargo.toml
     ! grep -qE '^\[patch\."https://github.com/Lockyc/chrome-core"\]$' Cargo.toml || { echo "✗ chrome-pin: chrome-core [patch] still active after re-comment — check Cargo.toml"; exit 1; }
-    cargo update -p chrome-core
+    cargo update -p chrome-core || cargo metadata --format-version 1 >/dev/null # reconcile Cargo.lock on a patch→git flip: bare -p cannot match the patched (path) source, a minimal resolve does
     echo "✓ pinned chrome-core → $rev (patch deactivated). Commit src-tauri/Cargo.toml + Cargo.lock."
 
 # Open chrome-core's visual preview loop (requires ../chrome-core checked out)
@@ -120,7 +120,7 @@ config-pin:
     grep -qF "rev = \"$rev\"" "$dep" || { echo "✗ config-pin: failed to write rev into $dep — dep line shape changed, re-pin by hand"; exit 1; }
     tmp=$(mktemp); sed -E 's|^\[patch\."https://github.com/Lockyc/config-core"\]$|#PATCH:config#&|; s|^config-core = \{ path = "\.\./config-core" \}$|#PATCH:config#&|' Cargo.toml > "$tmp" && mv "$tmp" Cargo.toml
     ! grep -qE '^\[patch\."https://github.com/Lockyc/config-core"\]$' Cargo.toml || { echo "✗ config-pin: config-core [patch] still active after re-comment — check Cargo.toml"; exit 1; }
-    cargo update -p config-core
+    cargo update -p config-core || cargo metadata --format-version 1 >/dev/null # reconcile Cargo.lock on a patch→git flip: bare -p cannot match the patched (path) source, a minimal resolve does
     echo "✓ pinned config-core → $rev (patch deactivated). Commit crates/curator-config/Cargo.toml + Cargo.lock."
 
 # ── shared shell-core dev loop (mirrors chrome-*; shell-core is git-pinned in src-tauri) ──
@@ -153,7 +153,7 @@ shell-pin:
     grep -qF "rev = \"$rev\"" "$dep" || { echo "✗ shell-pin: failed to write rev into $dep — dep line shape changed, re-pin by hand"; exit 1; }
     tmp=$(mktemp); sed -E 's|^\[patch\."https://github.com/Lockyc/shell-core"\]$|#PATCH:shell#&|; s|^shell-core = \{ path = "\.\./shell-core" \}$|#PATCH:shell#&|' Cargo.toml > "$tmp" && mv "$tmp" Cargo.toml
     ! grep -qE '^\[patch\."https://github.com/Lockyc/shell-core"\]$' Cargo.toml || { echo "✗ shell-pin: shell-core [patch] still active after re-comment — check Cargo.toml"; exit 1; }
-    cargo update -p shell-core
+    cargo update -p shell-core || cargo metadata --format-version 1 >/dev/null # reconcile Cargo.lock on a patch→git flip: bare -p cannot match the patched (path) source, a minimal resolve does
     echo "✓ pinned shell-core → $rev (patch deactivated). Commit src-tauri/Cargo.toml + Cargo.lock."
 
 # Re-render docs/social-preview.png (GitHub's repo social preview) from its .svg source of truth.
