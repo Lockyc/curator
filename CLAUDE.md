@@ -346,11 +346,11 @@ deadlocks. If a command must become async, drop the `windows` guard before any w
 create-tab path avoids this class by reading `WindowRuntime.hole` under the held `windows` lock and
 passing it into `create_content_webview` by value, rather than re-locking `windows` inside.)
 
-## Non-goals / parked: browser extensions (Bitwarden etc.)
+## Deferred: browser extensions (Bitwarden etc.)
 
-curator does **not** support browser/Safari web extensions, and there is no password-manager
-integration. This was evaluated for Bitwarden (2026-06-23) and parked — do not build it without
-the owner reopening it.
+curator does not *yet* host browser/Safari web extensions or password-manager integration —
+parked, not ruled out. Evaluated for Bitwarden (2026-06-23) and blocked on an upstream toolchain
+unlock (below); reopenable by the owner once that clears.
 
 - The capability now exists in WebKit: macOS 15.4+ ships `WKWebExtension` /
   `WKWebExtensionContext` / `WKWebExtensionController`, which let a third-party WebKit app load
