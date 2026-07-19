@@ -894,66 +894,47 @@ pub fn run() {
         // Watch the config file and hot-reload on change, keeping the last-good config
         // (and surfacing an error banner on each open window) if the new contents don't
         // parse/validate.
-        let watch_path = path.clone();
+        // The shared shell-core watcher owns the parent-dir watch, the file-name match (macOS
+        // FSEvents-robust — this is the fix for the old exact-path bug that silently missed every
+        // event under a symlinked config dir), and the echo-swallow (via the `Option<String>` the
+        // closure returns when it format-writes). curator supplies just the parse + apply.
         let app_handle = app.handle().clone();
-        std::thread::spawn(move || {
-            use notify::{RecursiveMode, Watcher};
-            let (tx, rx) = std::sync::mpsc::channel();
-            let Ok(mut watcher) = notify::recommended_watcher(tx) else {
-                return;
-            };
-            // Watch the parent dir, not the file: editors that atomic-save (write temp +
-            // rename) replace the inode, which silently breaks a single-file watch.
-            let dir = watch_path.parent().unwrap_or(&watch_path);
-            if Watcher::watch(&mut watcher, dir, RecursiveMode::NonRecursive).is_err() {
-                return;
-            }
-            // The exact bytes of our own most recent format-on-save write, so we can swallow
-            // the watch event it triggers and reload exactly once per user save (see below).
-            let mut self_write: Option<String> = None;
-            for res in rx {
-                let Ok(event) = res else { continue };
-                if !event.paths.iter().any(|p| p == &watch_path) {
-                    continue;
-                }
-                let Ok(src) = std::fs::read_to_string(&watch_path) else {
-                    continue;
-                };
-                // If this event is the echo of our own format write, consume it and skip — the
-                // user save that prompted the rewrite already reloaded. `take()` clears the
-                // marker either way, so at worst a missed echo costs one redundant no-op reload.
-                if self_write.take().as_deref() == Some(src.as_str()) {
-                    continue;
-                }
-                match watcher::reconcile(&src) {
-                    Ok((new_cfg, warnings)) => {
-                        log_config_warnings(&warnings);
-                        // Format-on-save: rewrite in house style on a clean reload. The write
-                        // is diff-guarded, so an already-formatted file is a no-op. When it does
-                        // rewrite, remember the formatted bytes as `self_write` so the watch
-                        // event the write triggers is swallowed above — one reload per user
-                        // save, not two. Formatting only touches whitespace, so `new_cfg`
-                        // (parsed pre-format) already matches the formatted file's config.
-                        if new_cfg.format_on_save {
-                            let formatted = curator_config::format_str(&src);
-                            if formatted != src {
-                                match curator_config::format_file(&watch_path) {
-                                    Ok(_) => self_write = Some(formatted),
-                                    Err(e) => eprintln!("config format error: {e}"),
-                                }
+        let fmt_path = path.clone();
+        shell_core::watch::watch_config(path.clone(), move |src| match watcher::reconcile(src) {
+            Ok((new_cfg, warnings)) => {
+                log_config_warnings(&warnings);
+                // Format-on-save: rewrite in house style on a clean reload. The write is
+                // diff-guarded, so an already-formatted file is a no-op; when it does rewrite,
+                // return the formatted bytes so the watcher swallows the echo (one reload per user
+                // save, not two). Formatting only touches whitespace, so `new_cfg` (parsed
+                // pre-format) already matches the formatted file's config.
+                let self_write = if new_cfg.format_on_save {
+                    let formatted = curator_config::format_str(src);
+                    if formatted != src {
+                        match curator_config::format_file(&fmt_path) {
+                            Ok(_) => Some(formatted),
+                            Err(e) => {
+                                eprintln!("config format error: {e}");
+                                None
                             }
                         }
-                        reload_windows(&app_handle, &new_cfg);
+                    } else {
+                        None
                     }
-                    Err(msg) => {
-                        // Surface in each window's sidebar, and reconcile the shared home surface
-                        // (Broken state) in case every window happens to be closed.
-                        emit_to_all_chrome(&app_handle, "config-error", msg.clone());
-                        let state = app_handle.state::<AppState>();
-                        let entries = window_entries(&app_handle, &state);
-                        reconcile_home(&app_handle, &entries, &watch_path, true, Some(&msg));
-                    }
-                }
+                } else {
+                    None
+                };
+                reload_windows(&app_handle, &new_cfg);
+                self_write
+            }
+            Err(msg) => {
+                // Surface in each window's sidebar, and reconcile the shared home surface
+                // (Broken state) in case every window happens to be closed.
+                emit_to_all_chrome(&app_handle, "config-error", msg.clone());
+                let state = app_handle.state::<AppState>();
+                let entries = window_entries(&app_handle, &state);
+                reconcile_home(&app_handle, &entries, &fmt_path, true, Some(&msg));
+                None
             }
         });
 

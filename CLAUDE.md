@@ -564,7 +564,12 @@ that is the same for curator, warden, lector, and any future sibling app.
   The three plugin crates stay direct deps (capability resolution needs them); only the registration
   is shared. The `runtime` feature pulls tauri; the `build.rs` build-dep uses `default-features = false`
   so it stays zero-tauri (resolver 2 keeps the two separate).
-- **Deliberately NOT shared** (each diverges per app, don't consolidate): IPC fan-out, the config watcher,
+- **The config-file watcher mechanism is shared** — `shell_core::watch::watch_config` owns the
+  parent-dir watch, the FSEvents-robust file-name match, and the echo-swallow; curator passes only the
+  parse + apply closure (returning the formatted bytes on a format-on-save write so the echo is
+  swallowed). It replaced curator's inline `notify` thread, which matched events by exact path — a
+  latent bug on a symlinked config dir, fixed by the shared file-name match.
+- **Deliberately NOT shared** (each diverges per app, don't consolidate): IPC fan-out,
   the chrome-caller command gate (`is_chrome_caller` is curator-only — warden hosts no untrusted
   webviews), and the **app-specific menu items** — curator's Edit (clipboard accelerators) and Tabs
   (keyboard nav, Reload Tab, Reset All Tabs, Open Developer Tools) genuinely aren't app-agnostic, unlike

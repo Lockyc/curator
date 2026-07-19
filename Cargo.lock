@@ -543,7 +543,6 @@ dependencies = [
  "curator-config",
  "dirs 5.0.1",
  "getrandom 0.2.17",
- "notify",
  "objc2",
  "objc2-foundation",
  "objc2-user-notifications",
@@ -3244,8 +3243,9 @@ dependencies = [
 [[package]]
 name = "shell-core"
 version = "0.1.0"
-source = "git+https://github.com/Lockyc/shell-core?rev=b2fa948690d6879156affec174278194d97c47d1#b2fa948690d6879156affec174278194d97c47d1"
+source = "git+https://github.com/Lockyc/shell-core?rev=85c9f9b9f41365e628d549d6763ec922eafa6285#85c9f9b9f41365e628d549d6763ec922eafa6285"
 dependencies = [
+ "notify",
  "tauri",
  "tauri-plugin-process",
  "tauri-plugin-updater",
