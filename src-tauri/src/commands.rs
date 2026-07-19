@@ -478,10 +478,14 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
             view,
         },
     );
-    if let Some(win) = app.get_webview_window(&detached_label) {
+    {
         let app2 = app.clone();
         let label2 = detached_label.clone();
-        shell_core::detach::wire_return(&win, move || crate::redock(&app2, &label2));
+        // wire_return resolves the (multi-webview) detached window by label via get_window itself —
+        // a get_webview_window lookup here returns None for it and would silently skip the wiring.
+        shell_core::detach::wire_return(&app, &detached_label, move || {
+            crate::redock(&app2, &label2)
+        });
     }
     Ok(())
 }
