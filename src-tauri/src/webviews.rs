@@ -76,14 +76,16 @@ use tauri::{
     WindowEvent,
 };
 
-/// Default sidebar width, delivered to the chrome via `window_identity` as its reset/first-run
-/// default. It is *only* a default: the chrome (chrome-core) owns the sidebar width and its clamp,
-/// and Rust learns the resulting content geometry from the chrome's reported [`HoleRect`] — Rust no
-/// longer computes or clamps a sidebar width itself. Also the initial best-guess hole ([`initial_hole`])
-/// until the first `set_hole_rect` arrives.
-pub const CHROME_W: f64 = 240.0;
-/// Default sidebar width under `density = "compact"` — narrower to match the condensed type.
-/// Same role as [`CHROME_W`]: the chrome's reset/first-run default for the compact mode.
+/// The hole-punch compositing primitives — the content-hole rect type ([`HoleRect`]), its
+/// default-sidebar-width offset ([`CHROME_W`]), the launch-time best-guess hole ([`initial_hole`]),
+/// and the child-webview placement ([`layout_webviews`]) — are byte-identical with lector and live
+/// in `shell_core::compositing`. Re-exported so the rest of this module (and `commands.rs`/`lib.rs`)
+/// keep naming them `webviews::{CHROME_W, HoleRect, initial_hole, layout_webviews}` unchanged.
+pub use shell_core::compositing::{initial_hole, layout_webviews, HoleRect, CHROME_W};
+
+/// Default sidebar width under `density = "compact"` — narrower to match the condensed type. Same
+/// role as [`CHROME_W`]: the chrome's reset/first-run default for the compact mode. Curator-only
+/// (lector has no compact mode), so it stays here rather than in the shared primitive.
 pub const COMPACT_CHROME_W: f64 = 200.0;
 const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -112,49 +114,6 @@ fn random_nonce() -> String {
         let _ = write!(s, "{b:02x}");
     }
     s
-}
-
-/// The content hole's rect in logical px (top-left origin), exactly as the chrome measures its
-/// `#content-hole` element via `getBoundingClientRect` and reports it through `set_hole_rect`.
-///
-/// This is the single source of truth for content-webview placement. The chrome (chrome-core) owns
-/// the sidebar width and clamps it; the flex `#content-hole` follows from CSS; the chrome reports
-/// the resulting rect here. Rust just tracks and applies it — it no longer recomputes the geometry
-/// from a sidebar width or clamps anything (which is what removed the old Rust↔JS clamp duplication).
-/// Tauri's `LogicalPosition`/`LogicalSize` are also top-left, so — unlike warden's bottom-left
-/// native `NSView` surface — no coordinate flip is needed; the reported rect is used as-is.
-#[derive(Debug, Clone, Copy)]
-pub struct HoleRect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-/// The best-guess hole before the chrome's first `set_hole_rect`: full height, offset by the
-/// default sidebar width. The first report corrects it — this only has to place launch-time
-/// `load_on_open` tabs sensibly for the frame or two before the chrome mounts and measures.
-pub fn initial_hole(win_w: f64, win_h: f64) -> HoleRect {
-    HoleRect {
-        x: CHROME_W,
-        y: 0.0,
-        width: (win_w - CHROME_W).max(0.0),
-        height: win_h,
-    }
-}
-
-/// Position every content webview to fill the reported hole. The chrome is the window's main
-/// webview (auto-sized to the window as its content view; its label IS the window label), so it's
-/// skipped — only the `add_child` content webviews are placed. All loaded tabs stack in the same
-/// hole; `apply_active` raises the active one, `load_on_open` tabs sit live behind it.
-pub fn layout_webviews(window: &Window, hole: HoleRect) {
-    for wv in window.webviews() {
-        if wv.label() == window.label() {
-            continue;
-        }
-        let _ = wv.set_position(LogicalPosition::new(hole.x, hole.y));
-        let _ = wv.set_size(LogicalSize::new(hole.width.max(0.0), hole.height.max(0.0)));
-    }
 }
 
 /// Build a window and its chrome (sidebar) webview, and wire the user-close handler.

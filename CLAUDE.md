@@ -327,8 +327,8 @@ hot-reload watcher thread it holds the plugin mutex while the `window_created` h
 short-circuited before the marshal); the first matching title — e.g. renaming a window onto an old
 entry — froze the app. State is keyed by Tauri label (== `window_id`,
 derived from the title, stable across launches) *within a per-config state file*
-(`window_state_filename` hashes the config path) so two configs that reuse a window title don't
-share bounds. The config `width`/`height` is only the first-run default — saved bounds override it
+(shell-core's `state_filename` hashes the resolved config path — curator just hands it the path)
+so two configs that reuse a window title don't share bounds. The config `width`/`height` is only the first-run default — saved bounds override it
 once present. The transient home surface (`shell_core::home::HOME_LABEL`) is
 `skip_initial_state`-excluded. Renaming a window's
 `title` changes its id/label, so it normally restores fresh default bounds — unless the new title
@@ -558,10 +558,12 @@ that is the same for curator, warden, lector, and any future sibling app.
   curator's tracked `src/default-config.toml` template — shell-core never touches config-core (the
   three cores stay mutually independent; see the constellation `CLAUDE.md`).
 - **Plugin registration comes from shell-core.** `lib.rs` registers window-state + updater + process via
-  `shell_core::register_plugins(builder, window_state_filename(), &[shell_core::home::HOME_LABEL])`.
-  The three plugin crates stay direct deps (capability resolution + `window_state_filename` is curator's
-  own); only the registration is shared. The `runtime` feature pulls tauri; the `build.rs` build-dep uses
-  `default-features = false` so it stays zero-tauri (resolver 2 keeps the two separate).
+  `shell_core::register_plugins(builder, Some(&config_path), &[shell_core::home::HOME_LABEL])`, passing
+  curator's resolved config path — shell-core derives the per-config window-state filename from it
+  (`state_filename`), so the canonicalize→hash→format policy is single-sourced there, not per app.
+  The three plugin crates stay direct deps (capability resolution needs them); only the registration
+  is shared. The `runtime` feature pulls tauri; the `build.rs` build-dep uses `default-features = false`
+  so it stays zero-tauri (resolver 2 keeps the two separate).
 - **Deliberately NOT shared** (each diverges per app, don't consolidate): IPC fan-out, the config watcher,
   the chrome-caller command gate (`is_chrome_caller` is curator-only — warden hosts no untrusted
   webviews), and the **app-specific menu items** — curator's Edit (clipboard accelerators) and Tabs

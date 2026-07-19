@@ -825,50 +825,18 @@ pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
     }
 }
 
-/// Filename for the window-state plugin's saved bounds, scoped per config file. The plugin keys
-/// window state by Tauri label *within one file*; two different configs can reuse a window title,
-/// so scope the filename by a stable hash of the (canonicalized) config path to keep their bounds
-/// separate. Uses `fnv1a_64` — deliberately NOT `std`'s `DefaultHasher`, whose output isn't
-/// guaranteed stable across Rust releases: a `rust-toolchain.toml` bump could silently change the
-/// filename and reset every window to default bounds. Moving/renaming the config orphans its saved
-/// bounds (acceptable; the path is otherwise stable). Mirrors warden.
-fn window_state_filename() -> String {
-    let path = curator_config::resolve_config_path();
-    let canonical = std::fs::canonicalize(&path).unwrap_or(path);
-    let hash = fnv1a_64(canonical.as_os_str().as_encoded_bytes());
-    format!(".window-state-{hash:016x}.json")
-}
-
-/// FNV-1a 64-bit hash. Small, deterministic, and — crucially — **stable across Rust toolchains**
-/// (unlike `std::hash::DefaultHasher`), so the value drives a persistent on-disk filename without
-/// risk of a toolchain bump changing it. Non-cryptographic; collision resistance is irrelevant
-/// here (the input is a single trusted config path).
-///
-/// Duplicated in warden rather than lifted into shell-core: `window_state_filename` stays per-app
-/// (each app hashes its own config path) and shell-core's dividing-line decision explicitly rules
-/// the hash out of that crate.
-fn fnv1a_64(bytes: &[u8]) -> u64 {
-    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut hash = OFFSET_BASIS;
-    for &b in bytes {
-        hash ^= b as u64;
-        hash = hash.wrapping_mul(PRIME);
-    }
-    hash
-}
-
 pub fn run() {
     // Register the shell-core plugins (window-state + updater + process) — the set every sibling app
     // installs identically. Window-state persists each window's size/position/maximized keyed by
-    // Tauri label within a per-config state file (window_state_filename) so two configs sharing a
-    // window title don't share bounds; both save and restore (the plugin's window_created hook, on
-    // the main loop) are automatic — build_window must NOT restore by hand (deadlocks; see the
-    // footgun there). The shared home surface (shell-home, replacing curator's own error window) is
-    // excluded from state restore.
+    // Tauri label within a per-config state file (scoped by shell-core's `state_filename` from the
+    // config path below) so two configs sharing a window title don't share bounds; both save and
+    // restore (the plugin's window_created hook, on the main loop) are automatic — build_window must
+    // NOT restore by hand (deadlocks; see the footgun there). The shared home surface (shell-home,
+    // replacing curator's own error window) is excluded from state restore.
+    let config_path = curator_config::resolve_config_path();
     shell_core::register_plugins(
         tauri::Builder::default(),
-        window_state_filename(),
+        Some(&config_path),
         &[shell_core::home::HOME_LABEL],
     )
     .setup(move |app| {
@@ -1089,15 +1057,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fnv1a_64_matches_known_vectors() {
-        // Canonical FNV-1a/64 test vectors — pins the algorithm so the window-state filename can
-        // never drift with the toolchain (the whole point of not using DefaultHasher).
-        assert_eq!(fnv1a_64(b""), 0xcbf2_9ce4_8422_2325);
-        assert_eq!(fnv1a_64(b"a"), 0xaf63_dc4c_8601_ec8c);
-        assert_eq!(fnv1a_64(b"foobar"), 0x8594_4171_f739_67e8);
-    }
-
-    #[test]
     fn detach_token_round_trips_through_the_detached_label() {
         // A content-webview label is `{origin_wid}:tab-<hash>` — the token IS that label, and it
         // must survive the shell-core detached-label wrapping so a detached window is recognised
@@ -1113,13 +1072,5 @@ mod tests {
         );
         // A real (config-defined) window label is never mistaken for a detached one.
         assert!(!shell_core::detach::is_detached_label(tab_label));
-    }
-
-    #[test]
-    fn window_state_filename_shape_is_stable() {
-        // Same config path → same filename, every run (no per-run seed).
-        assert_eq!(window_state_filename(), window_state_filename());
-        assert!(window_state_filename().starts_with(".window-state-"));
-        assert!(window_state_filename().ends_with(".json"));
     }
 }
