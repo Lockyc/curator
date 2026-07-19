@@ -133,15 +133,20 @@ webviews.** `tauri.conf.json` sets `withGlobalTauri: true`, so `window.__TAURI__
 underlying invoke channel) reaches *every* webview, remote content tabs included — and
 app-defined `#[tauri::command]`s are **not** ACL/capability-gated (the `core:event` capability in
 `capabilities/default.json` is a separate concern — see below; the commands work regardless).
-The only thing stopping a remote page from invoking the whole command surface (reading sibling
-tabs' URLs via `get_tabs`, driving `select_tab`/`unload_tab`/`reset_all`/`set_hole_rect`) is
-the `require_chrome`/`is_chrome_caller` guard at the top of every command in `commands.rs`. The
-chrome is its window's **main** webview (hole-punch — see *Resizable sidebar*), so its label *is*
-the window label; content webviews are `{window_id}:tab-<hash>`, so the guard is `label ==
-webview.window().label()` (`label_is_chrome`; the same check `layout_webviews` uses to skip the
-chrome). **Every new `#[tauri::command]` that takes a `Webview` must call `require_chrome` first**
-(or, for the non-`Result` ones, early-return a safe empty value) — dropping the guard silently
-re-exposes the command to remote pages.
+What actually stops a remote page from invoking the command surface (`get_tabs`, `select_tab`,
+`unload_tab`, `reset_all`, `set_hole_rect`) is **Tauri's origin dispatch**, not the
+`require_chrome`/`is_chrome_caller` guard: curator ships no app-command ACL manifest (its
+`capabilities/default.json` grants only `core:*`/`updater`/`process`), so dispatch rejects every
+remote (`Origin::Remote`) invoke before the command body runs — verified against the pinned tauri
+2.11.5. See **shell-core's CLAUDE.md "command-isolation security model"** for the single-sourced
+reasoning. So `require_chrome` is **redundant belt-and-braces against remote pages**; the one thing
+it uniquely covers is a *second local surface* (which curator has none of — the home/detach pages
+are shell-core-bundled, and content webviews stay `External`). It is retained defense-in-depth for
+now; whether to narrow or drop it is a security-sensitive maintainer call (see the lift-plan). While
+it exists, the guard is `label == webview.window().label()` (`label_is_chrome`; the chrome is its
+window's main webview, so its label *is* the window label — the same check `layout_webviews` uses to
+skip the chrome), and a new `#[tauri::command]` taking a `Webview` should keep calling it — but it is
+a second layer, not the sole defense the origin dispatch already provides.
 
 Separately, the chrome sidebar *does* need real capability permissions: `core:event` (JS `listen()`)
 and `core:window:allow-start-dragging` (the sidebar window-move drag — see *Hole-punch layout*). The
@@ -570,8 +575,10 @@ that is the same for curator, warden, lector, and any future sibling app.
   swallowed). It replaced curator's inline `notify` thread, which matched events by exact path — a
   latent bug on a symlinked config dir, fixed by the shared file-name match.
 - **Deliberately NOT shared** (each diverges per app, don't consolidate): IPC fan-out,
-  the chrome-caller command gate (`is_chrome_caller` is curator-only — warden hosts no untrusted
-  webviews), and the **app-specific menu items** — curator's Edit (clipboard accelerators) and Tabs
+  the chrome-caller command gate (`is_chrome_caller` is curator-only — but as *redundant*
+  belt-and-braces, not because "only curator hosts untrusted content": lector hosts remote content
+  too, and origin dispatch isolates it — see shell-core's command-isolation model), and the
+  **app-specific menu items** — curator's Edit (clipboard accelerators) and Tabs
   (keyboard nav, Reload Tab, Reset All Tabs, Open Developer Tools) genuinely aren't app-agnostic, unlike
   the spine that now wraps them. See shell-core's CLAUDE.md for the full dividing line.
 - Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
