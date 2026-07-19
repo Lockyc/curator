@@ -419,8 +419,8 @@ updater *identity* (endpoint/pubkey/plugin) below. So chrome-core checks on laun
 `UPDATE_CHECK_INTERVAL_MS` (6h)** when `auto_update` is on, and via the **curator ▸ Check for
 Updates…** menu item (always, ignoring `auto_update`); on a hit it shows chrome-core's update
 bar and, on the user's confirm, downloads + installs + relaunches. It is **confirm-to-install** —
-nothing installs silently. The update bar's **×** dismisses it for the session (`chrome.js`'s
-`updateDismissed` flag suppresses auto re-surfacing; the menu check clears it and re-surfaces).
+nothing installs silently. The update bar's **×** dismisses it for the session (chrome-core's
+`_updateDismissed` flag suppresses auto re-surfacing; the menu check clears it and re-surfaces).
 
 - **Endpoint (zero-server):** `plugins.updater.endpoints` in `tauri.conf.json` points at
   `https://github.com/Lockyc/curator/releases/latest/download/latest.json`. GitHub's
