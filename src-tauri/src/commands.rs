@@ -47,6 +47,15 @@ fn label_is_chrome(label: &str, window_label: &str) -> bool {
 }
 
 /// Reject a command call that didn't originate from the trusted chrome sidebar.
+///
+/// Defense-in-depth, NOT the primary defence against untrusted content webviews. Those load remote
+/// (`External`) URLs, so Tauri's origin dispatch already rejects their invokes before any command
+/// body runs — curator's `capabilities/default.json` grants no app-command permissions, so a
+/// remote-origin invoke is denied by origin regardless of label (verified vs pinned tauri; see
+/// shell-core's command-isolation security doc for the single-sourced model). This static label
+/// check can't drift, and it uniquely screens a *second local-origin surface* (e.g. the
+/// `shell-home://` home surface) that origin dispatch — local-vs-remote only — would let through.
+/// Keep it: redundant vs remote, load-bearing vs a future second local surface.
 fn require_chrome(webview: &Webview) -> Result<(), String> {
     if is_chrome_caller(webview) {
         Ok(())
