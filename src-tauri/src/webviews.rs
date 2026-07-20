@@ -209,7 +209,10 @@ pub fn create_content_webview(
     let escape_js = ESCAPE_CLICK_JS.replace("__CURATOR_KEY__", &nonce);
     let notification_js = NOTIFICATION_JS.replace("__CURATOR_KEY__", &nonce);
     let badge_js = BADGE_JS.replace("__CURATOR_KEY__", &nonce);
-    let init = format!("{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}");
+    let init = format!(
+        "{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}\n;\n{}",
+        shell_core::MOUSE_NAV_JS
+    );
 
     let nav_app = window.app_handle().clone();
     let nav_label = view.label.clone();
