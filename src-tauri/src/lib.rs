@@ -845,6 +845,13 @@ pub fn run() {
         // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
         notification::init(app.handle().clone());
 
+        // Native mouse side-button (back/forward) navigation — the shared shell-core NSEvent monitor
+        // (WKWebView never delivers these to the DOM, so it can't be done in the page). curator
+        // supplies only the focused-active-webview resolver; shell-core owns the monitor + the
+        // native goBack/goForward.
+        let mouse_nav_handle = app.handle().clone();
+        shell_core::mouse_nav::install(move || commands::focused_active_webview(&mouse_nav_handle));
+
         let path = curator_config::resolve_config_path();
         let (cfg, load_err) = match curator_config::load_config(&path) {
             Ok((c, warnings)) => {

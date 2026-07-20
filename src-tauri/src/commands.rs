@@ -555,25 +555,27 @@ fn focused_window_id(app: &AppHandle) -> Option<String> {
     app.get_focused_window().map(|w| w.label().to_string())
 }
 
-/// Run `f` against the focused window's active content webview, if there is one. Resolves the
-/// focused window, reads its active tab label (under the `windows` lock, dropped before acting),
-/// and looks up that tab's webview — a no-op if no window is focused, nothing is active, or the
-/// active tab's webview isn't created yet.
-fn with_focused_active_webview(app: &AppHandle, f: impl FnOnce(&Webview)) {
-    let Some(wid) = focused_window_id(app) else {
-        return;
-    };
-    let active = {
+/// The focused window's active content webview, if any. Resolves the focused window, reads its
+/// active tab label (under the `windows` lock, dropped before the lookup), and looks up that tab's
+/// webview — `None` if no window is focused, nothing is active, or the active tab isn't created yet.
+/// Used both by the menu actions (`with_focused_active_webview`) and, as the resolver, by
+/// shell-core's shared mouse side-button navigation.
+pub(crate) fn focused_active_webview(app: &AppHandle) -> Option<Webview> {
+    let wid = focused_window_id(app)?;
+    let label = {
         let state = app.state::<AppState>();
         let windows = state.windows.lock().unwrap();
         windows
             .get(&wid)
             .and_then(|rt| rt.tabs.active().map(str::to_string))
-    };
-    if let (Some(label), Some(window)) = (active, app.get_window(&wid)) {
-        if let Some(wv) = window.get_webview(&label) {
-            f(&wv);
-        }
+    }?;
+    app.get_window(&wid)?.get_webview(&label)
+}
+
+/// Run `f` against the focused window's active content webview, if there is one.
+pub(crate) fn with_focused_active_webview(app: &AppHandle, f: impl FnOnce(&Webview)) {
+    if let Some(wv) = focused_active_webview(app) {
+        f(&wv);
     }
 }
 
