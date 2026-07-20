@@ -183,8 +183,9 @@ web page's `Notification.onclick` (the injected stub's JS handlers stay inert �
 `src/inject/notification.js`).
 
 **Loading is driven by per-tab `load_on_open`** — currently the only loading knob; there are no per-window mode flags today (a window-level default could be added if a need arises).
-Every content webview gets the full shim set (escape-click, visibility, notification, badge),
-so any *loaded* tab can fire native banners and report unread. `load_on_open` tabs are created
+Every content webview gets the full shim set (escape-click, visibility, notification, badge) plus
+shell-core's shared `MOUSE_NAV_JS` (mouse side-buttons → history back/forward; escape-click.js itself
+now owns only cmd/middle-click escape), so any *loaded* tab can fire native banners and report unread. `load_on_open` tabs are created
 at launch and kept live (never hidden — `apply_active` in `webviews.rs` shows them behind the
 active tab), so they keep syncing and notify in the background. Tabs without `load_on_open` are
 lazy (created on first click) and hidden when inactive (throttled → no background notifications,
