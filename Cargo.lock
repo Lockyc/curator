@@ -3265,12 +3265,13 @@ dependencies = [
 [[package]]
 name = "shell-core"
 version = "0.1.0"
-source = "git+https://github.com/Lockyc/shell-core?rev=99c381ebb1420302751a63671df6f89e1ce1ed58#99c381ebb1420302751a63671df6f89e1ce1ed58"
+source = "git+https://github.com/Lockyc/shell-core?rev=d5f95051d27382dff1374df842a3dc329333c2e0#d5f95051d27382dff1374df842a3dc329333c2e0"
 dependencies = [
  "block2",
  "notify",
  "objc2",
  "objc2-app-kit",
+ "objc2-foundation",
  "tauri",
  "tauri-plugin-process",
  "tauri-plugin-updater",

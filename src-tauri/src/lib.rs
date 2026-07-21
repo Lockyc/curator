@@ -197,7 +197,7 @@ fn open_window(
             tabs.mark_detached(&v.label);
             continue;
         }
-        webviews::create_content_webview(&window, v, hole)?;
+        webviews::create_content_webview(&window, v, hole, win_cfg.colour.as_deref())?;
         tabs.mark_created(&v.label);
     }
 
@@ -211,7 +211,7 @@ fn open_window(
             tabs.mark_detached(label);
         } else if let Some(v) = views.iter().find(|v| &v.label == label) {
             if !tabs.is_created(label) {
-                webviews::create_content_webview(&window, v, hole)?;
+                webviews::create_content_webview(&window, v, hole, win_cfg.colour.as_deref())?;
                 tabs.mark_created(label);
             }
             tabs.set_active(label);
@@ -584,11 +584,16 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
         } else {
             rt.tabs.mark_created(&tab_label);
             rt.tabs.set_active(&tab_label);
-            Some((rt.hole, views, rt.tabs.active().map(str::to_string)))
+            Some((
+                rt.hole,
+                views,
+                rt.tabs.active().map(str::to_string),
+                rt.cfg.colour.clone(),
+            ))
         }
     };
-    if let Some((hole, views, active)) = plan {
-        let _ = webviews::create_content_webview(&window, &det.view, hole);
+    if let Some((hole, views, active, colour)) = plan {
+        let _ = webviews::create_content_webview(&window, &det.view, hole, colour.as_deref());
         let _ = webviews::apply_active(&window, active.as_deref(), &views);
     }
 
@@ -617,7 +622,7 @@ fn reconcile_window_tabs(
     // the main thread, which may itself be waiting on this same lock (e.g. in on_title_changed)
     // — holding the lock across them would deadlock. So we compute the orphan/create lists,
     // active tab, dock total, and a fresh reload-timer generation under the lock, then act.
-    let (orphans, to_create, active, dock_total, reload_cancel, hole) = {
+    let (orphans, to_create, active, dock_total, reload_cancel, hole, colour) = {
         let mut windows = state.windows.lock().unwrap();
         let Some(rt) = windows.get_mut(window_id) else {
             return;
@@ -682,7 +687,15 @@ fn reconcile_window_tabs(
                 .flat_map(|w| w.unread.values().copied())
                 .collect::<Vec<_>>(),
         );
-        (orphans, to_create, active, dock_total, reload_cancel, hole)
+        (
+            orphans,
+            to_create,
+            active,
+            dock_total,
+            reload_cancel,
+            hole,
+            win_cfg.colour.clone(),
+        )
     };
 
     // Webview side-effects, lock released.
@@ -692,7 +705,7 @@ fn reconcile_window_tabs(
         }
     }
     for v in &to_create {
-        let _ = webviews::create_content_webview(window, v, hole);
+        let _ = webviews::create_content_webview(window, v, hole, colour.as_deref());
     }
     spawn_reload_timers(window, &views, reload_cancel);
     if let Some(win) = window.app_handle().get_window(window_id) {

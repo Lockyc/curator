@@ -200,6 +200,7 @@ pub fn create_content_webview(
     window: &Window,
     view: &TabView,
     hole: HoleRect,
+    accent: Option<&str>,
 ) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
@@ -280,8 +281,27 @@ pub fn create_content_webview(
     #[cfg(target_os = "macos")]
     {
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
+        // Thin determinate loading bar at the top of this content webview (shell-core-owned).
+        shell_core::progress_bar::install(&webview, accent_rgba(accent));
     }
     Ok(())
+}
+
+/// The loading-bar colour as sRGB rgba (0–1) from a window's optional accent hex (`colour`), with a
+/// neutral-blue fallback when unset or unparseable — the same neutral the chrome uses for a window
+/// with no accent set.
+fn accent_rgba(colour: Option<&str>) -> (f64, f64, f64, f64) {
+    colour
+        .and_then(|s| curator_config::Colour::parse(s).ok())
+        .map(|c| {
+            (
+                c.r as f64 / 255.0,
+                c.g as f64 / 255.0,
+                c.b as f64 / 255.0,
+                1.0,
+            )
+        })
+        .unwrap_or((0.039, 0.518, 1.0, 1.0))
 }
 
 /// Navigate a content webview back to its canonical URL (reset / periodic reload).

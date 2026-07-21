@@ -181,7 +181,8 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
         // Pass the current hole rect (read under this held lock); create_content_webview must
         // not re-lock `windows` itself — that would self-deadlock the non-reentrant mutex.
         let hole = rt.hole;
-        webviews::create_content_webview(&window, &target, hole).map_err(|e| e.to_string())?;
+        webviews::create_content_webview(&window, &target, hole, rt.cfg.colour.as_deref())
+            .map_err(|e| e.to_string())?;
         rt.tabs.mark_created(&label);
     }
     rt.tabs.set_active(&label);
@@ -443,7 +444,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
     // hole via set_hole_rect shortly after; birth_hole just places it sensibly for the first frame.
     let spec = shell_core::detach::DetachSpec {
         title: view.title.clone(),
-        colour,
+        colour: colour.clone(),
         width,
         height,
     };
@@ -455,9 +456,15 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         height: (height - crate::DETACH_BANNER_H).max(0.0),
     };
     let view_for_birth = view.clone();
+    let colour_for_birth = colour.clone();
     let build = shell_core::detach::open_detached(&app, &token, &spec, "curator", |win| {
         let w = win.as_ref().window();
-        webviews::create_content_webview(&w, &view_for_birth, birth_hole)
+        webviews::create_content_webview(
+            &w,
+            &view_for_birth,
+            birth_hole,
+            colour_for_birth.as_deref(),
+        )
     });
 
     let detached_label = match build {
@@ -473,7 +480,12 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
                     rt.tabs.mark_created(&label);
                 }
             }
-            let _ = webviews::create_content_webview(&origin_window, &view, origin_hole);
+            let _ = webviews::create_content_webview(
+                &origin_window,
+                &view,
+                origin_hole,
+                colour.as_deref(),
+            );
             return Err(format!("couldn't pop out tab: {e}"));
         }
     };

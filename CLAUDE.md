@@ -189,7 +189,10 @@ visibility, notification, badge), so any *loaded* tab can fire native banners an
 to the DOM (so it can't be done in the page), so the shared shell-core `NSEvent` monitor
 (`shell_core::mouse_nav::install`, wired in the setup hook with curator's `focused_active_webview`
 resolver) drives WKWebView `goBack`/`goForward`; lector shares the same monitor. See shell-core's
-CLAUDE.md. `load_on_open` tabs are created
+CLAUDE.md. Each content webview also gets a thin **determinate loading bar** pinned to its top edge
+(shell-core's `progress_bar::install`, driven by WKWebView `estimatedProgress`), tinted with the
+window's accent (`colour`) — so `create_content_webview` takes an `accent: Option<&str>` (converted to
+sRGB rgba by `accent_rgba`, neutral-blue fallback), threaded from every call site's window config. `load_on_open` tabs are created
 at launch and kept live (never hidden — `apply_active` in `webviews.rs` shows them behind the
 active tab), so they keep syncing and notify in the background. Tabs without `load_on_open` are
 lazy (created on first click) and hidden when inactive (throttled → no background notifications,
