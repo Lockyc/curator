@@ -59,16 +59,24 @@ aligned by construction. Accent-colour validation delegates to `config_core::Col
 
 Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
 window title, zero window dimension, invalid colour, empty group name, dup group name within a
-window, dup tab title window-wide (across loose + grouped), empty tab title/url, unparseable url,
+window, empty tab title/url, unparseable url,
 zero `reload_every`, and any **unrecognized key** on `Config`/`WindowConfig`/`Group`/`Tab` (all
 `#[serde(deny_unknown_fields)]`) — so a removed/renamed key such as the old `always_load` (now
 `load_on_open`) or a plain typo fails loudly rather than being silently ignored. It also returns a
 **warnings** channel (`Vec<Warning>`, non-fatal) — first
 producer: a URL repeated within a window (the URL-hash labels still disambiguate, so it loads but
 warns). `parse_and_validate`/`load_config` return `(Config, Vec<Warning>)`; warnings are
-`eprintln`'d on load/hot-reload and printed by `curator validate`. Tab identity stays the
-URL-hash label (`url_label`), not the title — titles are display labels (hence the new title
-uniqueness, which removes the silent `open_on_launch` first-match ambiguity).
+`eprintln`'d on load/hot-reload and printed by `curator validate`. **Tab titles are display
+labels, not addresses — duplicates are allowed** (the warden/family way). A tab's identity is its
+URL-hash label (`url_label`, namespaced per window), and `tab_views` gives two same-URL tabs
+distinct labels via a `-1`/`-2` suffix, so nothing keys off the title. **`open_on_launch` is a
+plain `bool`** (per-window): unset/`false` makes the first `load_on_open` tab active at launch
+(else blank), `true` the first tab even if cold. There is deliberately **no** `open_on_launch =
+"<title>"` form — a title never selects a tab, which is exactly what lets titles duplicate.
+**Footgun: don't reintroduce title-as-address** — an `open_on_launch = "<title>"` arm (or any
+title-keyed lookup) silently re-imposes title uniqueness and gives first-match on a duplicate;
+curator, warden, and lector all share this "title is display-only" rule, so a change here is a
+family-wide (config-core) decision.
 
 ## Workspace layout
 

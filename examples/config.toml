@@ -6,7 +6,7 @@
 # Tabs: a window's tabs may be loose (ungrouped) or organised into [[window.group]] sections.
 # Loose [[window.tab]] blocks render first, in a leading headerless section; each group then
 # renders under its name. A window can mix the two, or use only loose tabs. Tab titles are
-# unique window-wide (across loose + grouped); group names are unique within a window.
+# display labels, so duplicates are allowed; group names are unique within a window.
 #
 # Loading & notifications: a tab marked `load_on_open` is loaded when its window opens and kept
 # live, so it keeps syncing and can fire native banners / report unread in the background. Tabs
@@ -50,9 +50,11 @@
 # so this window stays quiet. It opens with a loose tab above the grouped sections.
 
 [[window]]
-  title          = "Keepers"
-  colour         = "#0f8a8a" # optional accent: name banner + faint navbar tint (per-window identity)
-  open_on_launch = "Grafana" # open this tab on launch instead of the blank screen
+  title  = "Keepers"
+  colour = "#0f8a8a" # optional accent: name banner + faint navbar tint (per-window identity)
+  # open_on_launch: false/unset opens the first `load_on_open` tab (here Grafana), true opens the
+  # first tab even if cold. Titles never select a tab, so there's no "open the tab named X" form.
+  # open_on_launch = true
   # Loose (ungrouped) tab — renders first, in a headerless section above the groups below.
   [[window.tab]]
     title = "Start"

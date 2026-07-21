@@ -152,7 +152,7 @@ organised into groups; loose tabs render first in a headerless section, then eac
 title         = "Keepers"          # required; must be unique across windows
 # width       = 1500               # optional; default 1500 × 1000
 # height      = 1000
-# open_on_launch = "Grafana"       # true/false/"Tab Title"
+# open_on_launch = true            # true = first tab even if cold; unset = first load_on_open tab
 
   # Loose (ungrouped) tab — renders first, in a headerless section above the groups.
   [[window.tab]]
@@ -186,15 +186,15 @@ title = "Comms"
 |-------------------|--------------------------|---------------|----------------------------------------------------------------------------|
 | `title`           | string                   | **required**  | Window title; must be unique across all windows.                           |
 | `width`/`height`  | int                      | `1500`/`1000` | First-run window size in logical pixels. After that, curator remembers each window's size + position across launches, so this is only the initial default (move/resize a window and it reopens where you left it). |
-| `open_on_launch`  | bool \| tab title string | *(unset)*     | Unset (default) opens the first `load_on_open` tab, else a blank screen. `true` opens the first tab even if it isn't loaded; a string opens the named tab. |
+| `open_on_launch`  | bool                     | *(unset)*     | Unset/`false` opens the first `load_on_open` tab, else a blank screen. `true` opens the first tab even if it isn't loaded. (Titles are display labels, not addresses, so there's no "open the tab named X" form.) |
 | `colour`          | `#rgb` / `#rrggbb` hex    | none          | Accent colour for this window — colours the title bar (nav pill + window name), giving each window a distinct identity. |
 | `session`         | string                   | none          | Default login store for this window's tabs (overridden per tab). See sessions below. |
 
 ### Per-tab options
 
 Each tab (loose `[[window.tab]]` or grouped `[[window.group.tab]]`) requires `title` and `url`.
-Tab titles must be unique window-wide (across loose + grouped); group names unique within a
-window. Optional:
+Tab titles are display labels, so duplicates are allowed (a tab's identity is its URL, not its
+title); group names must be unique within a window. Optional:
 
 | Field          | Type         | Default | Meaning                                         |
 |----------------|--------------|---------|--------------------------------------------------|
