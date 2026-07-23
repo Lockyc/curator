@@ -115,12 +115,14 @@ chrome-core / config-core / shell-core `[patch]` overrides live in the **workspa
 ## Architecture
 
 **Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
-Each window has a `window_id` (derived from `title` via `curator_config::identity::window_id`) that is the Tauri
-window label *and* the label of its **main webview** (the chrome sidebar — see *Resizable
-sidebar*). It also namespaces the content webviews' labels (`{window_id}:{tab_hash}`) so they're
-collision-free across windows, and distinct from the chrome's bare `window_id` label (the basis of
-the `require_chrome` gate). The window id is purely a label key — run-ephemeral, nothing persistent
-tied to it — so renaming a window's `title` is harmless.
+Each window has a `window_id` (derived from `title` via `curator_config::identity::window_id`).
+**The chrome sidebar is the window's main webview, so the `window_id` is at once the Tauri window
+label and the chrome webview's label** (see *Hole-punch layout*) — the definitional fact the rest of
+this doc leans on. It also namespaces the content webviews' labels (`{window_id}:{tab_hash}`) so
+they're collision-free across windows and distinct from the chrome's bare `window_id` label (the
+basis of the `require_chrome` gate). The window id is purely a run-ephemeral label key — nothing
+persistent tied to it — so renaming a window's `title` just changes the label (harmless, and it
+never logs you out since sessions key off `session`, not the window — see *Sessions*).
 
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
 resolved `session` string via the full cascade
@@ -165,10 +167,9 @@ reasoning. So `require_chrome` is **redundant belt-and-braces against remote pag
 it uniquely covers is a *second local surface* (which curator has none of — the home/detach pages
 are shell-core-bundled, and content webviews stay `External`). It is retained defense-in-depth for
 now; whether to narrow or drop it is a security-sensitive maintainer call (see the lift-plan). While
-it exists, the guard is `label == webview.window().label()` (`label_is_chrome`; the chrome is its
-window's main webview, so its label *is* the window label — the same check `layout_webviews` uses to
-skip the chrome), and a new `#[tauri::command]` taking a `Webview` should keep calling it — but it is
-a second layer, not the sole defense the origin dispatch already provides.
+it exists, the guard is `label == webview.window().label()` (`label_is_chrome`; the same check
+`layout_webviews` uses to skip the chrome), and a new `#[tauri::command]` taking a `Webview` should
+keep calling it — but it is a second layer, not the sole defense the origin dispatch already provides.
 
 Separately, the chrome sidebar *does* need real capability permissions: `core:event` (JS `listen()`)
 and `core:window:allow-start-dragging` (the sidebar window-move drag — see *Hole-punch layout*). The
@@ -187,8 +188,8 @@ posts via the deprecated `NSUserNotification` API, which is a **silent no-op on 
 a banner (with sound) shows even while curator is the frontmost app (the hidden-tab-in-focused-window
 case). It's
 gated on `!tauri::is_dev()` — `currentNotificationCenter` throws on a nil bundle id, so native
-banners only fire from the packaged `curator.app` (dev still badges). Don't reintroduce the
-plugin for banners. Because the plugin is gone, `withGlobalTauri` no longer injects a notification
+banners only fire from the packaged `curator.app` (dev still badges). Because the plugin is gone,
+`withGlobalTauri` no longer injects a notification
 guest that probes `plugin:notification|is_permission_granted` over IPC, so content webviews need
 no `tauri-guard` shim anymore (it was removed with the plugin).
 
@@ -197,8 +198,7 @@ from the `on_navigation` notify-sentinel handler in `webviews.rs`, which knows b
 them into the request's `userInfo`; the same delegate's `didReceiveNotificationResponse` reads
 them back on a tap (the *default* action only — dismiss is ignored), raises that window
 (`set_focus`, which also activates curator from the background), and emits `focus-tab` to that
-window's chrome (the chrome is the window's main webview, so its label *is* the `window_id`) so the
-sidebar selects the tab. `init` captures the `AppHandle` the delegate needs. The event targets the
+window's chrome so the sidebar selects the tab. `init` captures the `AppHandle` the delegate needs. The event targets the
 precise chrome webview label, so it reaches only the originating window (no per-window leak — unlike
 warden, whose `emit_to` leaks to siblings and so carries a label to filter). This surfaces curator's *own* tab; it does **not** invoke the
 web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
@@ -308,15 +308,12 @@ don't strip the feature.
 
 **Hole-punch layout + resizable sidebar.** The chrome is the window's **main** webview
 (`build_window` uses `WebviewWindowBuilder`, `hidden_title`, full-window under `TitleBarStyle::Overlay`),
-*not* an `add_child` child — because `data-tauri-drag-region` moves the window only from a window's
-main webview (a child webview's drag is inert). **Two things are both required for the drag; each is
-a silent no-op alone**: (1) the chrome must be the main webview, as here; and (2)
-`capabilities/default.json` must grant `core:window:allow-start-dragging`.
-The drag region invokes `plugin:window|start_dragging`, and **plugin** commands *are* ACL-gated
-(unlike curator's own app commands, which aren't — see the gating section) — without that permission
-the invoke is denied and nothing moves, with no error surfaced. Because the full-window webview now
-covers the native title-bar strip, this drag path is also the *only* way to move the window (there
-is no native-titlebar fallback), so the permission is load-bearing, not a nicety.
+*not* an `add_child` child — tempting to reach for `add_child` as the content webviews do, but
+`data-tauri-drag-region` moves the window only from the main webview (a child's drag is inert), and
+this full-window webview is the *only* way to move the window (it covers the native title-bar strip,
+no fallback). The drag also requires `core:window:allow-start-dragging` in `capabilities/default.json`
+— an ACL-gated plugin command (`plugin:window|start_dragging`), unlike curator's own app commands
+(see the gating section); without it the invoke is silently denied and nothing moves.
 This mirrors **warden's hole-punch**: `index.html` is a flex row of a fixed-width `#sidebar` (the
 chrome-core mount) and a `#content-hole`; the Rust-positioned content webviews are `add_child`
 siblings that composite **above** the main chrome webview over the hole (guaranteed by add-order +
@@ -339,10 +336,7 @@ the sole difference is curator needs **no Y-flip** (Tauri's `LogicalPosition` is
 flips for its bottom-left native `NSView`). **chrome-core is the *only* sidebar-width clamp**
 (`MIN_W`/`MAX_W`/`MAX_FRACTION` in `chrome.js` → the component's `minWidth`/`maxWidth`/`maxFraction`,
 160–520px, ≤40% of the window); because Rust just applies the reported hole there is **no Rust-side
-clamp to keep identical**. The old `clamp_chrome_w`/`relayout_with_width`/`set_sidebar_width` command
-and the `WindowRuntime.chrome_w` atomic were **removed** when curator converged onto warden's
-report-the-rect model — don't reintroduce a Rust-side width or clamp (that was the whole
-JS↔Rust-duplication this convergence deleted). The window-shrink re-clamp lives in `chrome.js`'s
+clamp to keep identical**. The window-shrink re-clamp lives in `chrome.js`'s
 `resize` handler (a shrink can push the sidebar past the 40% cap without a drag), which then
 re-reports the hole; there is **no Rust-side resize relayout** (`build_window` wires only the
 user-close handler now — JS drives resize, matching warden, which also drops restore-on-window-grow).
@@ -351,25 +345,16 @@ chrome-core owns the drag handle + `localStorage` persistence
 accent colour (`--active-bg`), falling back to neutral blue.
 
 **Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION
-| MAXIMIZED). Restore is handled entirely by the plugin's `window_created` hook, which runs on the
-main thread inside the running event loop — where its `set_size`/`set_position` resolve inline and
-its monitor-intersection check keeps a stale off-screen position from stranding the window. So
-`build_window` must **not** call `restore_state` itself. That looks correct (windows are built at
-runtime, not from `tauri.conf.json`, so restore them by hand) but is a footgun: once a saved entry
-matches the label, `restore_state` applies geometry via calls that marshal to the main event loop and
-block when invoked off it. In the setup hook the loop hasn't started (launch freeze); on the
-hot-reload watcher thread it holds the plugin mutex while the `window_created` hook waits on it
-(reload deadlock). It stayed invisible while no window title hashed to a persisted label (restore
-short-circuited before the marshal); the first matching title — e.g. renaming a window onto an old
-entry — froze the app. State is keyed by Tauri label (== `window_id`,
-derived from the title, stable across launches) *within a per-config state file*
-(shell-core's `state_filename` hashes the resolved config path — curator just hands it the path)
-so two configs that reuse a window title don't share bounds. The config `width`/`height` is only the first-run default — saved bounds override it
-once present. The transient home surface (`shell_core::home::HOME_LABEL`) is
-`skip_initial_state`-excluded. Renaming a window's
-`title` changes its id/label, so it normally restores fresh default bounds — unless the new title
-happens to hash to a label already in the state file, which is how the rename-onto-old-entry case
-above arises. Sidebar width is separate (per-title `localStorage`, above).
+| MAXIMIZED); the plugin's own `window_created` hook restores them on the main event loop.
+**`build_window` must not call `restore_state` itself** — off the event loop the restore marshal
+deadlocks (FOOTGUN comment in `webviews.rs`'s `build_window`, pointer in `lib.rs`'s `run`). State is
+keyed by Tauri label (== `window_id`, derived from the title, stable across launches) *within a
+per-config state file* (shell-core's `state_filename` hashes the resolved config path — curator just
+hands it the path) so two configs that reuse a window title don't share bounds. The config
+`width`/`height` is only the first-run default — saved bounds override it once present. The transient
+home surface (`shell_core::home::HOME_LABEL`) is `skip_initial_state`-excluded. Renaming a window's
+`title` changes its id/label, so it normally restores fresh default bounds. Sidebar width is separate
+(per-title `localStorage`, above).
 
 **Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
 Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across
@@ -580,8 +565,7 @@ that is the same for curator, warden, lector, and any future sibling app.
   here — the local copy is overwritten on the next build. curator's `scripts/test-install-app.sh` is
   curator-specific and stays tracked.
 - **The build stamp comes from shell-core.** `build.rs` calls `shell_core::build_stamp()`, emitting
-  `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`). These shared, un-prefixed names
-  replaced curator's former app-prefixed local stamp — use them; don't reintroduce app-prefixed names.
+  the shared, un-prefixed `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`).
 - **The menu spine and the home surface come from shell-core** (`menu::build_spine` /
   `home::{home_state, show_home, close_home}`, both behind the `runtime` feature). `build_app_menu`
   calls `build_spine` for the App/Config/Window submenus and interleaves curator's own Edit and Tabs
