@@ -22,7 +22,7 @@
 # at any level opts out and falls through. Logins follow the session name, so renaming a window
 # or editing a URL never signs you out.
 #
-# `just dev` loads this file (via CURATOR_CONFIG) so you can try it without touching
+# `just run` loads this file (via CURATOR_CONFIG) so you can try it without touching
 # your real ~/.config/curator/config.toml.
 
 # Force dark appearance (sites honouring prefers-color-scheme render dark). Omit = follow system.

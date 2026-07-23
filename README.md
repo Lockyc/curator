@@ -34,9 +34,12 @@ file-driven, everything else is ephemeral.
   containing loose `[[window.tab]]` entries and/or `[[window.group]]` sections of
   `[[window.group.tab]]`s. No in-app pin/unpin; you curate by editing the file (hot-reloaded
   on save).
-- **Multiple windows** — each `[[window]]` opens its own window with its own tab list. All
-  open at launch; ⌘⇧W (or the red button) closes a window and the **Window** menu reopens it —
-  ⌘W instead unloads the active tab. Closing the last open window quits curator.
+- **Multiple windows** — each `[[window]]` opens its own window with its own tab list. They
+  open at launch unless marked `open_on_start = false`, which registers a window **dormant** —
+  configured but opened on demand from the **Window** menu. ⌘⇧W (or the red button) closes a
+  window and the **Window** menu reopens it — ⌘W instead unloads the active tab. Closing the
+  last open window drops to a home surface listing every window (dormant ones included) to
+  reopen, rather than quitting.
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.
@@ -62,8 +65,9 @@ file-driven, everything else is ephemeral.
   in-page state (scroll position, SPA route, unsent form input) doesn't carry across. Closing the
   popped-out window returns the tab to where it came from, reopening its origin window first if you
   closed it.
-- **Window menu** — close a window (⌘⇧W); reopen any closed window from the Window menu.
-  Closing the last open window quits curator.
+- **Window menu** — close a window (⌘⇧W); reopen any closed or dormant window from the Window
+  menu. Closing the last open window drops to the home surface (listing every reopenable window)
+  rather than quitting.
 
 ## Install
 
@@ -116,7 +120,7 @@ build from source.
 2. Run it (requires Rust + the Tauri CLI; the installer backstops this via `cargo install tauri-cli`):
 
    ```sh
-   just run      # or: cargo tauri dev
+   just run
    ```
 
    `just run` loads the repo's `examples/config.toml` (via the `CURATOR_CONFIG` env var) so
@@ -153,6 +157,7 @@ title         = "Keepers"          # required; must be unique across windows
 # width       = 1500               # optional; default 1500 × 1000
 # height      = 1000
 # open_on_launch = true            # true = first tab even if cold; unset = first load_on_open tab
+# open_on_start  = false           # default true; false = window is dormant at launch, opened from the Window menu
 
   # Loose (ungrouped) tab — renders first, in a headerless section above the groups.
   [[window.tab]]
@@ -186,6 +191,7 @@ title = "Comms"
 |-------------------|--------------------------|---------------|----------------------------------------------------------------------------|
 | `title`           | string                   | **required**  | Window title; must be unique across all windows.                           |
 | `width`/`height`  | int                      | `1500`/`1000` | First-run window size in logical pixels. After that, curator remembers each window's size + position across launches, so this is only the initial default (move/resize a window and it reopens where you left it). |
+| `open_on_start`   | bool                     | `true`        | Whether this window materializes at launch. `false` registers it **dormant** — configured but not shown, opened on demand from the **Window** menu / home surface. A launch-only gate (flipping it on a running window takes effect at the next launch). |
 | `open_on_launch`  | bool                     | *(unset)*     | Unset/`false` opens the first `load_on_open` tab, else a blank screen. `true` opens the first tab even if it isn't loaded. (Titles are display labels, not addresses, so there's no "open the tab named X" form.) |
 | `colour`          | `#rgb` / `#rrggbb` hex    | none          | Accent colour for this window — colours the title bar (nav pill + window name), giving each window a distinct identity. |
 | `session`         | string                   | none          | Default login store for this window's tabs (overridden per tab). See sessions below. |
@@ -223,7 +229,8 @@ Tabs are lazy by default: a webview is created on first activation and kept warm
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
 that webview's memory); the tab reloads on next click. A navigation pill at the top of the
 sidebar drives the active tab: **◀ back** and **▶ forward** through in-page history, and
-**⌂ home** to snap back to its canonical URL.
+**⌂ home** to snap back to its canonical URL. The mouse's side buttons drive the same
+back/forward, and a determinate progress bar tracks each tab's page load.
 
 See `examples/config.toml` for a two-window starting-point example.
 
@@ -330,9 +337,10 @@ with nothing extra to install:
   materialized into curator's bundled web assets at compile time.
 - **[config-core](https://github.com/Lockyc/config-core)** — the TOML config engine (parse,
   validate, format, hot-reload diff) behind curator's config and `curator fmt`.
-- **[shell-core](https://github.com/Lockyc/shell-core)** — the shared release tooling + a sliver
-  of Tauri runtime setup. `build.rs` materializes the release scripts (git-ignored) and stamps the
-  build; the app registers window-state/updater/process via its `register_plugins`.
+- **[shell-core](https://github.com/Lockyc/shell-core)** — the shared release tooling + Tauri
+  runtime setup. `build.rs` materializes the release scripts (git-ignored) and stamps the
+  build; the app registers window-state/updater/process via its `register_plugins`, and draws its
+  mouse side-button navigation (an NSEvent monitor) and content-load progress bar from shell-core too.
 
 Those same cores are also shared with two **sibling apps, [warden](https://github.com/Lockyc/warden)**
 (curates **terminals**) and **[lector](https://github.com/Lockyc/lector)** (curates **local
