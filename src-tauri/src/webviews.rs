@@ -147,6 +147,15 @@ pub fn build_window(
             .build()?;
     let window = webview_window.as_ref().window();
 
+    // Let the cursor arbiter recognise this window's chrome, so it can tell "a content tab covers
+    // the pointer" from "the hole is bare" and drop only the chrome's own (sentinel-tagged) cursor
+    // sets. See `cursor_arbiter`.
+    #[cfg(target_os = "macos")]
+    {
+        let _ =
+            webview_window.with_webview(|pw| crate::cursor_arbiter::register_chrome(pw.inner()));
+    }
+
     // Saved bounds (size/position/maximized) are restored by tauri-plugin-window-state's own
     // `window_created` hook, which runs on the main thread *inside* the event loop — where its
     // `set_size`/`set_position` (and the monitor-intersection check that keeps a stale off-screen
