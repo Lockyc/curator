@@ -147,6 +147,16 @@ pub fn build_window(
             .build()?;
     let window = webview_window.as_ref().window();
 
+    // AppKit mouse tracking is geometric, not occlusion-aware, so this full-window chrome webview
+    // keeps claiming the pointer over the hole even while a content tab is composited on top of it —
+    // both then drive the OS cursor and the link cursor flickers. Teach the chrome to decline points
+    // a stacked sibling covers (see `chrome_hit`); the sidebar and the bare hole are unaffected.
+    #[cfg(target_os = "macos")]
+    {
+        let _ =
+            webview_window.with_webview(|pw| crate::chrome_hit::decline_covered_points(pw.inner()));
+    }
+
     // Saved bounds (size/position/maximized) are restored by tauri-plugin-window-state's own
     // `window_created` hook, which runs on the main thread *inside* the event loop — where its
     // `set_size`/`set_position` (and the monitor-intersection check that keeps a stale off-screen

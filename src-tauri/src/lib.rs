@@ -1,4 +1,5 @@
 mod awareness;
+mod chrome_hit;
 mod commands;
 mod escape;
 #[cfg(target_os = "macos")]
