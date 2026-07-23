@@ -12,7 +12,7 @@ mod zorder;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use tauri::{Emitter, Manager, Theme};
 
 /// Window theme to apply for a given `dark_mode` setting. `None` = follow the system.
@@ -30,9 +30,9 @@ pub struct WindowRuntime {
     pub tabs: webviews::TabState,
     pub unread: HashMap<String, awareness::Unread>,
     pub badge_authoritative: HashSet<String>,
-    /// Set true to stop this window's `reload_every` timer threads — on window close, removal,
-    /// or when its tab set changes (a fresh generation is spawned with a new flag).
-    pub reload_cancel: Arc<AtomicBool>,
+    /// [`ReloadCancel::cancel`] stops this window's `reload_every` timer threads — on window close,
+    /// removal, or when its tab set changes (a fresh generation is spawned with a new signal).
+    pub reload_cancel: Arc<ReloadCancel>,
     /// The content-hole rect (logical px) the chrome last reported via `set_hole_rect`, seeded from
     /// [`webviews::initial_hole`]. Lazily-created / hot-reload-added tabs are placed here so they
     /// land in the current hole. Guarded by the `windows` mutex like every other field — the chrome
@@ -81,14 +81,56 @@ pub(crate) fn detach_window_token(tab_label: &str) -> String {
 /// one frame before `detach.html`'s own `set_hole_rect` lands and reports the exact hole.
 pub(crate) const DETACH_BANNER_H: f64 = 36.0;
 
-/// Spawn one background thread per `reload_every` tab that reloads it on schedule until
-/// `cancel` is set. Sleeps in 1s chunks so a cancelled timer exits promptly rather than after
-/// a full interval, and never reloads after cancellation — so closed/removed windows don't
-/// leak threads that keep poking dead webviews.
+/// The cancel signal shared with a window's `reload_every` timer threads: a flag they can wait *on*
+/// rather than poll.
+///
+/// **Footgun — don't go back to polling the flag on a short sleep.** The obvious shape (`sleep(1s)`
+/// in a loop re-checking an `AtomicBool`) wakes each reloading tab's thread 3,600 times an hour to
+/// read a bool that is almost never set, and chaining that many `sleep`s lets the interval drift off
+/// the configured minute. A condvar waits out the *whole* interval in one blocked wait, costs zero
+/// wakeups, and is woken the instant [`ReloadCancel::cancel`] fires — so the prompt-exit property
+/// that motivated the 1s chunks is kept, not traded away.
+pub struct ReloadCancel {
+    cancelled: Mutex<bool>,
+    woken: Condvar,
+}
+
+impl ReloadCancel {
+    /// A signal starting either live (`false`) or already cancelled (`true` — a dormant window,
+    /// which has no timers to stop but still needs a flag in its runtime).
+    fn new(cancelled: bool) -> Self {
+        Self {
+            cancelled: Mutex::new(cancelled),
+            woken: Condvar::new(),
+        }
+    }
+
+    /// Cancel every timer waiting on this signal, waking them immediately.
+    fn cancel(&self) {
+        *self.cancelled.lock().unwrap() = true;
+        self.woken.notify_all();
+    }
+
+    /// Block for up to `dur`. Returns `true` if cancelled (the caller must exit without reloading),
+    /// `false` if the full interval elapsed. `wait_timeout_while` re-checks across spurious wakeups
+    /// and tracks the remaining deadline itself.
+    fn wait_cancelled(&self, dur: std::time::Duration) -> bool {
+        let guard = self.cancelled.lock().unwrap();
+        let (cancelled, _) = self
+            .woken
+            .wait_timeout_while(guard, dur, |c| !*c)
+            .expect("reload-cancel mutex poisoned");
+        *cancelled
+    }
+}
+
+/// Spawn one background thread per `reload_every` tab that reloads it on schedule until `cancel`
+/// fires. Each thread spends the interval in a single blocked wait and never reloads after
+/// cancellation — so closed/removed windows don't leak threads that keep poking dead webviews.
 fn spawn_reload_timers(
     window: &tauri::Window,
     views: &[curator_config::TabView],
-    cancel: Arc<AtomicBool>,
+    cancel: Arc<ReloadCancel>,
 ) {
     for v in views.iter().filter(|v| v.reload_every.is_some()) {
         let interval = std::time::Duration::from_secs(v.reload_every.unwrap() * 60);
@@ -97,20 +139,7 @@ fn spawn_reload_timers(
         let win = window.clone();
         let cancel = cancel.clone();
         std::thread::spawn(move || {
-            let tick = std::time::Duration::from_secs(1);
-            loop {
-                let mut waited = std::time::Duration::ZERO;
-                while waited < interval {
-                    if cancel.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    let chunk = tick.min(interval - waited);
-                    std::thread::sleep(chunk);
-                    waited += chunk;
-                }
-                if cancel.load(Ordering::Relaxed) {
-                    return;
-                }
+            while !cancel.wait_cancelled(interval) {
                 let _ = webviews::reload_canonical(&win, &label, &url);
             }
         });
@@ -222,7 +251,7 @@ fn open_window(
     // Periodic reload timers for tabs with `reload_every` (minutes). Only acts on
     // already-created webviews, so a never-opened lazy tab is harmlessly skipped. The cancel
     // flag lets us stop them when the window goes away.
-    let reload_cancel = Arc::new(AtomicBool::new(false));
+    let reload_cancel = Arc::new(ReloadCancel::new(false));
     spawn_reload_timers(&window, &views, reload_cancel.clone());
 
     Ok((
@@ -256,7 +285,7 @@ fn dormant_runtime(
         tabs: webviews::TabState::default(),
         unread: HashMap::new(),
         badge_authoritative: HashSet::new(),
-        reload_cancel: Arc::new(AtomicBool::new(true)),
+        reload_cancel: Arc::new(ReloadCancel::new(true)),
         hole: webviews::initial_hole(win_cfg.width as f64, win_cfg.height as f64),
     }
 }
@@ -309,7 +338,7 @@ fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
         if let Some(rt) = windows.get_mut(window_id) {
             rt.unread.clear();
             rt.badge_authoritative.clear();
-            rt.reload_cancel.store(true, Ordering::Relaxed);
+            rt.reload_cancel.cancel();
         }
     }
     let total = awareness::dock_count(&state.all_unread());
@@ -369,7 +398,7 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
             let _ = win.destroy();
         }
         if let Some(rt) = state.windows.lock().unwrap().remove(id) {
-            rt.reload_cancel.store(true, Ordering::Relaxed);
+            rt.reload_cancel.cancel();
         }
     }
 
@@ -704,8 +733,8 @@ fn reconcile_window_tabs(
 
         // Stop the old reload timers and start a fresh generation for the new tab set (this is
         // also what gives newly-added tabs their reload timers).
-        rt.reload_cancel.store(true, Ordering::Relaxed);
-        let reload_cancel = Arc::new(AtomicBool::new(false));
+        rt.reload_cancel.cancel();
+        let reload_cancel = Arc::new(ReloadCancel::new(false));
         rt.reload_cancel = reload_cancel.clone();
 
         // Recompute the single dock badge now that this window's unread set may have shrunk.
