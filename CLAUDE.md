@@ -73,6 +73,20 @@ distinct labels via a `-1`/`-2` suffix, so nothing keys off the title. **`open_o
 plain `bool`** (per-window): unset/`false` makes the first `load_on_open` tab active at launch
 (else blank), `true` the first tab even if cold. There is deliberately **no** `open_on_launch =
 "<title>"` form — a title never selects a tab, which is exactly what lets titles duplicate.
+
+**Per-window `open_on_start` (bool, default true) is the launch materialization gate — not to be
+confused with `open_on_launch`.** `open_on_start` decides *whether the window opens at all* at
+launch; `open_on_launch` only decides *which tab* is active once a window is open. A window with
+`open_on_start = false` is configured-but-dormant: at setup it gets a registered `WindowRuntime`
+(via `dormant_runtime`) but **no window is built**, so it's listed in the Window menu / home surface
+and opened on demand (`open_or_focus_window` builds it fresh from the retained cfg). It is a
+**launch-only gate**: only the setup loop consults it — hot-reload reconcile deliberately ignores it
+(flipping it on a running window has no live effect; it applies at the next launch), matching
+warden's `open_on_start`, from which curator ports this. Because a window can now be
+configured-but-not-open at launch, `reconcile_home`'s "windows exist?" test gates on a window being
+live-**open** (`entries.iter().any(|e| e.open)`), not on the registry being non-empty — so an
+all-dormant config surfaces the home surface (listing the windows to open) instead of stranding the
+app invisible.
 **Footgun: don't reintroduce title-as-address** — an `open_on_launch = "<title>"` arm (or any
 title-keyed lookup) silently re-imposes title uniqueness and gives first-match on a duplicate;
 curator, warden, and lector all share this "title is display-only" rule, so a change here is a
@@ -211,8 +225,9 @@ active tab, keep `load_on_open` tabs shown, hide the rest.
 
 **Window menu** — the shared spine's **Window** submenu (`shell_core::menu::build_spine`) lets the
 user close the focused window (**⌘⇧W**) and reopen any closed window from the list (checked when
-open, `"{title}  (closed)"` when not — warden's shape, adopted here). All configured windows open
-at launch; closed windows can be reopened from the Window menu while the app is still running.
+open, `"{title}  (closed)"` when not — warden's shape, adopted here). Configured windows open at
+launch **unless `open_on_start = false`** (dormant, see the schema section); a closed *or* dormant
+window can be opened from the Window menu (or the home surface) while the app is still running.
 Both ⌘⇧W and the native red button flow through `on_real_window_close`, which wipes the closed
 window's unread/timers while keeping its `WindowRuntime` registered so its cfg survives for reopen
 — and **quits curator when the last window closes** (last-window-quit, matching warden), rather

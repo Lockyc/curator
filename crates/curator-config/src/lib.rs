@@ -88,6 +88,16 @@ pub struct WindowConfig {
     /// profile. Omit → tabs fall back to the shared app-wide store unless they set their own.
     #[serde(default)]
     pub session: Option<String>,
+    /// Whether this window materializes at launch. Default true. A `false` window is configured but
+    /// **not built at startup** — it starts closed-but-configured and is opened on demand from the
+    /// Window menu or the home surface (its `WindowRuntime` is registered dormant so the window is
+    /// listed and reopenable). This is a **launch-only gate**: it is consulted solely by the app's
+    /// setup loop, never by hot-reload reconcile, so flipping it on a running window has no live
+    /// effect (it takes effect at the next launch) — matching warden's `open_on_start`. Distinct
+    /// from `open_on_launch` below, which never gates the window: it only picks *which tab* is
+    /// active once a window is open.
+    #[serde(default = "config_core::default_true")]
+    pub open_on_start: bool,
     /// Which tab is active when this window launches. `false`/unset opens the first `load_on_open`
     /// (loaded) tab, else the blank background — the first tab isn't always loaded, so it isn't
     /// forced. `true` opens the first tab even if it isn't loaded. Titles are display labels, not
@@ -573,6 +583,21 @@ reload_every = 15
         let cold = "[[window]]\ntitle = \"Comms\"\n[[window.group]]\nname = \"G\"\n[[window.group.tab]]\ntitle = \"Gmail\"\nurl = \"https://mail.google.com/\"\n";
         let cfg = parse_and_validate(cold).unwrap().0;
         assert_eq!(cfg.windows[0].startup_label(None), None);
+    }
+
+    #[test]
+    fn open_on_start_defaults_true_and_honours_explicit_false() {
+        // Omitted → the window materializes at launch (default true).
+        let default_cfg = "[[window]]\ntitle = \"curation\"\n[[window.tab]]\ntitle = \"Hearth\"\nurl = \"https://example.com/\"\n";
+        assert!(parse_and_validate(default_cfg).unwrap().0.windows[0].open_on_start);
+
+        // Explicit false → configured-but-dormant (opened on demand from the Window menu / home).
+        let dormant = "[[window]]\ntitle = \"Comms\"\nopen_on_start = false\n[[window.tab]]\ntitle = \"Chat\"\nurl = \"https://chat.google.com/\"\n";
+        assert!(!parse_and_validate(dormant).unwrap().0.windows[0].open_on_start);
+
+        // Explicit true parses too.
+        let eager = "[[window]]\ntitle = \"Comms\"\nopen_on_start = true\n[[window.tab]]\ntitle = \"Chat\"\nurl = \"https://chat.google.com/\"\n";
+        assert!(parse_and_validate(eager).unwrap().0.windows[0].open_on_start);
     }
 
     #[test]

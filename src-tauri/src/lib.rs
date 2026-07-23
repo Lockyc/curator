@@ -239,6 +239,28 @@ fn open_window(
     ))
 }
 
+/// Build a `WindowRuntime` for a window configured `open_on_start = false`: registered in the
+/// registry (so the Window menu / home surface list it and can reopen it) but with **no live window
+/// built**. Its tab/awareness state starts empty and its reload flag is pre-cancelled — there are no
+/// timers, no webviews, nothing on screen. This is exactly the shape a runtime has after a window is
+/// *closed* (see [`cleanup_closed_window`]), which is the right starting state for a never-opened
+/// one: [`open_or_focus_window`] reads only `cfg`/`global_session` and builds a fresh runtime via
+/// [`open_window`] when the user opens it, replacing this dormant entry.
+fn dormant_runtime(
+    win_cfg: &curator_config::WindowConfig,
+    global_session: Option<&str>,
+) -> WindowRuntime {
+    WindowRuntime {
+        cfg: win_cfg.clone(),
+        global_session: global_session.map(str::to_string),
+        tabs: webviews::TabState::default(),
+        unread: HashMap::new(),
+        badge_authoritative: HashSet::new(),
+        reload_cancel: Arc::new(AtomicBool::new(true)),
+        hole: webviews::initial_hole(win_cfg.width as f64, win_cfg.height as f64),
+    }
+}
+
 /// Print config-load warnings to stderr — shared by the initial load and the hot-reload path so
 /// the format stays in one place.
 pub(crate) fn log_config_warnings(warnings: &[curator_config::Warning]) {
@@ -445,14 +467,17 @@ fn window_entries(app: &tauri::AppHandle, state: &AppState) -> Vec<shell_core::m
     entries
 }
 
-/// Show or close the shared home surface to match `entries`. `has_windows` is `!entries.is_empty()`
-/// — the registry only ever holds an entry for a window the current config still defines (a window
-/// dropped from the config is removed from it entirely, see `reload_windows`'s `diff.removed` loop),
-/// so a non-empty registry means the config defines at least one window, which is the question that
-/// actually matters here (whether that window happens to be open right now is not: curator's
-/// last-window-quit means "config defines windows, but none are open" isn't a state the running app
-/// can be caught in — the app would have already exited). Shared by setup, every hot-reload
-/// (successful or failed), and a menu/home-driven window reopen.
+/// Show or close the shared home surface to match `entries`. `has_windows` is whether any window is
+/// actually **open** (or a detached surface is up) — not whether the config merely *defines*
+/// windows. That distinction is load-bearing: an `open_on_start = false` window is registered but
+/// dormant, so at launch the app can have configured windows yet nothing on screen, and the home
+/// surface must then appear (listing every configured window, dormant ones included, for the user to
+/// open) rather than leave the app stranded invisible. (This used to test the registry
+/// `!entries.is_empty()`, which was safe only while every configured window opened at launch and
+/// last-window-quit guaranteed "configured but none open" couldn't occur — `open_on_start` breaks
+/// that guarantee.) The `entries` list still carries *all* configured windows with their live `open`
+/// flag, so the home surface can list the dormant ones as reopenable. Shared by setup, every
+/// hot-reload (successful or failed), and a menu/home-driven window reopen.
 fn reconcile_home(
     app: &tauri::AppHandle,
     entries: &[shell_core::menu::WindowEntry],
@@ -466,7 +491,10 @@ fn reconcile_home(
     // `entries` is already non-empty then — this fold is a belt-and-braces guard that keeps the
     // invariant explicit rather than resting on that coincidence.
     let has_detached = !app.state::<AppState>().detached.lock().unwrap().is_empty();
-    let has_windows = !entries.is_empty() || has_detached;
+    // Gate on a window actually being OPEN, not merely configured — `open` is read live per entry
+    // (see `window_entries`), so a registry full of dormant `open_on_start = false` windows counts
+    // as "no windows" and the home surface shows to offer them.
+    let has_windows = entries.iter().any(|e| e.open) || has_detached;
     match shell_core::home::home_state(
         has_windows,
         config_exists,
@@ -813,7 +841,12 @@ pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
         Ok((cfg, warnings)) => {
             println!("ok: {} ({} window(s))", path.display(), cfg.windows.len());
             for w in &cfg.windows {
-                println!("  window {:?}", w.title);
+                let launch = if w.open_on_start {
+                    ""
+                } else {
+                    " (dormant — open_on_start=false; opened from the Window menu)"
+                };
+                println!("  window {:?}{}", w.title, launch);
                 for v in w.tab_views(cfg.session.as_deref()) {
                     let group = v
                         .group
@@ -882,14 +915,23 @@ pub fn run() {
         let handle = app.handle().clone();
         let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
         for win_cfg in &cfg.windows {
-            let (wid, rt) = open_window(
-                &handle,
-                cfg.dark_mode,
-                cfg.session.as_deref(),
-                win_cfg,
-                &HashSet::new(),
-            )?;
-            runtimes.insert(wid, rt);
+            // `open_on_start = false` windows are configured-but-dormant: registered so the Window
+            // menu / home surface can list and reopen them, but not built at launch. Everything else
+            // materializes now. This is the only site that consults `open_on_start` — hot-reload
+            // reconcile deliberately ignores it (launch-only gate; see the field doc and warden).
+            if win_cfg.open_on_start {
+                let (wid, rt) = open_window(
+                    &handle,
+                    cfg.dark_mode,
+                    cfg.session.as_deref(),
+                    win_cfg,
+                    &HashSet::new(),
+                )?;
+                runtimes.insert(wid, rt);
+            } else {
+                let wid = curator_config::identity::window_id(&win_cfg.title);
+                runtimes.insert(wid, dormant_runtime(win_cfg, cfg.session.as_deref()));
+            }
         }
         app.manage(AppState {
             windows: Mutex::new(runtimes),
