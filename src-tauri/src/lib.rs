@@ -1,7 +1,5 @@
 mod awareness;
 mod commands;
-#[cfg(target_os = "macos")]
-mod cursor_arbiter;
 mod escape;
 #[cfg(target_os = "macos")]
 mod insecure;
@@ -921,12 +919,6 @@ pub fn run() {
         // capture the app handle the click delegate uses to surface a tab. The banner path is a
         // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
         notification::init(app.handle().clone());
-
-        // Make the active content tab the sole cursor authority over the hole — without this the
-        // covered chrome webview and AppKit both fight WebKit for the cursor and the link pointer
-        // flickers (a macOS 26.5.2 change; see `cursor_arbiter`).
-        #[cfg(target_os = "macos")]
-        cursor_arbiter::install();
 
         // Native mouse side-button (back/forward) navigation — the shared shell-core NSEvent monitor
         // (WKWebView never delivers these to the DOM, so it can't be done in the page). curator

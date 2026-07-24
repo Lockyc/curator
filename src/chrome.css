@@ -17,14 +17,8 @@ html, body { margin: 0; height: 100vh; overflow: hidden; background: #1e1e1e; } 
    here. chrome-core adds `.cc-root`. */
 #sidebar { width: var(--cc-sidebar-w, 240px); flex: none; }
 
-/* The content hole the content webviews cover; visible only where none does (→ #empty-state).
-   `cursor` is LOAD-BEARING, not cosmetic: AppKit's mouse tracking is geometric rather than
-   occlusion-aware, so this webview keeps computing a cursor for the hole even while a content tab is
-   painted over it, and the two race (the link cursor flickers). This sentinel tags those sets as
-   "the covered chrome asked for this" so `cursor_arbiter` can drop them — it never reaches the user,
-   which is why a cursor nothing else uses is the right choice. Kept in lockstep with
-   `cursor_arbiter::SENTINEL_CSS` by a test; changing either alone brings the flicker back. */
-#content-hole { flex: 1; position: relative; background: #1e1e1e; cursor: context-menu; }
+/* The content hole the content webviews cover; visible only where none does (→ #empty-state). */
+#content-hole { flex: 1; position: relative; background: #1e1e1e; }
 #empty-state {
   position: absolute;
   inset: 0;
