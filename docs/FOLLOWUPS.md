@@ -69,16 +69,24 @@ surfaces rather than webviews.
 | wry / tauri injected handlers | wry's WKWebView subclass overrides only `acceptsFirstMouse:`; tauri's bundle has no mousemove cursor handling |
 | Anything shipped in 0.10.0 | v0.9.0 and v0.7.2 flicker identically |
 
-**Where a fix would have to live.** The only intervention that measurably moved the needle was
-intercepting `-[NSCursor set]` itself: filtering AppKit-originated arrow-sets took AppKit's share of
-the fight to zero, leaving only the chrome webview's own WebKit-originated arrows. A complete
-workaround therefore needs a way to attribute a cursor set to the *covered* webview — e.g. styling
-`#content-hole` with a sentinel cursor and dropping exactly that cursor whenever a content tab is
-under the pointer. That is a process-wide swizzle plus a sentinel-cursor convention, which is a
-poor trade against an OS bug that Apple may fix, so it is **deliberately not implemented**. Revisit
-if a later macOS does not fix it, or if the flicker becomes intolerable day to day.
+**The `NSCursor`-interception workaround was built, tried, and removed — don't rebuild it.** The one
+intervention that measurably moved the needle was swizzling `-[NSCursor set]`: filtering
+AppKit-originated arrow-sets took AppKit's share of the fight to zero, leaving the covered chrome's
+own WebKit-originated arrows. Attributing *those* needs a tag, so the full attempt stamped a sentinel
+cursor on `#content-hole` (nothing else uses it, so a sentinel set is by construction "the covered
+chrome"), dropped it while a tab was under the pointer, and swapped in the arrow when the hole was
+bare. It gated green with the CSS↔Rust pairing enforced by a test — and **it still did not fix the
+flicker in practice.** Reverted (`0ec0bb1`, then its revert) because a process-wide cursor swizzle
+plus a sentinel-cursor convention is a bad trade even when it works, and a flaky one is no trade at
+all. Treat cursor-set interception as **tried and failed**, not as the untried option.
 
-**Footgun if anyone does implement it:** do **not** isa-swizzle the webview instance
+That exhausts the layers curator can reach: cursor rects, hit-testing, and the cursor call itself.
+Any real fix now lives in WebKit/AppKit — so the standing action is to **report it to Apple**
+(Feedback Assistant; the `#content-hole` sentinel-cursor trick is a crisp reproduction: style the
+covered webview's hole and watch its cursor render over a live page) and re-test on each macOS
+update. Shelved deliberately until then.
+
+**Footgun if anyone revisits this anyway:** do **not** isa-swizzle the webview instance
 (`object_setClass`). tauri/wry already KVO-swizzles the webview, so its real class is an
 `NSKVONotifying_…` subclass, and re-pointing the isa underneath KVO aborts at launch with
 `Assertion failed: (imp != NULL) … NSDynamicProperties.m`. Add the override to the wry webview class
