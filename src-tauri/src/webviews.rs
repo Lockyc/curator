@@ -290,6 +290,11 @@ pub fn create_content_webview(
     #[cfg(target_os = "macos")]
     {
         let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
+        // Catch an inspector attaching from WebKit's own context menu or dock buttons, which never
+        // reach curator's ⌥⌘I handler — see `inspector`.
+        let insp_app = window.app_handle().clone();
+        let _ =
+            webview.with_webview(move |pw| crate::inspector::watch_frame(pw.inner(), &insp_app));
         // Thin determinate loading bar at the top of this content webview (shell-core-owned).
         shell_core::progress_bar::install(&webview, accent_rgba(accent));
     }

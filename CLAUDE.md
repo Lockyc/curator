@@ -320,12 +320,21 @@ normal `select()` path (so a lazy tab still creates on demand). The submenu's "O
 Tools" (⌥⌘I) opens the WebKit inspector on the focused window's active content tab. It works in
 release builds because `tauri`'s `devtools` feature is enabled in `Cargo.toml` — that's
 deliberate (this is an operator console, not a sandboxed consumer app), not a debug leftover;
-don't strip the feature. **The inspector is forced into its own window** (`inspector.rs`): WebKit
-opens it *attached*, and an attached inspector reframes the inspected view from its **superview's**
-bounds — measured, a tab at `(240,0) 1260×1000` became `(0,0) 1500×500` — which buries the sidebar
-under the content webview (hole-punch: content composites *above* the chrome) and stops it taking
-clicks. Detaching alone doesn't undo it, since WebKit restores the view to fill the superview
-rather than to the hole, so the handler re-applies `layout_webviews` after.
+don't strip the feature. **The inspector is forced into its own window** — but by `inspector.rs`'s
+frame watcher, *not* by the menu handler. WebKit opens the inspector *attached*, and an attached
+inspector reframes the inspected view from its **superview's** bounds — measured, a tab at
+`(240,0) 1260×1000` became `(0,0) 1500×500` — which buries the sidebar under the content webview
+(hole-punch: content composites *above* the chrome) and stops it taking clicks. Detaching alone
+doesn't undo it, since WebKit restores the view to fill the superview rather than to the hole, so
+`layout_webviews` is re-applied after.
+
+**Correcting this at the ⌥⌘I handler is the wrong place, and it's a tempting wrong place.** WebKit's
+own context menu ("Inspect Element") and the inspector's dock buttons attach without calling curator
+at all, so a menu-side fix covers one route in three. The watcher keys off the reframe instead, which
+catches every route. Its timing constraints are all load-bearing and all measured — see the module
+docs in `inspector.rs`: the frame notification arrives *synchronously inside* `setFrame:`, `detach`
+spins a nested runloop that re-enters the handler, and detaching mid-attach never returns. Doing the
+work inline from any of those points wedges the app.
 
 **Hole-punch layout + resizable sidebar.** The chrome is the window's **main** webview
 (`build_window` uses `WebviewWindowBuilder`, `hidden_title`, full-window under `TitleBarStyle::Overlay`),

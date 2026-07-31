@@ -608,29 +608,13 @@ pub fn reload_active_tab(app: &AppHandle) {
 /// Tools" / ⌥⌘I). No-op if nothing is active. Compiled in for both dev and release via the
 /// `devtools` Cargo feature, so the inspector is available in deployed builds too.
 ///
-/// The inspector opens attached, which reframes the inspected tab across the whole window and
-/// buries the sidebar under it, so force it into its own window and restore the hole geometry it
-/// clobbered — see [`crate::inspector`] for the measurement and why detaching alone isn't enough.
+/// The inspector opens attached, which would reframe the inspected tab across the whole window and
+/// bury the sidebar under it. Nothing is corrected here on purpose: [`crate::inspector`]'s frame
+/// watcher owns that, because WebKit's context menu and dock buttons attach without reaching this
+/// function — and because detaching inline, straight after `open_devtools`, is a mid-transaction
+/// detach, which hangs the app.
 pub fn open_active_devtools(app: &AppHandle) {
-    with_focused_active_webview(app, |wv| open_devtools_on(app, wv));
-}
-
-/// Open the inspector on one content webview and keep the hole-punch layout intact. Split out of
-/// [`open_active_devtools`] so the behaviour is reachable without a focused window.
-pub(crate) fn open_devtools_on(app: &AppHandle, wv: &Webview) {
-    wv.open_devtools();
-    #[cfg(target_os = "macos")]
-    {
-        let _ = wv.with_webview(|pw| crate::inspector::force_detached(pw.inner()));
-        let window = wv.window();
-        let hole = app.try_state::<AppState>().and_then(|state| {
-            let windows = state.windows.lock().unwrap();
-            windows.get(window.label()).map(|rt| rt.hole)
-        });
-        if let Some(hole) = hole {
-            webviews::layout_webviews(&window, hole);
-        }
-    }
+    with_focused_active_webview(app, |wv| wv.open_devtools());
 }
 
 /// Reset the focused window's tabs (menu "Reset All Tabs"). No-op if no window is focused.
