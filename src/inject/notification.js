@@ -1,6 +1,7 @@
-// Injected into every service webview (with escape-click + visibility). Embedded WKWebView
-// has no working web Notification API, so chat apps' new Notification(...) calls are no-ops.
-// This overrides it to fire a curator notify-sentinel navigation, which the native
+// Injected into every service webview (with escape-click + visibility). Embedded WKWebView has
+// no working web Notification API, so both ways a page raises a desktop notification —
+// `new Notification(...)` and `ServiceWorkerRegistration.showNotification(...)` — are silent
+// no-ops. This overrides both to fire a curator notify-sentinel navigation, which the native
 // on_navigation handler turns into a real macOS banner (and cancels the nav). No Tauri
 // command/IPC is exposed to the page.
 (function () {
@@ -49,6 +50,23 @@
     if (typeof cb === "function") cb("granted");
     return Promise.resolve("granted");
   };
+
+  // Second entry point, and the only one some apps use: ServiceWorkerRegistration
+  // .showNotification(). Google Chat calls it straight from the page (not from a push handler),
+  // so overriding the constructor above never sees it — and WKWebView ships no Push API and
+  // displays no service-worker notification, so the native call is a silent no-op. Route it to
+  // the same sentinel. Replaced outright rather than wrapped: calling through would only add a
+  // rejected promise nothing can act on.
+  try {
+    var swProto = window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype;
+    if (swProto) {
+      swProto.showNotification = function (title, opts) {
+        opts = opts || {};
+        fire(title, opts.body);
+        return Promise.resolve();
+      };
+    }
+  } catch (e) {}
 
   try {
     Object.defineProperty(window, "Notification", {
