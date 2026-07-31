@@ -207,6 +207,9 @@ web page's `Notification.onclick` (the injected stub's JS handlers stay inert �
 **Loading is driven by per-tab `load_on_open`** — currently the only loading knob; there are no per-window mode flags today (a window-level default could be added if a need arises).
 Every content webview gets the full shim set (escape-click — cmd/middle-click escape only —
 visibility, notification, badge), so any *loaded* tab can fire native banners and report unread.
+The notification shim covers **both** ways a page raises one — `new Notification(...)` and
+`ServiceWorkerRegistration.showNotification(...)` — because a service may use only the latter
+(Google Chat does, calling it straight from the page rather than a push handler).
 **Mouse side-button back/forward is native, not injected:** WKWebView never delivers the side buttons
 to the DOM (so it can't be done in the page), so the shared shell-core `NSEvent` monitor
 (`shell_core::mouse_nav::install`, wired in the setup hook with curator's `focused_active_webview`
@@ -221,7 +224,20 @@ lazy (created on first click) and hidden when inactive (throttled → no backgro
 by choice — same as unloading). `apply_active` is the single switch primitive: show+raise the
 active tab, keep `load_on_open` tabs shown, hide the rest.
 
-**Dock badge** aggregates the unread count across every window's loaded tabs.
+**Unread has three sources, ranked** (`awareness.rs`, merged by `displayed`). A **Badging-API**
+signal (`navigator.setAppBadge` via the badge shim) is an exact count and makes that tab
+*authoritative* — its title is ignored from then on. A `(N)`/`[N]` group in the **tab title**
+(`parse_unread`) is next. Weakest is a **notification-derived dot**: a delivered banner raises
+`Unread::Activity` on a tab that isn't the active one. The dot only fills in for `None`, so a real
+count always wins. It exists because a service can report through neither of the other two — Google
+Chat calls no `setAppBadge` and merely *flashes* "X messaged you - Chat" ↔ "Chat" in its title,
+both parsing to `None`. That flash is also why the dot lives in `WindowRuntime.notified` rather
+than in `unread`: stored as an unread state it would be overwritten by the next title change a
+second later. Selecting the tab (`mark_read`, from `select_tab`) is the only thing that clears it —
+nothing in the page ever tells curator a banner was seen.
+
+**Dock badge** aggregates the unread count across every window's loaded tabs. It sums numeric
+counts only, so an activity dot shows in the sidebar and contributes nothing to the dock.
 
 **Window menu** — the shared spine's **Window** submenu (`shell_core::menu::build_spine`) lets the
 user close the focused window (**⌘⇧W**) and reopen any closed window from the list (checked when

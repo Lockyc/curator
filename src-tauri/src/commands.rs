@@ -188,7 +188,13 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     rt.tabs.set_active(&label);
 
     // Raise the selected tab; load_on_open tabs stay live behind it, others are hidden.
-    webviews::apply_active(&window, Some(&label), &views).map_err(|e| e.to_string())
+    let res = webviews::apply_active(&window, Some(&label), &views).map_err(|e| e.to_string());
+
+    // Looking at the tab is what clears its notification-derived dot, and nothing else does —
+    // `mark_read` re-locks `windows`, so drop the guard first (the mutex is not reentrant).
+    drop(windows);
+    crate::awareness::mark_read(window.app_handle(), &wid, &label);
+    res
 }
 
 /// A content-hole rect reported by the chrome (logical px, top-left), deserialized from the

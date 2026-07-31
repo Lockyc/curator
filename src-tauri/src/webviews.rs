@@ -262,6 +262,9 @@ pub fn create_content_webview(
                     crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
                 } else if let Some(p) = escape::notify_sentinel(url) {
                     crate::notification::fire(&p.title, &p.body, &nav_window_id, &nav_label);
+                    // The banner doubles as an unread source for services that report through
+                    // neither the Badging API nor a title count (see awareness::displayed).
+                    crate::awareness::on_notification(&nav_app, &nav_window_id, &nav_label);
                 } else if let Some(target) = escape::sentinel_target(url) {
                     escape::escape_to_default_browser(&target);
                 }

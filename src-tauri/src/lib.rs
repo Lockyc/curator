@@ -30,6 +30,10 @@ pub struct WindowRuntime {
     pub tabs: webviews::TabState,
     pub unread: HashMap<String, awareness::Unread>,
     pub badge_authoritative: HashSet<String>,
+    /// Tabs carrying a notification-derived activity dot ([`awareness::displayed`]) — the unread
+    /// source for a service that reports through neither the Badging API nor a title count.
+    /// Cleared by selecting the tab ([`awareness::mark_read`]); nothing in the page ever clears it.
+    pub notified: HashSet<String>,
     /// [`ReloadCancel::cancel`] stops this window's `reload_every` timer threads — on window close,
     /// removal, or when its tab set changes (a fresh generation is spawned with a new signal).
     pub reload_cancel: Arc<ReloadCancel>,
@@ -262,6 +266,7 @@ fn open_window(
             tabs,
             unread: HashMap::new(),
             badge_authoritative: HashSet::new(),
+            notified: HashSet::new(),
             reload_cancel,
             hole,
         },
@@ -285,6 +290,7 @@ fn dormant_runtime(
         tabs: webviews::TabState::default(),
         unread: HashMap::new(),
         badge_authoritative: HashSet::new(),
+        notified: HashSet::new(),
         reload_cancel: Arc::new(ReloadCancel::new(true)),
         hole: webviews::initial_hole(win_cfg.width as f64, win_cfg.height as f64),
     }
@@ -338,6 +344,7 @@ fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
         if let Some(rt) = windows.get_mut(window_id) {
             rt.unread.clear();
             rt.badge_authoritative.clear();
+            rt.notified.clear();
             rt.reload_cancel.cancel();
         }
     }
@@ -697,6 +704,7 @@ fn reconcile_window_tabs(
             rt.tabs.mark_unloaded(label);
             rt.unread.remove(label);
             rt.badge_authoritative.remove(label);
+            rt.notified.remove(label);
         }
 
         // Eager-create newly-added load_on_open tabs so they're live immediately; others stay

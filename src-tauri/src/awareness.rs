@@ -42,6 +42,20 @@ pub fn badge_unread(signal: BadgeSignal) -> Unread {
     }
 }
 
+/// The unread state to *display* for a tab: its source-derived state, upgraded to `Activity`
+/// while a notification-derived dot is pending. The dot is the third and weakest source — it
+/// only fills in for `None`, so a Badging count or a title count always wins. It exists for
+/// services that report unread through neither (Google Chat: no `setAppBadge`, and a title that
+/// merely flashes "X messaged you - Chat" with no count), where a delivered banner is the only
+/// signal curator ever gets. It shows in the sidebar alone: [`dock_count`] sums numeric states,
+/// so an `Activity` dot contributes nothing to the dock badge.
+pub fn displayed(unread: Unread, notified: bool) -> Unread {
+    match unread {
+        Unread::None if notified => Unread::Activity,
+        u => u,
+    }
+}
+
 /// A title-derived update is honoured only for a service that has never sent an authoritative
 /// Badging-API signal. Once an app reports its own count, its title is ignored (it may carry
 /// a stale or differently-formatted count).
@@ -95,7 +109,7 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
-    {
+    let shown = {
         let mut windows = state.windows.lock().unwrap();
         let Some(rt) = windows.get_mut(window_id) else {
             return;
@@ -106,7 +120,21 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
             return;
         }
         rt.unread.insert(label.clone(), unread);
-    }
+        displayed(unread, rt.notified.contains(&label))
+    };
+    emit_badge(app, &state, window_id, label, shown);
+}
+
+/// Push one tab's badge state out: the per-window sidebar pill plus the single aggregate dock
+/// badge. The one place either is written, so every source (title, Badging, notification dot)
+/// renders identically. Must be called with the `windows` lock released.
+fn emit_badge(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    window_id: &str,
+    label: String,
+    shown: Unread,
+) {
     // Per-window sidebar update → that window's chrome only. The chrome is the window's main
     // webview, so its label is the window id.
     let _ = app.emit_to(
@@ -114,7 +142,7 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
         "service-badge",
         BadgeEvent {
             label,
-            text: badge_text(unread),
+            text: badge_text(shown),
         },
     );
     // Single dock badge across all windows.
@@ -138,6 +166,7 @@ pub fn forget_tab(app: &tauri::AppHandle, window_id: &str, label: &str) {
         if let Some(rt) = windows.get_mut(window_id) {
             rt.unread.remove(label);
             rt.badge_authoritative.remove(label);
+            rt.notified.remove(label);
         }
     }
     let _ = app.emit_to(
@@ -188,6 +217,50 @@ pub fn on_badge_signal(app: &tauri::AppHandle, label: &str, signal: BadgeSignal)
         }
     }
     apply_unread(app, &window_id, label.to_string(), badge_unread(signal));
+}
+
+/// Notify-sentinel handler: raise a notification-derived activity dot on the tab that fired the
+/// banner (see [`displayed`] for why this source exists). Skipped for the tab the user is already
+/// looking at, and for a Badging-authoritative service — its own count beats a dot.
+pub fn on_notification(app: &tauri::AppHandle, window_id: &str, label: &str) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let shown = {
+        let mut windows = state.windows.lock().unwrap();
+        let Some(rt) = windows.get_mut(window_id) else {
+            return;
+        };
+        if !rt.tabs.is_created(label)
+            || rt.badge_authoritative.contains(label)
+            || rt.tabs.active() == Some(label)
+        {
+            return;
+        }
+        rt.notified.insert(label.to_string());
+        displayed(rt.unread.get(label).copied().unwrap_or(Unread::None), true)
+    };
+    emit_badge(app, &state, window_id, label.to_string(), shown);
+}
+
+/// Clear a tab's notification-derived dot — called when the user selects the tab. Selecting is the
+/// *only* thing that clears it: a title count is retracted by the service itself once the message
+/// is read, but nothing in the page ever tells curator a banner was seen.
+pub fn mark_read(app: &tauri::AppHandle, window_id: &str, label: &str) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let shown = {
+        let mut windows = state.windows.lock().unwrap();
+        let Some(rt) = windows.get_mut(window_id) else {
+            return;
+        };
+        if !rt.notified.remove(label) {
+            return; // no dot pending — leave the title/Badging state alone
+        }
+        displayed(rt.unread.get(label).copied().unwrap_or(Unread::None), false)
+    };
+    emit_badge(app, &state, window_id, label.to_string(), shown);
 }
 
 #[cfg(test)]
@@ -259,6 +332,27 @@ mod tests {
         assert_eq!(badge_unread(BadgeSignal::Count(0)), Unread::None);
         assert_eq!(badge_unread(BadgeSignal::Count(4)), Unread::Count(4));
         assert_eq!(badge_unread(BadgeSignal::Dot), Unread::Activity);
+    }
+
+    #[test]
+    fn notification_dot_only_fills_in_for_none() {
+        // The dot is the weakest source: it never overrides a real count or an existing dot.
+        assert_eq!(displayed(Unread::None, true), Unread::Activity);
+        assert_eq!(displayed(Unread::None, false), Unread::None);
+        assert_eq!(displayed(Unread::Count(3), true), Unread::Count(3));
+        assert_eq!(displayed(Unread::Activity, true), Unread::Activity);
+    }
+
+    #[test]
+    fn notification_dot_survives_a_countless_title() {
+        // Google Chat flashes "Lachlan Collins messaged you - Chat" ↔ "Chat"; both parse to
+        // None, so the dot has to outlive a title update or it would blink out a second later.
+        let dot = true;
+        assert_eq!(
+            displayed(parse_unread("Lachlan Collins messaged you - Chat"), dot),
+            Unread::Activity
+        );
+        assert_eq!(displayed(parse_unread("Chat"), dot), Unread::Activity);
     }
 
     #[test]
