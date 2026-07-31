@@ -222,7 +222,8 @@ title); group names must be unique within a window. Optional:
 | `format_on_save` | bool          | `false` | Reformat `config.toml` in curator's house style on a clean hot-reload (same formatting as `curator fmt`). Leaves the file untouched if a reload fails to parse. |
 
 Run **`curator validate [path]`** to check a config without launching: it prints the resolved
-window/tab tree (each tab's cascaded session) and any non-fatal warnings (e.g. a URL repeated
+window/tab tree (each tab's cascaded session, plus its `unread` mode where it isn't the default)
+and any non-fatal warnings (e.g. a URL repeated
 within a window), exiting non-zero on a parse/validation error. A bad config never crashes the
 app either — it keeps the last-good config running behind an error banner.
 

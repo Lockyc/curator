@@ -926,9 +926,15 @@ pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
                         .as_deref()
                         .map(|g| format!(" group={g:?}"))
                         .unwrap_or_default();
+                    // Only shown when narrowed — printing `unread=all` on every line would bury
+                    // the one tab that isn't, which is the whole reason to look.
+                    let unread = match v.unread {
+                        curator_config::UnreadMode::All => String::new(),
+                        m => format!(" unread={m:?}").to_lowercase(),
+                    };
                     println!(
-                        "    tab {:?} url={} load_on_open={} session={:?}{}",
-                        v.title, v.url, v.load_on_open, v.session, group
+                        "    tab {:?} url={} load_on_open={}{} session={:?}{}",
+                        v.title, v.url, v.load_on_open, unread, v.session, group
                     );
                 }
             }

@@ -24,7 +24,7 @@ The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/conf
 
 `curator validate [path]` (arg-dispatched in `main.rs` before Tauri starts → `validate_cli` in
 `lib.rs`) loads + validates a config and prints the resolved window/tab tree (with each tab's
-cascaded session) plus any warnings. Exit 0 ok / 1 load error / 2 unknown command.
+cascaded session, and its `unread` mode when narrowed off the default) plus any warnings. Exit 0 ok / 1 load error / 2 unknown command.
 
 `curator fmt [--check] [path]` reformats the config in the shared house style: without `--check` it
 rewrites in place (atomic, diff-guarded) and prints what it did; with `--check` it writes nothing and
