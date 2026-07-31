@@ -470,6 +470,7 @@ mod tests {
             url: format!("https://{label}.example"),
             load_on_open,
             reload_every: None,
+            unread: Default::default(),
             session: String::new(),
         }
     }

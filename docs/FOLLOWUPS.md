@@ -91,3 +91,15 @@ update. Shelved deliberately until then.
 `NSKVONotifying_…` subclass, and re-pointing the isa underneath KVO aborts at launch with
 `Assertion failed: (imp != NULL) … NSDynamicProperties.m`. Add the override to the wry webview class
 instead (`class_addMethod`) and short-circuit for instances that aren't the chrome.
+
+## A window- and app-level default for `unread`
+
+`unread` (`all` / `count` / `off`) is per-tab only — deliberately, matching `load_on_open` and
+`reload_every`, since the modes are a property of *how a given service reports*, not of a window.
+A window whose tabs are all one noisy service still has to repeat the key per tab.
+
+**To add it**, give `unread` the cascade `session` already has (`tab → window → Config →
+default`): `WindowConfig`/`Config` grow an `Option<UnreadMode>` and `tab_views` resolves it the
+way `normalized_session` resolves the session chain — the resolution point is already there, so
+this is a schema + one-cascade change, not new machinery. Worth doing once a real config wants
+the same mode on a whole window; until then the per-tab key is the honest surface.

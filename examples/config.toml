@@ -106,7 +106,16 @@
       title        = "Slack"
       url          = "https://app.slack.com/"
       load_on_open = true
-      # session = "work"   # give this tab its own login store (e.g. a separate account)
+    # session = "work"   # give this tab its own login store (e.g. a separate account)
+    [[window.group.tab]]
+      # Some services mark "something, somewhere is unread" with a countless marker that is simply
+      # always on for a busy account — Discord's title is "• Discord" for any unread channel and
+      # "(N) Discord" only for a mention. `unread = "count"` badges the row on the count alone
+      # (a delivered banner still dots it); `unread = "off"` silences the tab entirely.
+      title        = "Discord"
+      url          = "https://discord.com/channels/@me"
+      load_on_open = true
+      unread       = "count"
 
   [[window.group]]
     name = "Notifications"

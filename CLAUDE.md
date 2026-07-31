@@ -40,7 +40,8 @@ A window's tabs may be **loose** (`[[window.tab]]`) or grouped (`[[window.group]
 required). `tab_views` flattens to one ordered list — loose tabs first as a headerless section
 (`TabView.group = None`), then each group in file order (`Some(name)`) — and the chrome renders a
 section header only for `Some`. Per-tab fields: `title`, `url` (both required, non-empty),
-`load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `session`.
+`load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `unread`
+(`all` default / `count` / `off` — see *Unread awareness*), `session`.
 App-global keys: `dark_mode`, `allow_insecure`, `session`, `format_on_save` (bool, default
 false — reformat the file in house style on a clean hot-reload),
 `density` (`comfortable` default / `compact`), `sidebar_drag` (bool, default true — the sidebar
@@ -235,6 +236,23 @@ both parsing to `None`. That flash is also why the dot lives in `WindowRuntime.n
 than in `unread`: stored as an unread state it would be overwritten by the next title change a
 second later. Selecting the tab (`mark_read`, from `select_tab`) is the only thing that clears it —
 nothing in the page ever tells curator a banner was seen.
+
+**Per-tab `unread` narrows which of those sources badge a row** (`UnreadMode` in `curator-config`;
+`awareness::admitted`). `all` (default) is the behaviour above. `count` drops a *countless* state —
+a title bullet, a Badging `Dot` — and keeps every real number. `off` badges nothing. **The mode is
+applied in exactly one place, `apply_unread`**, which both the title and Badging sources funnel
+through, so the two can't diverge; `on_notification` gates on `off` separately because the dot
+lives in `notified`, not `unread`. Two deliberate asymmetries, both load-bearing:
+- **`count` does not suppress the notification dot.** A delivered banner is evidence of a real
+  event; the marker `count` exists to drop is a heuristic read off a title. Only `off` silences it.
+- **A Badging signal goes `badge_authoritative` only if the mode admits it**
+  (`badge_is_authoritative`). Going authoritative on a `Dot` the mode then discards would silence
+  the title too, leaving a service that reports both ways badging nothing at all.
+
+Why the mode exists: a service's countless "something is unread" marker can be permanently on.
+Discord's title is `"• Discord"` for *any* unread channel and `"(N) Discord"` only for a mention
+(verified in its shipped bundle), so on a busy account the bullet is a constant, contentless dot
+that selecting the tab can't clear — title-derived state is retracted only by the service.
 
 **Dock badge** aggregates the unread count across every window's loaded tabs. It sums numeric
 counts only, so an activity dot shows in the sidebar and contributes nothing to the dock.

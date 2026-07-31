@@ -689,6 +689,7 @@ mod tests {
                 url: "https://mail.example/".into(),
                 load_on_open: false,
                 reload_every: None,
+                unread: Default::default(),
                 session: String::new(),
             },
             loaded: false,

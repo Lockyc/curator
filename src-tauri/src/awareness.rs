@@ -3,6 +3,7 @@
 
 use crate::escape::BadgeSignal;
 use crate::AppState;
+use curator_config::UnreadMode;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
@@ -53,6 +54,32 @@ pub fn displayed(unread: Unread, notified: bool) -> Unread {
     match unread {
         Unread::None if notified => Unread::Activity,
         u => u,
+    }
+}
+
+/// Narrow a source-derived unread state to what the tab's [`UnreadMode`] admits: `off` badges
+/// nothing, `count` drops a countless `Activity` (the marker a service leaves permanently on —
+/// Discord's `"• Discord"` title means "some channel is unread", which for a busy account is
+/// always true), and `all` passes everything through. A real count is never dropped.
+pub fn admitted(mode: UnreadMode, unread: Unread) -> Unread {
+    if !mode.allows_any() {
+        return Unread::None;
+    }
+    match unread {
+        Unread::Activity if !mode.allows_countless() => Unread::None,
+        u => u,
+    }
+}
+
+/// Whether a Badging signal makes the service authoritative — i.e. silences its title heuristic.
+/// A signal the tab's mode discards must not: a service that reports a countless dot *and* a
+/// title count would otherwise go authoritative on the dot, have it dropped by `count` mode, and
+/// end up badging nothing at all.
+pub fn badge_is_authoritative(mode: UnreadMode, signal: BadgeSignal) -> bool {
+    match mode {
+        UnreadMode::Off => false,
+        UnreadMode::Count => matches!(signal, BadgeSignal::Count(_)),
+        UnreadMode::All => true,
     }
 }
 
@@ -119,6 +146,9 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
         if !rt.tabs.is_created(&label) {
             return;
         }
+        // The one place the tab's `unread` mode narrows a service-reported state — both the title
+        // and Badging sources land here, so neither can drift from the other.
+        let unread = admitted(rt.unread_mode(&label), unread);
         rt.unread.insert(label.clone(), unread);
         displayed(unread, rt.notified.contains(&label))
     };
@@ -213,7 +243,9 @@ pub fn on_badge_signal(app: &tauri::AppHandle, label: &str, signal: BadgeSignal)
     if let Some(state) = app.try_state::<AppState>() {
         let mut windows = state.windows.lock().unwrap();
         if let Some(rt) = windows.get_mut(&window_id) {
-            rt.badge_authoritative.insert(label.to_string());
+            if badge_is_authoritative(rt.unread_mode(label), signal) {
+                rt.badge_authoritative.insert(label.to_string());
+            }
         }
     }
     apply_unread(app, &window_id, label.to_string(), badge_unread(signal));
@@ -221,7 +253,9 @@ pub fn on_badge_signal(app: &tauri::AppHandle, label: &str, signal: BadgeSignal)
 
 /// Notify-sentinel handler: raise a notification-derived activity dot on the tab that fired the
 /// banner (see [`displayed`] for why this source exists). Skipped for the tab the user is already
-/// looking at, and for a Badging-authoritative service — its own count beats a dot.
+/// looking at, for a Badging-authoritative service (its own count beats a dot), and for a tab set
+/// to `unread = "off"`. `unread = "count"` deliberately does *not* suppress it: a delivered banner
+/// is evidence of a real event, not a marker read off a title.
 pub fn on_notification(app: &tauri::AppHandle, window_id: &str, label: &str) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
@@ -234,6 +268,7 @@ pub fn on_notification(app: &tauri::AppHandle, window_id: &str, label: &str) {
         if !rt.tabs.is_created(label)
             || rt.badge_authoritative.contains(label)
             || rt.tabs.active() == Some(label)
+            || !rt.unread_mode(label).allows_any()
         {
             return;
         }
@@ -353,6 +388,67 @@ mod tests {
             Unread::Activity
         );
         assert_eq!(displayed(parse_unread("Chat"), dot), Unread::Activity);
+    }
+
+    #[test]
+    fn count_mode_drops_a_countless_marker_but_never_a_count() {
+        // Discord's "• Discord" (any channel unread) parses to Activity and is permanently on for
+        // a busy account; its "(N) Discord" (a mention) is the signal worth surfacing.
+        assert_eq!(
+            admitted(UnreadMode::Count, parse_unread("• Discord")),
+            Unread::None
+        );
+        assert_eq!(
+            admitted(UnreadMode::Count, parse_unread("(4) Discord")),
+            Unread::Count(4)
+        );
+        assert_eq!(
+            admitted(UnreadMode::Count, badge_unread(BadgeSignal::Dot)),
+            Unread::None
+        );
+        assert_eq!(
+            admitted(UnreadMode::Count, badge_unread(BadgeSignal::Count(2))),
+            Unread::Count(2)
+        );
+    }
+
+    #[test]
+    fn all_mode_is_the_pre_existing_behaviour() {
+        assert_eq!(
+            admitted(UnreadMode::All, parse_unread("• Discord")),
+            Unread::Activity
+        );
+        assert_eq!(
+            admitted(UnreadMode::All, parse_unread("(4) Discord")),
+            Unread::Count(4)
+        );
+    }
+
+    #[test]
+    fn off_mode_drops_every_state() {
+        assert_eq!(admitted(UnreadMode::Off, Unread::Activity), Unread::None);
+        assert_eq!(admitted(UnreadMode::Off, Unread::Count(9)), Unread::None);
+        assert_eq!(admitted(UnreadMode::Off, Unread::None), Unread::None);
+    }
+
+    #[test]
+    fn badging_is_authoritative_only_for_signals_the_mode_admits() {
+        // Going authoritative on a signal the mode then discards would silence the title too,
+        // leaving a service that reports both ways with no badge at all.
+        assert!(badge_is_authoritative(UnreadMode::All, BadgeSignal::Dot));
+        assert!(!badge_is_authoritative(UnreadMode::Count, BadgeSignal::Dot));
+        assert!(badge_is_authoritative(
+            UnreadMode::Count,
+            BadgeSignal::Count(3)
+        ));
+        assert!(badge_is_authoritative(
+            UnreadMode::Count,
+            BadgeSignal::Count(0)
+        ));
+        assert!(!badge_is_authoritative(
+            UnreadMode::Off,
+            BadgeSignal::Count(3)
+        ));
     }
 
     #[test]

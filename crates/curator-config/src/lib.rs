@@ -128,6 +128,36 @@ fn is_hex_colour(s: &str) -> bool {
 /// sets none either). One store → tabs share cookies, so SSO across related services works.
 pub const DEFAULT_SESSION: &str = "default";
 
+/// How much of a service's unread reporting a tab is badged from. Some services mark "unread
+/// exists" with a countless marker that is, for a heavily-subscribed account, permanently on —
+/// Discord's title is `"• Discord"` for any unread channel and `"(N) Discord"` only for a
+/// mention — so the countless marker carries no information while the count does.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UnreadMode {
+    /// Every signal, countless markers included. The default.
+    #[default]
+    All,
+    /// Only a numeric count from the service (a title `(N)`/`[N]`, a Badging count). A countless
+    /// marker is ignored. A *delivered* notification still dots the row — that's evidence of a
+    /// real banner, not a heuristic read off a title.
+    Count,
+    /// Never badge this tab, from any source.
+    Off,
+}
+
+impl UnreadMode {
+    /// True if a countless "there is something unread" marker should badge under this mode.
+    pub fn allows_countless(self) -> bool {
+        matches!(self, UnreadMode::All)
+    }
+
+    /// True if this tab may badge at all.
+    pub fn allows_any(self) -> bool {
+        !matches!(self, UnreadMode::Off)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Tab {
@@ -137,6 +167,9 @@ pub struct Tab {
     pub load_on_open: bool,
     #[serde(default)]
     pub reload_every: Option<u64>,
+    /// Which of this service's unread signals badge the row. Omit → [`UnreadMode::All`].
+    #[serde(default)]
+    pub unread: UnreadMode,
     /// This tab's login store (top link of the session chain). Tabs sharing a `session` string
     /// share a login (even across windows); a distinct string gives a separate account. Omit →
     /// inherit the window's `session`, else the app-wide default.
@@ -300,6 +333,10 @@ pub struct TabView {
     pub url: String,
     pub load_on_open: bool,
     pub reload_every: Option<u64>,
+    /// Which unread signals badge this tab. Not serialized to the chrome sidebar — the badge
+    /// text is resolved in Rust, so the sidebar never sees the mode.
+    #[serde(skip)]
+    pub unread: UnreadMode,
     /// Resolved login store: `tab.session → window.session → Config.session → DEFAULT_SESSION`.
     /// Tabs with the
     /// same value share a WebKit data store (one login); distinct values are isolated. Not
@@ -366,6 +403,7 @@ impl WindowConfig {
                 url: tab.url.clone(),
                 load_on_open: tab.load_on_open,
                 reload_every: tab.reload_every,
+                unread: tab.unread,
                 session,
             });
         }
@@ -407,6 +445,39 @@ url = "https://calendar.google.com/"
 load_on_open = true
 reload_every = 15
 "#;
+
+    #[test]
+    fn unread_defaults_all_and_parses_per_tab() {
+        let cfg = parse_and_validate(VALID).unwrap().0;
+        let views = cfg.windows[0].tab_views(None);
+        assert!(views.iter().all(|v| v.unread == UnreadMode::All));
+
+        let src = VALID.replace(
+            "url = \"https://calendar.google.com/\"",
+            "url = \"https://calendar.google.com/\"\nunread = \"count\"",
+        );
+        let cfg = parse_and_validate(&src).unwrap().0;
+        let views = cfg.windows[0].tab_views(None);
+        assert_eq!(views[0].unread, UnreadMode::All);
+        assert_eq!(views[1].unread, UnreadMode::Count);
+
+        let src = VALID.replace(
+            "url = \"https://calendar.google.com/\"",
+            "url = \"https://calendar.google.com/\"\nunread = \"off\"",
+        );
+        assert_eq!(
+            parse_and_validate(&src).unwrap().0.windows[0].tab_views(None)[1].unread,
+            UnreadMode::Off
+        );
+
+        // An unrecognised value is a parse error (serde rejects the unknown variant), so a typo
+        // fails loudly rather than silently badging everything.
+        let src = VALID.replace(
+            "url = \"https://calendar.google.com/\"",
+            "url = \"https://calendar.google.com/\"\nunread = \"mentions\"",
+        );
+        assert!(parse_and_validate(&src).is_err());
+    }
 
     #[test]
     fn density_defaults_comfortable_and_parses_compact() {

@@ -46,6 +46,21 @@ pub struct WindowRuntime {
     pub hole: webviews::HoleRect,
 }
 
+impl WindowRuntime {
+    /// The tab's configured [`UnreadMode`](curator_config::UnreadMode). Resolved from `cfg` on
+    /// demand rather than cached alongside `unread`/`notified`: a cache would be a second copy of
+    /// config state to rebuild on every hot-reload, and this runs only on a badge/title/notify
+    /// event. An unknown label (a tab dropped by a reload mid-flight) falls back to the default.
+    pub fn unread_mode(&self, label: &str) -> curator_config::UnreadMode {
+        self.cfg
+            .tab_views(self.global_session.as_deref())
+            .into_iter()
+            .find(|v| v.label == label)
+            .map(|v| v.unread)
+            .unwrap_or_default()
+    }
+}
+
 /// A tab popped out into its own detached window (`commands::pop_out_tab`). Kept in
 /// [`AppState::detached`], **separate from `windows`**, so hot-reload reconcile never sees it (the
 /// detached-label prefix, [`shell_core::detach::is_detached_label`], keeps window-state persistence

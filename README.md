@@ -206,6 +206,7 @@ title); group names must be unique within a window. Optional:
 |----------------|--------------|---------|--------------------------------------------------|
 | `load_on_open` | bool         | `false` | Load when the window opens and keep the tab live in the background, so it fires native banners and reports unread even when it isn't the active tab. |
 | `reload_every` | positive int | none    | Auto-refresh the canonical URL every N minutes.  |
+| `unread`       | string       | `all`   | Which of the service's unread signals badge the row. `all` — every signal, including a countless "something is unread" marker. `count` — only a real number (a `(N)`/`[N]` title count, a Badging count); the countless marker is ignored, while a *delivered* notification still dots the row. `off` — never badge this tab. See [Unread badges](#unread-badges). |
 | `session`      | string       | none    | Login store for this tab. Tabs sharing a value share a login (even across windows); distinct values are isolated accounts. Falls back to the window's `session`, then the app-wide top-level `session`, then the shared default. A blank or whitespace-only value is treated as unset and falls through the chain. |
 
 ### App-global options
@@ -233,6 +234,30 @@ sidebar drives the active tab: **◀ back** and **▶ forward** through in-page 
 back/forward, and a determinate progress bar tracks each tab's page load.
 
 See `examples/config.toml` for a two-window starting-point example.
+
+### Unread badges
+
+A row badges from three sources, strongest first: a **Badging-API** count the service reports
+itself (`navigator.setAppBadge`), a **count in the page title** (`(3)` or `[3]`), and — weakest
+— a **delivered notification**, which dots a background tab and clears when you select it. Only
+real numbers reach the dock badge; a countless dot is sidebar-only.
+
+Some services also mark *"something, somewhere is unread"* with a countless marker that, on a
+busy account, is simply always on. Discord is the clearest case: its title is `• Discord`
+whenever **any** channel is unread and `(N) Discord` only when you are actually mentioned — so
+the marker carries no information while the count does. Set `unread = "count"` on that tab and
+only the mention count badges it:
+
+```toml
+    [[window.group.tab]]
+    title        = "Discord"
+    url          = "https://discord.com/channels/@me"
+    load_on_open = true
+    unread       = "count"   # mentions badge the row; "• unread somewhere" doesn't
+```
+
+Notifications still dot the row under `count` — a banner that actually fired is evidence of a
+real event, not a marker read off a title. Use `unread = "off"` to silence a tab entirely.
 
 ## Recipes
 
