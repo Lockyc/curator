@@ -3,6 +3,8 @@ mod commands;
 mod escape;
 #[cfg(target_os = "macos")]
 mod insecure;
+#[cfg(target_os = "macos")]
+mod inspector;
 mod notification;
 mod session;
 mod watcher;
