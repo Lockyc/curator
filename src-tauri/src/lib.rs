@@ -464,9 +464,7 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
 
     // Rebuild the menu so the Window submenu's per-window reopen items match the new config
     // (added windows gain an item; removed ones lose theirs).
-    if let Ok(menu) = build_app_menu(app, &cfg_path, &entries) {
-        let _ = app.set_menu(menu);
-    }
+    refresh_window_menu(app);
 
     // Refresh the aggregate dock badge to reflect windows that came or went (a removed window's
     // unread is dropped with its runtime; without this its count would linger until the next
@@ -503,6 +501,25 @@ fn window_entries(app: &tauri::AppHandle, state: &AppState) -> Vec<shell_core::m
         .collect();
     entries.sort_by(|a, b| a.title.cmp(&b.title));
     entries
+}
+
+/// Rebuild the app menu so the Window submenu matches which windows are open right now.
+///
+/// The tick / `"{title}  (closed)"` label is baked in at build time (`window_entries` reads
+/// `app.get_window(id).is_some()`), so **every** path that opens or closes a window has to call
+/// this or the menu keeps asserting the old state. Config reload isn't enough — that only covers
+/// windows appearing/disappearing from the *config*, not a window the user closed.
+///
+/// Must run once the window is actually gone: `WindowEvent::CloseRequested` fires while the window
+/// still exists, so refreshing from there would re-tick the window being closed. The `Destroyed`
+/// arm in [`webviews::build_window`] is the correct moment.
+pub(crate) fn refresh_window_menu(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let entries = window_entries(app, &state);
+    let cfg_path = curator_config::resolve_config_path();
+    if let Ok(menu) = build_app_menu(app, &cfg_path, &entries) {
+        let _ = app.set_menu(menu);
+    }
 }
 
 /// Show or close the shared home surface to match `entries`. `has_windows` is whether any window is
@@ -590,6 +607,8 @@ pub(crate) fn open_or_focus_window(app: &tauri::AppHandle, window_id: &str) {
     let entries = window_entries(app, &state);
     let path = curator_config::resolve_config_path();
     reconcile_home(app, &entries, &path, path.exists(), None);
+    // The window just opened (or was already open) — re-tick it in the Window submenu.
+    refresh_window_menu(app);
 }
 
 /// Return a popped-out tab to its origin window when its detached window closes — the `on_close`

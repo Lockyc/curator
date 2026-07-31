@@ -179,6 +179,12 @@ pub fn build_window(
         {
             api.prevent_close();
         }
+        // The window is gone now (CloseRequested still counts it as open), so this is the moment
+        // the Window submenu's tick / "(closed)" label can be recomputed correctly. Skipped during
+        // ⌘Q, where every window is being destroyed and the menu dies with the app.
+        WindowEvent::Destroyed if !crate::is_quitting() => {
+            crate::refresh_window_menu(&close_app);
+        }
         _ => {}
     });
 
