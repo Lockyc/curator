@@ -885,11 +885,14 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         .map(|i| i as &dyn tauri::menu::IsMenuItem<R>)
         .collect();
 
+    // Order matches warden's and lector's tab submenus — nav, then the spine's Close/Pop Out, then
+    // the jumps — so the shared items sit in the same place in every app. Only the trailing
+    // app-specific items (Reload Tab / Reset All Tabs / Open Developer Tools) are curator's own.
     let tabs_menu = SubmenuBuilder::new(manager, "Tabs")
+        .items(&nav_refs)
+        .separator()
         .item(&spine.close_tab)
         .item(&spine.pop_out_tab)
-        .separator()
-        .items(&nav_refs)
         .separator()
         .items(&jump_refs)
         .separator()
