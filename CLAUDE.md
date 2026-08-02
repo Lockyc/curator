@@ -347,7 +347,13 @@ through `shell_core::menu::tab_nav_action`, which collapses both the ⌘1/⌘2 c
 digit-shifted jumps onto one `TabNavAction::{Next,Prev,Jump(n)}`, so the handler itself is
 mode-blind: it just `emit_to_focused_chrome`s a `nav-tab` / `jump-tab` event exactly as before.
 The focused window's chrome resolves the target row and routes it through the normal `select()`
-path (so a lazy tab still creates on demand). The submenu's "Open Developer
+path (so a jumped-to lazy tab still creates on demand). **Cycling walks loaded tabs only** —
+`chrome.js` passes `liveOnly: true` (the live dot = `TabItem.loaded`), warden's rule: cycling moves
+between the tabs you already *have* open and must never be the thing that loads a cold one, or
+holding ⌘1 through a mostly-cold window spawns a webview per step and pulls in every service you
+weren't using. **Jumps (⌘1–9) stay unfiltered** — naming a position is an explicit request to load.
+The predicate is the app's, not shell-core's (shell-core owns the menu items; see its CLAUDE.md
+dividing line). The submenu's "Open Developer
 Tools" (⌥⌘I) opens the WebKit inspector on the focused window's active content tab. It works in
 release builds because `tauri`'s `devtools` feature is enabled in `Cargo.toml` — that's
 deliberate (this is an operator console, not a sandboxed consumer app), not a debug leftover;

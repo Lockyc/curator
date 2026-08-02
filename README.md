@@ -68,9 +68,10 @@ file-driven, everything else is ephemeral.
 - **Window menu** — close a window (⌘⇧W); reopen any closed or dormant window from the Window
   menu. Closing the last open window drops to the home surface (listing every reopenable window)
   rather than quitting.
-- **Keyboard tab navigation** (the **Tabs** menu) — **⌘⇧[** / **⌘⇧]** cycle to the previous/next
-  tab and **⌘1–⌘9** jump to a position; set `tab_digit_keys = "cycle"` to make **⌘1** / **⌘2**
-  cycle instead (jumps shift to **⌘3–⌘9**).
+- **Keyboard tab navigation** (the **Tabs** menu) — **⌘⇧[** / **⌘⇧]** cycle the previous/next
+  *loaded* tab (cold tabs are skipped, so cycling never loads one) and **⌘1–⌘9** jump to a
+  position; set `tab_digit_keys = "cycle"` to make **⌘1** / **⌘2** cycle instead (jumps shift to
+  **⌘3–⌘9**).
 
 ## Install
 

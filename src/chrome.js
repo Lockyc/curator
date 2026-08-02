@@ -251,9 +251,14 @@ listen("service-badge", (e) => {
   else badges.delete(label);
   sb.setAttention(label, badgeToAttention(text));
 });
-// Keyboard tab navigation (Tabs menu): ⌘⇧]/⌘⇧[ cycle (all tabs — curator has no cold tabs to skip),
-// ⌘1–9 jump. The component resolves the target and routes it through the normal select path.
-listen("nav-tab", (e) => sb.selectByOffset(e.payload, { liveOnly: false }));
+// Keyboard tab navigation (Tabs menu): ⌘⇧]/⌘⇧[ cycle, ⌘1–9 jump. The component resolves the
+// target and routes it through the normal select path.
+// Cycling walks **loaded tabs only** (`liveOnly: true` — the live dot, i.e. `TabItem.loaded`),
+// warden's rule: cycling is for moving between the tabs you already have open, so it must never
+// be the thing that loads a cold one. Without the filter, holding ⌘1 through a mostly-cold window
+// spawns a webview per step and pulls in every service you weren't using. A cold tab is still one
+// click (or one ⌘1–9 jump) away — those are explicit, cycling isn't.
+listen("nav-tab", (e) => sb.selectByOffset(e.payload, { liveOnly: true }));
 listen("jump-tab", (e) => sb.selectByIndex(e.payload));
 // The menu spine's ⌘W (Tabs ▸ Close Tab): unloads whichever tab is active in THIS window. lib.rs
 // routes it via emit_to_focused_chrome, so only the focused window's chrome receives it.
