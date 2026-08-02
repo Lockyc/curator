@@ -188,6 +188,9 @@ pub struct AppState {
     /// Current app-wide `auto_update`, kept live across hot-reload so `window_identity` returns the
     /// new value. Gates the chrome's launch-time update check (the manual menu check ignores it).
     pub auto_update: AtomicBool,
+    /// Current app-wide `tab_digit_keys`, kept live across hot-reload so the menu rebuild
+    /// (`refresh_window_menu`) uses the new mode — a flip applies without a relaunch.
+    pub tab_digit_keys: Mutex<curator_config::TabDigitKeys>,
     /// The most recently applied config, kept in `AppState` (not a watcher-thread-local variable)
     /// so [`reload_windows`] can diff against it from *any* caller — the config-file watcher and
     /// the home surface's "Create a starter config" command both go through the same function now.
@@ -412,6 +415,8 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
     state
         .auto_update
         .store(new_cfg.auto_update, Ordering::Relaxed);
+    // Same for tab_digit_keys — the menu rebuild below reads this, so a flip applies live.
+    *state.tab_digit_keys.lock().unwrap() = new_cfg.tab_digit_keys;
 
     // Closed windows: drop the window and its runtime, and stop its reload timers. Use
     // `destroy()` (not `close()`) so this programmatic removal bypasses `on_real_window_close` —
@@ -531,8 +536,9 @@ fn window_entries(app: &tauri::AppHandle, state: &AppState) -> Vec<shell_core::m
 pub(crate) fn refresh_window_menu(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
     let entries = window_entries(app, &state);
+    let mode = *state.tab_digit_keys.lock().unwrap();
     let cfg_path = curator_config::resolve_config_path();
-    if let Ok(menu) = build_app_menu(app, &cfg_path, &entries) {
+    if let Ok(menu) = build_app_menu(app, &cfg_path, mode, &entries) {
         let _ = app.set_menu(menu);
     }
 }
@@ -827,6 +833,7 @@ fn reconcile_window_tabs(
 fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     manager: &M,
     config_path: &std::path::Path,
+    mode: curator_config::TabDigitKeys,
     window_entries: &[shell_core::menu::WindowEntry],
 ) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
@@ -861,24 +868,19 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     let devtools = MenuItemBuilder::with_id("open_devtools", "Open Developer Tools")
         .accelerator("CmdOrCtrl+Alt+I")
         .build(manager)?;
-    // Keyboard tab navigation: ⌘⇧]/⌘⇧[ cycle to the next/previous tab, ⌘1–9 jump to a position.
-    // The handlers emit to the focused window's chrome, which resolves the target row and selects
-    // it through the normal click path (so lazy tabs still create on demand).
-    let tab_next = MenuItemBuilder::with_id("tab_next", "Next Tab")
-        .accelerator("CmdOrCtrl+Shift+BracketRight")
-        .build(manager)?;
-    let tab_prev = MenuItemBuilder::with_id("tab_prev", "Previous Tab")
-        .accelerator("CmdOrCtrl+Shift+BracketLeft")
-        .build(manager)?;
-    let mut tab_jumps = Vec::new();
-    for n in 1..=9 {
-        tab_jumps.push(
-            MenuItemBuilder::with_id(format!("tab_jump:{n}"), format!("Tab {n}"))
-                .accelerator(format!("CmdOrCtrl+{n}"))
-                .build(manager)?,
-        );
-    }
-    let tab_jump_refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = tab_jumps
+    // Keyboard tab navigation, from shell-core so all three apps share one implementation:
+    // ⌘⇧] / ⌘⇧[ cycle, ⌘1–9 jump to a position — or, under `tab_digit_keys = "cycle"`, ⌘1/⌘2
+    // cycle and the jumps shift to ⌘3–9. The handlers emit to the focused window's chrome, which
+    // resolves the target row and selects it through the normal click path (so a lazy tab still
+    // creates on demand).
+    let nav = shell_core::menu::build_tab_nav(manager, mode.is_cycle())?;
+    let nav_refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = nav
+        .nav
+        .iter()
+        .map(|i| i as &dyn tauri::menu::IsMenuItem<R>)
+        .collect();
+    let jump_refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = nav
+        .jumps
         .iter()
         .map(|i| i as &dyn tauri::menu::IsMenuItem<R>)
         .collect();
@@ -887,9 +889,9 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         .item(&spine.close_tab)
         .item(&spine.pop_out_tab)
         .separator()
-        .items(&[&tab_next, &tab_prev])
+        .items(&nav_refs)
         .separator()
-        .items(&tab_jump_refs)
+        .items(&jump_refs)
         .separator()
         .items(&[&reload_tab, &reset, &devtools])
         .build()?;
@@ -1019,6 +1021,7 @@ pub fn run() {
             density: Mutex::new(cfg.density),
             sidebar_drag: AtomicBool::new(cfg.sidebar_drag),
             auto_update: AtomicBool::new(cfg.auto_update),
+            tab_digit_keys: Mutex::new(cfg.tab_digit_keys),
             last_cfg: Mutex::new(cfg.clone()),
         });
 
@@ -1082,7 +1085,7 @@ pub fn run() {
         // We replace Tauri's default menu, so we re-add the standard macOS menus (the Edit
         // submenu owns the clipboard accelerators ⌘C/⌘V/⌘X/⌘A/⌘Z that content webviews
         // need). Built here and rebuilt on hot-reload so the Window submenu tracks windows.
-        let menu = build_app_menu(app, &path, &entries)?;
+        let menu = build_app_menu(app, &path, cfg.tab_digit_keys, &entries)?;
         app.set_menu(menu)?;
 
         let cfg_path = path.clone();
@@ -1091,6 +1094,17 @@ pub fn run() {
             // The spine's file-acting ids (Edit Config, Reveal Config) need no window — let it
             // consume them first.
             if shell_core::menu::handle_spine_event(id, &cfg_path) {
+                return;
+            }
+            // Tab navigation (⌘⇧] / ⌘⇧[ , ⌘1–9, and the ⌘1/⌘2 cycle aliases). shell-core routes
+            // the id, so this handler is mode-blind — the aliases arrive as plain Next/Prev.
+            if let Some(action) = shell_core::menu::tab_nav_action(id) {
+                use shell_core::menu::TabNavAction;
+                match action {
+                    TabNavAction::Next => emit_to_focused_chrome(app, "nav-tab", 1i32),
+                    TabNavAction::Prev => emit_to_focused_chrome(app, "nav-tab", -1i32),
+                    TabNavAction::Jump(n) => emit_to_focused_chrome(app, "jump-tab", n),
+                }
                 return;
             }
             match id {
@@ -1126,13 +1140,6 @@ pub fn run() {
                     // last window.
                     if let Some(win) = app.get_focused_window() {
                         let _ = win.close();
-                    }
-                }
-                "tab_next" => emit_to_focused_chrome(app, "nav-tab", 1i32),
-                "tab_prev" => emit_to_focused_chrome(app, "nav-tab", -1i32),
-                id if id.starts_with("tab_jump:") => {
-                    if let Ok(n) = id["tab_jump:".len()..].parse::<usize>() {
-                        emit_to_focused_chrome(app, "jump-tab", n);
                     }
                 }
                 id => {

@@ -47,16 +47,21 @@ false — reformat the file in house style on a clean hot-reload),
 `density` (`comfortable` default / `compact`), `sidebar_drag` (bool, default true — the sidebar
 chrome is a window-move drag handle → the component's `windowDrag` flag; `false` turns it off), and
 `auto_update` (bool, default true — check for a new release on launch; `false` suppresses the
-automatic check, the **Check for Updates…** menu item still works — see *In-app updates*).
+automatic check, the **Check for Updates…** menu item still works — see *In-app updates*), and
+`tab_digit_keys` (`jump` default / `cycle` — what ⌘1/⌘2 do in the **Tabs** menu; `jump` makes
+⌘1–⌘9 jump to a tab position, `cycle` makes ⌘1 next tab / ⌘2 previous and shifts the jumps to
+⌘3–⌘9 — see *App menu*).
 These are kept live in `AppState` across hot-reload (like `dark_mode`; `sidebar_drag`/`auto_update`
-are `AtomicBool`, `density` a `Mutex`); `window_identity` returns them (plus a density-aware default
+are `AtomicBool`, `density`/`tab_digit_keys` a `Mutex`); `window_identity` returns
+`dark_mode`/`density`/`sidebar_drag`/`auto_update` (plus a density-aware default
 sidebar width — compact is narrower) and the controller passes them in the DTO, so **chrome-core**
 applies `windowDrag` and sets
 `data-density` on `<html>` and swaps its `--cc-*` sizing tokens (`--cc-row-font`/`--cc-tile-size`/
 `--cc-dot-size`/… in chrome-core's `assets/sidebar.css`). `compact` is a proportional ~0.85× scale
 of the comfortable set. **All three apps consume chrome-core**, so the tokens live once and stay
 aligned by construction. Accent-colour validation delegates to `config_core::Colour::parse`
-(shared with warden and lector).
+(shared with warden and lector). `tab_digit_keys` is menu-only — it never reaches the DTO/chrome —
+so `refresh_window_menu` reads it straight from `AppState` when it rebuilds the app menu.
 
 Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
 window title, zero window dimension, invalid colour, empty group name, dup group name within a
@@ -331,10 +336,18 @@ them. The **Edit** submenu is load-bearing: its predefined items own the clipboa
 (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content webviews. Keep Edit (and
 Window/Hide) when touching the menu.
 
-The **Tabs** submenu also carries keyboard tab navigation: **⌘1–9** jump to a tab position and
-**⌘⇧]** / **⌘⇧[** cycle next/previous. The handlers `emit_to_focused_chrome` a `nav-tab` /
-`jump-tab` event; the focused window's chrome resolves the target row and routes it through the
-normal `select()` path (so a lazy tab still creates on demand). The submenu's "Open Developer
+The **Tabs** submenu also carries keyboard tab navigation, now built from **shell-core's**
+`shell_core::menu::build_tab_nav(manager, mode.is_cycle())` — the same block warden shares —
+which returns the `nav` items (**⌘⇧]** / **⌘⇧[** cycle next/previous, or, under
+`tab_digit_keys = "cycle"`, ⌘1 next / ⌘2 previous) and the `jumps` items (**⌘1–9**, or **⌘3–9**
+under `cycle`, once the first two digits become the cycle aliases). Only the submenu's
+*composition* — interleaving those with `Reload Tab` / `Reset All Tabs` / `Open Developer Tools`
+— stays curator's own (`build_app_menu`'s `tabs_menu`). The menu handler routes every nav id
+through `shell_core::menu::tab_nav_action`, which collapses both the ⌘1/⌘2 cycle aliases and the
+digit-shifted jumps onto one `TabNavAction::{Next,Prev,Jump(n)}`, so the handler itself is
+mode-blind: it just `emit_to_focused_chrome`s a `nav-tab` / `jump-tab` event exactly as before.
+The focused window's chrome resolves the target row and routes it through the normal `select()`
+path (so a lazy tab still creates on demand). The submenu's "Open Developer
 Tools" (⌥⌘I) opens the WebKit inspector on the focused window's active content tab. It works in
 release builds because `tauri`'s `devtools` feature is enabled in `Cargo.toml` — that's
 deliberate (this is an operator console, not a sandboxed consumer app), not a debug leftover;
@@ -641,9 +654,13 @@ that is the same for curator, warden, lector, and any future sibling app.
   the chrome-caller command gate (`is_chrome_caller` is curator-only — but as *redundant*
   belt-and-braces, not because "only curator hosts untrusted content": lector hosts remote content
   too, and origin dispatch isolates it — see shell-core's command-isolation model), and the
-  **app-specific menu items** — curator's Edit (clipboard accelerators) and Tabs
-  (keyboard nav, Reload Tab, Reset All Tabs, Open Developer Tools) genuinely aren't app-agnostic, unlike
-  the spine that now wraps them. See shell-core's CLAUDE.md for the full dividing line.
+  **app-specific menu items** — curator's Edit (clipboard accelerators) and the Tabs submenu's
+  own items (Reload Tab, Reset All Tabs, Open Developer Tools) genuinely aren't app-agnostic, unlike
+  the spine that now wraps them. **The Tabs submenu's keyboard *navigation* items are shared**,
+  though: `shell_core::menu::build_tab_nav` + `tab_nav_action` own the ⌘⇧]/⌘⇧[/⌘1–9 block and the
+  `tab_digit_keys` cycle-alias behaviour (see *App menu* above) — curator only interleaves those
+  items into its own Tabs submenu alongside its app-specific ones. See shell-core's CLAUDE.md for
+  the full dividing line.
 - Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
   `#PATCH:shell#`), mirroring the chrome-/config- pairs.
 - A scriptable "open window by title" entry point belongs here (shared), not in curator — see

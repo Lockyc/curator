@@ -45,6 +45,10 @@
 # "Check for Updates…" menu item still works). Hot-reloads.
 # auto_update = false
 
+# What ⌘1/⌘2 do: "jump" (default — ⌘1–⌘9 jump to a tab position) or "cycle" (⌘1 next tab,
+# ⌘2 previous, jumps shift to ⌘3–⌘9). Hot-reloads.
+# tab_digit_keys = "cycle"
+
 # ─── Window 1: Keepers ────────────────────────────────────────────────────────
 # Dashboards and docs. Tabs are lazy by default (loaded on first click); none are kept live,
 # so this window stays quiet. It opens with a loose tab above the grouped sections.

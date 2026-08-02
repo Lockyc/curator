@@ -68,6 +68,9 @@ file-driven, everything else is ephemeral.
 - **Window menu** — close a window (⌘⇧W); reopen any closed or dormant window from the Window
   menu. Closing the last open window drops to the home surface (listing every reopenable window)
   rather than quitting.
+- **Keyboard tab navigation** (the **Tabs** menu) — **⌘⇧[** / **⌘⇧]** cycle to the previous/next
+  tab and **⌘1–⌘9** jump to a position; set `tab_digit_keys = "cycle"` to make **⌘1** / **⌘2**
+  cycle instead (jumps shift to **⌘3–⌘9**).
 
 ## Install
 
@@ -151,6 +154,7 @@ organised into groups; loose tabs render first in a headerless section, then eac
 # density       = "compact"       # "comfortable" (default) or "compact" (condensed chrome)
 # sidebar_drag  = false           # drag the sidebar chrome to move the window (default true)
 # auto_update   = false           # check for a new release on launch + every 6h (default true; menu check stays)
+# tab_digit_keys = "cycle"        # ⌘1/⌘2 become next/previous tab; jumps shift to ⌘3–⌘9 (default "jump")
 
 [[window]]
 title         = "Keepers"          # required; must be unique across windows
@@ -220,6 +224,7 @@ title); group names must be unique within a window. Optional:
 | `sidebar_drag`   | bool          | `true`  | Whether the sidebar chrome is a window-move drag handle (drag the banner/empty list area to move the window). `false` turns it off. Hot-reloads. |
 | `auto_update`    | bool          | `true`  | Check for a new release on launch and every 6 hours while a window is open. `false` suppresses the automatic checks; the **Check for Updates…** menu item still works, and the update banner's × dismisses it for the session. A changed value takes effect for windows opened after the change. |
 | `format_on_save` | bool          | `false` | Reformat `config.toml` in curator's house style on a clean hot-reload (same formatting as `curator fmt`). Leaves the file untouched if a reload fails to parse. |
+| `tab_digit_keys` | string        | `jump`  | What ⌘1/⌘2 do in the **Tabs** menu. `jump` — ⌘1–⌘9 jump to a tab position. `cycle` — ⌘1 is next tab, ⌘2 previous, and the jumps shift to ⌘3–⌘9. Hot-reloads. |
 
 Run **`curator validate [path]`** to check a config without launching: it prints the resolved
 window/tab tree (each tab's cascaded session, plus its `unread` mode where it isn't the default)
