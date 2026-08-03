@@ -165,6 +165,11 @@ escape-click shim exists for.
   decision is made on the real destination. Don't fold it into `same_site` or widen it to "any
   param holding an absolute URL": an OAuth popup's `redirect_uri` is exactly that shape and must
   stay in-app, so the match is pinned to the `/url` redirect endpoint.
+  **Both handlers unwrap it**, because whether a wrapped link arrives as a new-window request or
+  a plain same-tab navigation is the service's choice, not something curator can rely on: a
+  cross-site redirector reached in the same tab escapes to the browser (the one carve-out from
+  "same-tab navigation always wanders freely"), while one pointing back at the tab's own site is
+  ordinary in-app navigation and stays.
 
 **Chrome CSP.** `tauri.conf.json`'s `app.security.csp` locks down the chrome (App-URL) webview:
 `default-src 'self'`, `script-src`/`style-src 'self' 'unsafe-inline'`, `img-src 'self' data:`,

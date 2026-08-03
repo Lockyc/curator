@@ -224,6 +224,10 @@ pub fn create_content_webview(
     // window's chrome to surface the tab that fired it (see notification::fire / did_receive).
     let nav_window_id = window.label().to_string();
     let nav_nonce = nonce;
+    // The tab's configured URL — its "home base" for the same-site test. Both handlers classify
+    // against it (a link redirector can arrive as either a new-window request or a same-tab
+    // navigation, depending on how the service wires its links), so each gets its own clone.
+    let nav_home_url = view.url.clone();
     // Captured separately for the new-window handler (the above are moved into on_navigation).
     let open_app = window.app_handle().clone();
     let open_label = view.label.clone();
@@ -280,6 +284,18 @@ pub fn create_content_webview(
                     escape::escape_to_default_browser(&target);
                 }
                 return false;
+            }
+            // A link redirector reached in the *same* tab is still a leave-this-app intent, just
+            // one wearing the tab's own domain — a service that wires its links without
+            // `target="_blank"` lands here instead of `on_new_window`. Escape to the browser
+            // rather than letting the tab follow the bounce out to the external site. Only when
+            // the unwrapped destination is genuinely cross-site: a redirector pointing back at
+            // the tab's own site is in-app navigation and stays.
+            if let Some(target) = escape::redirector_target(url) {
+                if !escape::same_site(&nav_home_url, &target) {
+                    escape::escape_to_default_browser(target.as_str());
+                    return false;
+                }
             }
             escape::allow_same_tab_navigation(url.as_str())
         })
