@@ -63,7 +63,7 @@ impl WindowRuntime {
 
 /// A tab popped out into its own detached window (`commands::pop_out_tab`). Kept in
 /// [`AppState::detached`], **separate from `windows`**, so hot-reload reconcile never sees it (the
-/// detached-label prefix, [`shell_core::detach::is_detached_label`], keeps window-state persistence
+/// detached-label prefix, [`shell_core::detach::is_detached_label`], keeps geometry persistence
 /// off it too). Holds the origin bookkeeping needed to return the tab: which window it came from,
 /// which tab, and the resolved [`curator_config::TabView`] to recreate its webview from — a curator
 /// tab is a webview that is *recreated* on redock (login survives via the session-keyed data store),
@@ -172,7 +172,7 @@ pub struct AppState {
     pub windows: Mutex<HashMap<String, WindowRuntime>>,
     /// Tabs currently popped out into their own detached window, keyed by the detached window's
     /// Tauri label ([`shell_core::detach::detached_label`]). **Separate from `windows`** so
-    /// reconcile/window-state never touch these ephemeral windows, and so the home-surface check can
+    /// reconcile/geometry never touch these ephemeral windows, and so the home-surface check can
     /// still count them (`reconcile_home`) — a detached window is a real surface on screen.
     pub detached: Mutex<HashMap<String, CuratorDetached>>,
     /// Current app-wide `dark_mode`, kept live across hot-reload so Window-menu reopen themes a
@@ -956,13 +956,16 @@ pub fn validate_cli(path: Option<std::path::PathBuf>) -> i32 {
 }
 
 pub fn run() {
-    // Register the shell-core plugins (window-state + updater + process) — the set every sibling app
-    // installs identically. Window-state persists each window's size/position/maximized keyed by
-    // Tauri label within a per-config state file (scoped by shell-core's `state_filename` from the
-    // config path below) so two configs sharing a window title don't share bounds; both save and
-    // restore (the plugin's window_created hook, on the main loop) are automatic — build_window must
-    // NOT restore by hand (deadlocks; see the footgun there). The shared home surface (shell-home,
-    // replacing curator's own error window) is excluded from state restore.
+    // Register the shell-core plugins (geometry + updater + process) — the set every sibling app
+    // installs identically. Geometry persists each window's size/position, in AppKit points, keyed by
+    // Tauri label within a per-config store file (scoped by shell-core's `geometry_filename` from the
+    // config path below) so two configs sharing a window title don't share bounds. `maximized` is no
+    // longer persisted at all — on macOS the green button zooms to a fullscreen space, and geometry
+    // recorded while fullscreen is exactly what the plugin refuses to save. Both save (on move/resize
+    // and at exit) and restore (the plugin's `on_window_ready` hook, on the main loop) are automatic —
+    // build_window must NOT restore by hand (deadlocks; see the footgun there). The shared home
+    // surface (shell-home, replacing curator's own error window) and any detached-tab window are
+    // excluded from geometry save and restore alike.
     let config_path = curator_config::resolve_config_path();
     shell_core::register_plugins(
         tauri::Builder::default(),

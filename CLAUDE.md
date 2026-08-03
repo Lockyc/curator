@@ -325,7 +325,7 @@ window first if the user closed it while the tab was out.
 
 - **`AppState.detached: Mutex<HashMap<String, CuratorDetached>>`** (keyed by the detached window's
   label) is deliberately **separate from `AppState.windows`**, so hot-reload reconcile and
-  window-state persistence never see these ephemeral windows. `CuratorDetached` holds just what
+  geometry persistence never see these ephemeral windows. `CuratorDetached` holds just what
   `redock` needs to return the tab: `origin_wid`, `tab_label`, and the `TabView` to recreate from
   (no live webview handle — there's nothing to hold).
 - **`TabState.detached`, kept distinct from `created`** (`webviews.rs`): a popped-out tab is
@@ -432,15 +432,25 @@ chrome-core owns the drag handle + `localStorage` persistence
 (`storageKey: "curator:sidebar-width:<title>"`). The active-tab highlight tints with the window's
 accent colour (`--active-bg`), falling back to neutral blue.
 
-**Window size + position persist across launches** via `tauri-plugin-window-state` (SIZE | POSITION
-| MAXIMIZED); the plugin's own `window_created` hook restores them on the main event loop.
-**`build_window` must not call `restore_state` itself** — off the event loop the restore marshal
-deadlocks (FOOTGUN comment in `webviews.rs`'s `build_window`, pointer in `lib.rs`'s `run`). State is
+**Window size + position persist across launches** via shell-core's own `geometry` module (see its
+CLAUDE.md), which replaced `tauri-plugin-window-state`: geometry is recorded in **AppKit points**,
+never physical pixels, so a rect saved on one monitor is never scaled wrong when restored on another
+of a different DPI; **every restore is clamped to the target monitor's work area**, so a stale or
+oversized rect can never come back bigger than the screen it lands on; and a window is never
+recorded while fullscreen or minimized, so a macOS Split View tile can't be saved and reopened as an
+ordinary window sized to the tile (this covers classic Split View, a fullscreen space — Sequoia's
+drag-to-edge window *tiling* is not a fullscreen space, so tiled bounds are still recorded, correctly,
+as ordinary window bounds). `maximized` is no longer persisted at all — on macOS the green button
+zooms into a fullscreen space, which the fullscreen guard above already excludes from being saved.
+The plugin's own `on_window_ready` hook restores geometry on the main event loop.
+**`build_window` must not restore geometry itself** — off the event loop the restore marshal
+deadlocks (FOOTGUN comment in `webviews.rs`'s `build_window`, pointer in `lib.rs`'s `run`). Geometry is
 keyed by Tauri label (== `window_id`, derived from the title, stable across launches) *within a
-per-config state file* (shell-core's `state_filename` hashes the resolved config path — curator just
-hands it the path) so two configs that reuse a window title don't share bounds. The config
+per-config store file* (shell-core's `geometry_filename` hashes the resolved config path — curator
+just hands it the path) so two configs that reuse a window title don't share bounds. The config
 `width`/`height` is only the first-run default — saved bounds override it once present. The transient
-home surface (`shell_core::home::HOME_LABEL`) is `skip_initial_state`-excluded. Renaming a window's
+home surface (`shell_core::home::HOME_LABEL`) and any detached-tab window are excluded structurally
+(the plugin's own `is_excluded`, not a caller-supplied skip list for the latter). Renaming a window's
 `title` changes its id/label, so it normally restores fresh default bounds. Sidebar width is separate
 (per-title `localStorage`, above).
 
@@ -665,13 +675,14 @@ that is the same for curator, warden, lector, and any future sibling app.
   `shell_home_create_config` command, which calls `config_core::write_default_config` with
   curator's tracked `src/default-config.toml` template — shell-core never touches config-core (the
   three cores stay mutually independent; see the constellation `CLAUDE.md`).
-- **Plugin registration comes from shell-core.** `lib.rs` registers window-state + updater + process via
+- **Plugin registration comes from shell-core.** `lib.rs` registers geometry + updater + process via
   `shell_core::register_plugins(builder, Some(&config_path), &[shell_core::home::HOME_LABEL])`, passing
-  curator's resolved config path — shell-core derives the per-config window-state filename from it
-  (`state_filename`), so the canonicalize→hash→format policy is single-sourced there, not per app.
-  The three plugin crates stay direct deps (capability resolution needs them); only the registration
-  is shared. The `runtime` feature pulls tauri; the `build.rs` build-dep uses `default-features = false`
-  so it stays zero-tauri (resolver 2 keeps the two separate).
+  curator's resolved config path — shell-core derives the per-config geometry store filename from it
+  (`geometry_filename`), so the canonicalize→hash→format policy is single-sourced there, not per app.
+  Geometry itself has no plugin crate of its own (it's a `tauri::plugin::Builder` shell-core builds
+  in-crate); the updater and process plugin crates stay direct deps (capability resolution needs
+  them), and only the registration is shared. The `runtime` feature pulls tauri; the `build.rs`
+  build-dep uses `default-features = false` so it stays zero-tauri (resolver 2 keeps the two separate).
 - **The config-file watcher mechanism is shared** — `shell_core::watch::watch_config` owns the
   parent-dir watch, the FSEvents-robust file-name match, and the echo-swallow; curator passes only the
   parse + apply closure (returning the formatted bytes on a format-on-save write so the echo is

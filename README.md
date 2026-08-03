@@ -371,7 +371,7 @@ with nothing extra to install:
   validate, format, hot-reload diff) behind curator's config and `curator fmt`.
 - **[shell-core](https://github.com/Lockyc/shell-core)** — the shared release tooling + Tauri
   runtime setup. `build.rs` materializes the release scripts (git-ignored) and stamps the
-  build; the app registers window-state/updater/process via its `register_plugins`, and draws its
+  build; the app registers geometry/updater/process via its `register_plugins`, and draws its
   mouse side-button navigation (an NSEvent monitor) and content-load progress bar from shell-core too.
 
 Those same cores are also shared with two **sibling apps, [warden](https://github.com/Lockyc/warden)**

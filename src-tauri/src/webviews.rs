@@ -147,21 +147,20 @@ pub fn build_window(
             .build()?;
     let window = webview_window.as_ref().window();
 
-    // Saved bounds (size/position/maximized) are restored by tauri-plugin-window-state's own
-    // `window_created` hook, which runs on the main thread *inside* the event loop — where its
-    // `set_size`/`set_position` (and the monitor-intersection check that keeps a stale off-screen
-    // position from stranding the window) resolve inline. Every window is covered except the shared
-    // home surface (`shell_core::home::HOME_LABEL`, passed to `skip_initial_state` in lib.rs, which
-    // must not restore its throwaway bounds).
+    // Saved bounds (size/position, in AppKit points) are restored by shell-core's geometry plugin's
+    // own `on_window_ready` hook, which Tauri dispatches inside `run_on_main_thread` — so its
+    // `set_size`/`set_position` (and the per-monitor clamp that keeps a stale or oversized rect from
+    // stranding the window off-screen or larger than the target monitor) resolve inline on the main
+    // loop. Every window is covered except the shared home surface and any detached-tab window,
+    // which the plugin excludes structurally (see shell-core's `geometry` module).
     //
-    // FOOTGUN: do NOT call `window.restore_state(...)` here. It looks right — windows are built at
-    // runtime, so restore them by hand — but `restore_state` reads/sets geometry via calls that
-    // marshal to the main event loop, and `build_window` always runs *off* it (the setup hook runs
-    // before the loop starts; hot-reload runs on the watcher thread). Off the loop that marshal
-    // blocks: a self-hang at launch, or a mutex-holding deadlock against the auto-hook on reload. It
-    // stayed invisible while no window title hashed to a persisted state entry (restore
-    // short-circuited before the marshal); the first matching title — e.g. renaming a window onto an
-    // old entry — froze the app.
+    // FOOTGUN: do NOT call any restore-geometry logic here by hand. It looks right — windows are
+    // built at runtime, so restore them inline — but reading/setting geometry marshals to the main
+    // event loop, and `build_window` always runs *off* it (the setup hook runs before the loop
+    // starts; hot-reload runs on the watcher thread). Off the loop that marshal blocks: a self-hang
+    // at launch, or a mutex-holding deadlock against the auto-hook on reload. This is exactly why the
+    // restore lives in the plugin's `on_window_ready` hook rather than here — that hook fires from
+    // inside the main-thread dispatch a manual restore would have to reproduce.
 
     // Route a user close (native red button or ⌘⇧W) through the shared close logic so it can't
     // strand the app and doesn't leak the window's unread/timers (see lib.rs). ⌘W no longer closes
