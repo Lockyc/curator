@@ -964,227 +964,229 @@ pub fn run() {
     // recorded while fullscreen is exactly what the plugin refuses to save. Both save (on move/resize
     // and at exit) and restore (the plugin's `on_window_ready` hook, on the main loop) are automatic —
     // build_window must NOT restore by hand (deadlocks; see the footgun there). The shared home
-    // surface (shell-home, replacing curator's own error window) and any detached-tab window are
-    // excluded from geometry save and restore alike.
+    // surface and detached-tab windows are excluded from geometry save/restore structurally inside
+    // shell-core, not via the skip_labels argument.
     let config_path = curator_config::resolve_config_path();
-    shell_core::register_plugins(
-        tauri::Builder::default(),
-        Some(&config_path),
-        &[shell_core::home::HOME_LABEL],
-    )
-    .setup(move |app| {
-        // Prime native banner notifications (authorization + presentation/click delegate) and
-        // capture the app handle the click delegate uses to surface a tab. The banner path is a
-        // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
-        notification::init(app.handle().clone());
+    shell_core::register_plugins(tauri::Builder::default(), Some(&config_path), &[])
+        .setup(move |app| {
+            // Prime native banner notifications (authorization + presentation/click delegate) and
+            // capture the app handle the click delegate uses to surface a tab. The banner path is a
+            // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
+            notification::init(app.handle().clone());
 
-        // Native mouse side-button (back/forward) navigation — the shared shell-core NSEvent monitor
-        // (WKWebView never delivers these to the DOM, so it can't be done in the page). curator
-        // supplies only the focused-active-webview resolver; shell-core owns the monitor + the
-        // native goBack/goForward.
-        let mouse_nav_handle = app.handle().clone();
-        shell_core::mouse_nav::install(move || commands::focused_active_webview(&mouse_nav_handle));
+            // Native mouse side-button (back/forward) navigation — the shared shell-core NSEvent monitor
+            // (WKWebView never delivers these to the DOM, so it can't be done in the page). curator
+            // supplies only the focused-active-webview resolver; shell-core owns the monitor + the
+            // native goBack/goForward.
+            let mouse_nav_handle = app.handle().clone();
+            shell_core::mouse_nav::install(move || {
+                commands::focused_active_webview(&mouse_nav_handle)
+            });
 
-        let path = curator_config::resolve_config_path();
-        let (cfg, load_err) = match curator_config::load_config(&path) {
-            Ok((c, warnings)) => {
-                log_config_warnings(&warnings);
-                (c, None)
+            let path = curator_config::resolve_config_path();
+            let (cfg, load_err) = match curator_config::load_config(&path) {
+                Ok((c, warnings)) => {
+                    log_config_warnings(&warnings);
+                    (c, None)
+                }
+                Err(e) => {
+                    eprintln!("config error: {e}");
+                    (curator_config::Config::default(), Some(e.to_string()))
+                }
+            };
+            #[cfg(target_os = "macos")]
+            insecure::set_allowlist(cfg.allow_insecure.clone());
+
+            let handle = app.handle().clone();
+            let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
+            for win_cfg in &cfg.windows {
+                // `open_on_start = false` windows are configured-but-dormant: registered so the Window
+                // menu / home surface can list and reopen them, but not built at launch. Everything else
+                // materializes now. This is the only site that consults `open_on_start` — hot-reload
+                // reconcile deliberately ignores it (launch-only gate; see the field doc and warden).
+                if win_cfg.open_on_start {
+                    let (wid, rt) = open_window(
+                        &handle,
+                        cfg.dark_mode,
+                        cfg.session.as_deref(),
+                        win_cfg,
+                        &HashSet::new(),
+                    )?;
+                    runtimes.insert(wid, rt);
+                } else {
+                    let wid = curator_config::identity::window_id(&win_cfg.title);
+                    runtimes.insert(wid, dormant_runtime(win_cfg, cfg.session.as_deref()));
+                }
             }
-            Err(e) => {
-                eprintln!("config error: {e}");
-                (curator_config::Config::default(), Some(e.to_string()))
-            }
-        };
-        #[cfg(target_os = "macos")]
-        insecure::set_allowlist(cfg.allow_insecure.clone());
+            app.manage(AppState {
+                windows: Mutex::new(runtimes),
+                detached: Mutex::new(HashMap::new()),
+                dark_mode: AtomicBool::new(cfg.dark_mode),
+                density: Mutex::new(cfg.density),
+                sidebar_drag: AtomicBool::new(cfg.sidebar_drag),
+                auto_update: AtomicBool::new(cfg.auto_update),
+                tab_digit_keys: Mutex::new(cfg.tab_digit_keys),
+                last_cfg: Mutex::new(cfg.clone()),
+            });
 
-        let handle = app.handle().clone();
-        let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
-        for win_cfg in &cfg.windows {
-            // `open_on_start = false` windows are configured-but-dormant: registered so the Window
-            // menu / home surface can list and reopen them, but not built at launch. Everything else
-            // materializes now. This is the only site that consults `open_on_start` — hot-reload
-            // reconcile deliberately ignores it (launch-only gate; see the field doc and warden).
-            if win_cfg.open_on_start {
-                let (wid, rt) = open_window(
-                    &handle,
-                    cfg.dark_mode,
-                    cfg.session.as_deref(),
-                    win_cfg,
-                    &HashSet::new(),
-                )?;
-                runtimes.insert(wid, rt);
-            } else {
-                let wid = curator_config::identity::window_id(&win_cfg.title);
-                runtimes.insert(wid, dormant_runtime(win_cfg, cfg.session.as_deref()));
-            }
-        }
-        app.manage(AppState {
-            windows: Mutex::new(runtimes),
-            detached: Mutex::new(HashMap::new()),
-            dark_mode: AtomicBool::new(cfg.dark_mode),
-            density: Mutex::new(cfg.density),
-            sidebar_drag: AtomicBool::new(cfg.sidebar_drag),
-            auto_update: AtomicBool::new(cfg.auto_update),
-            tab_digit_keys: Mutex::new(cfg.tab_digit_keys),
-            last_cfg: Mutex::new(cfg.clone()),
-        });
+            // The home surface keeps the app from ever being stranded invisible: it appears when the
+            // config failed to load or defines no `[[window]]` blocks, and closes once a real window
+            // exists. Shared with warden and lector — curator's own error window could only ever state
+            // an error, never offer to create a config or list windows.
+            let entries = {
+                let state = app.state::<AppState>();
+                window_entries(&handle, &state)
+            };
+            reconcile_home(&handle, &entries, &path, path.exists(), load_err.as_deref());
 
-        // The home surface keeps the app from ever being stranded invisible: it appears when the
-        // config failed to load or defines no `[[window]]` blocks, and closes once a real window
-        // exists. Shared with warden and lector — curator's own error window could only ever state
-        // an error, never offer to create a config or list windows.
-        let entries = {
-            let state = app.state::<AppState>();
-            window_entries(&handle, &state)
-        };
-        reconcile_home(&handle, &entries, &path, path.exists(), load_err.as_deref());
-
-        // Watch the config file and hot-reload on change, keeping the last-good config
-        // (and surfacing an error banner on each open window) if the new contents don't
-        // parse/validate.
-        // The shared shell-core watcher owns the parent-dir watch, the file-name match (macOS
-        // FSEvents-robust — this is the fix for the old exact-path bug that silently missed every
-        // event under a symlinked config dir), and the echo-swallow (via the `Option<String>` the
-        // closure returns when it format-writes). curator supplies just the parse + apply.
-        let app_handle = app.handle().clone();
-        let fmt_path = path.clone();
-        shell_core::watch::watch_config(path.clone(), move |src| match watcher::reconcile(src) {
-            Ok((new_cfg, warnings)) => {
-                log_config_warnings(&warnings);
-                // Format-on-save: rewrite in house style on a clean reload. The write is
-                // diff-guarded, so an already-formatted file is a no-op; when it does rewrite,
-                // return the formatted bytes so the watcher swallows the echo (one reload per user
-                // save, not two). Formatting only touches whitespace, so `new_cfg` (parsed
-                // pre-format) already matches the formatted file's config.
-                let self_write = if new_cfg.format_on_save {
-                    let formatted = curator_config::format_str(src);
-                    if formatted != src {
-                        match curator_config::format_file(&fmt_path) {
-                            Ok(_) => Some(formatted),
-                            Err(e) => {
-                                eprintln!("config format error: {e}");
+            // Watch the config file and hot-reload on change, keeping the last-good config
+            // (and surfacing an error banner on each open window) if the new contents don't
+            // parse/validate.
+            // The shared shell-core watcher owns the parent-dir watch, the file-name match (macOS
+            // FSEvents-robust — this is the fix for the old exact-path bug that silently missed every
+            // event under a symlinked config dir), and the echo-swallow (via the `Option<String>` the
+            // closure returns when it format-writes). curator supplies just the parse + apply.
+            let app_handle = app.handle().clone();
+            let fmt_path = path.clone();
+            shell_core::watch::watch_config(path.clone(), move |src| {
+                match watcher::reconcile(src) {
+                    Ok((new_cfg, warnings)) => {
+                        log_config_warnings(&warnings);
+                        // Format-on-save: rewrite in house style on a clean reload. The write is
+                        // diff-guarded, so an already-formatted file is a no-op; when it does rewrite,
+                        // return the formatted bytes so the watcher swallows the echo (one reload per user
+                        // save, not two). Formatting only touches whitespace, so `new_cfg` (parsed
+                        // pre-format) already matches the formatted file's config.
+                        let self_write = if new_cfg.format_on_save {
+                            let formatted = curator_config::format_str(src);
+                            if formatted != src {
+                                match curator_config::format_file(&fmt_path) {
+                                    Ok(_) => Some(formatted),
+                                    Err(e) => {
+                                        eprintln!("config format error: {e}");
+                                        None
+                                    }
+                                }
+                            } else {
                                 None
                             }
-                        }
-                    } else {
+                        } else {
+                            None
+                        };
+                        reload_windows(&app_handle, &new_cfg);
+                        self_write
+                    }
+                    Err(msg) => {
+                        // Surface in each window's sidebar, and reconcile the shared home surface
+                        // (Broken state) in case every window happens to be closed.
+                        emit_to_all_chrome(&app_handle, "config-error", msg.clone());
+                        let state = app_handle.state::<AppState>();
+                        let entries = window_entries(&app_handle, &state);
+                        reconcile_home(&app_handle, &entries, &fmt_path, true, Some(&msg));
                         None
                     }
-                } else {
-                    None
-                };
-                reload_windows(&app_handle, &new_cfg);
-                self_write
-            }
-            Err(msg) => {
-                // Surface in each window's sidebar, and reconcile the shared home surface
-                // (Broken state) in case every window happens to be closed.
-                emit_to_all_chrome(&app_handle, "config-error", msg.clone());
-                let state = app_handle.state::<AppState>();
-                let entries = window_entries(&app_handle, &state);
-                reconcile_home(&app_handle, &entries, &fmt_path, true, Some(&msg));
-                None
-            }
-        });
+                }
+            });
 
-        // We replace Tauri's default menu, so we re-add the standard macOS menus (the Edit
-        // submenu owns the clipboard accelerators ⌘C/⌘V/⌘X/⌘A/⌘Z that content webviews
-        // need). Built here and rebuilt on hot-reload so the Window submenu tracks windows.
-        let menu = build_app_menu(app, &path, cfg.tab_digit_keys, &entries)?;
-        app.set_menu(menu)?;
+            // We replace Tauri's default menu, so we re-add the standard macOS menus (the Edit
+            // submenu owns the clipboard accelerators ⌘C/⌘V/⌘X/⌘A/⌘Z that content webviews
+            // need). Built here and rebuilt on hot-reload so the Window submenu tracks windows.
+            let menu = build_app_menu(app, &path, cfg.tab_digit_keys, &entries)?;
+            app.set_menu(menu)?;
 
-        let cfg_path = path.clone();
-        app.on_menu_event(move |app, event| {
-            let id = event.id().as_ref();
-            // The spine's file-acting ids (Edit Config, Reveal Config) need no window — let it
-            // consume them first.
-            if shell_core::menu::handle_spine_event(id, &cfg_path) {
-                return;
-            }
-            // Tab navigation (⌘⇧] / ⌘⇧[ , ⌘1–9, and the ⌘1/⌘2 cycle aliases). shell-core routes
-            // the id, so this handler is mode-blind — the aliases arrive as plain Next/Prev.
-            if let Some(action) = shell_core::menu::tab_nav_action(id) {
-                use shell_core::menu::TabNavAction;
-                match action {
-                    TabNavAction::Next => emit_to_focused_chrome(app, "nav-tab", 1i32),
-                    TabNavAction::Prev => emit_to_focused_chrome(app, "nav-tab", -1i32),
-                    TabNavAction::Jump(n) => emit_to_focused_chrome(app, "jump-tab", n),
+            let cfg_path = path.clone();
+            app.on_menu_event(move |app, event| {
+                let id = event.id().as_ref();
+                // The spine's file-acting ids (Edit Config, Reveal Config) need no window — let it
+                // consume them first.
+                if shell_core::menu::handle_spine_event(id, &cfg_path) {
+                    return;
                 }
-                return;
-            }
-            match id {
-                "reload_active" => {
-                    commands::reload_active_tab(app);
+                // Tab navigation (⌘⇧] / ⌘⇧[ , ⌘1–9, and the ⌘1/⌘2 cycle aliases). shell-core routes
+                // the id, so this handler is mode-blind — the aliases arrive as plain Next/Prev.
+                if let Some(action) = shell_core::menu::tab_nav_action(id) {
+                    use shell_core::menu::TabNavAction;
+                    match action {
+                        TabNavAction::Next => emit_to_focused_chrome(app, "nav-tab", 1i32),
+                        TabNavAction::Prev => emit_to_focused_chrome(app, "nav-tab", -1i32),
+                        TabNavAction::Jump(n) => emit_to_focused_chrome(app, "jump-tab", n),
+                    }
+                    return;
                 }
-                "reset_all" => {
-                    let _ = commands::reset_all_tabs(app);
-                }
-                "open_devtools" => {
-                    commands::open_active_devtools(app);
-                }
-                // chrome-core owns self-update; forward to its checkForUpdateNow().
-                shell_core::menu::ids::CHECK_UPDATES => {
-                    emit_to_focused_chrome(app, "check-update", ())
-                }
-                // ⌘W unloads the ACTIVE TAB — it does not close the window. The chrome owns which
-                // tab is active and the dot repaint, so it drives unload_tab off this event
-                // (warden's model, now the family standard — curator's ⌘W used to close the whole
-                // window, which was the bug this fixes).
-                shell_core::menu::ids::CLOSE_TAB => emit_to_focused_chrome(app, "close-tab", ()),
-                // ⌘⇧O pops the focused window's active tab out into its own window. The chrome owns
-                // which tab is active, so it drives pop_out_tab off this event (routed to only the
-                // focused window's chrome, curator's per-window emit pattern).
-                shell_core::menu::ids::POP_OUT_TAB => {
-                    emit_to_focused_chrome(app, "pop-out-tab", ())
-                }
-                shell_core::menu::ids::CLOSE_WINDOW => {
-                    // Close the focused window via `close()` so it flows through the same
-                    // `CloseRequested` path as the native red button: that handler wipes the
-                    // closed window's unread/timers (the runtime stays registered so its cfg
-                    // survives for reopen via the Window menu) and quits curator if this was the
-                    // last window.
-                    if let Some(win) = app.get_focused_window() {
-                        let _ = win.close();
+                match id {
+                    "reload_active" => {
+                        commands::reload_active_tab(app);
+                    }
+                    "reset_all" => {
+                        let _ = commands::reset_all_tabs(app);
+                    }
+                    "open_devtools" => {
+                        commands::open_active_devtools(app);
+                    }
+                    // chrome-core owns self-update; forward to its checkForUpdateNow().
+                    shell_core::menu::ids::CHECK_UPDATES => {
+                        emit_to_focused_chrome(app, "check-update", ())
+                    }
+                    // ⌘W unloads the ACTIVE TAB — it does not close the window. The chrome owns which
+                    // tab is active and the dot repaint, so it drives unload_tab off this event
+                    // (warden's model, now the family standard — curator's ⌘W used to close the whole
+                    // window, which was the bug this fixes).
+                    shell_core::menu::ids::CLOSE_TAB => {
+                        emit_to_focused_chrome(app, "close-tab", ())
+                    }
+                    // ⌘⇧O pops the focused window's active tab out into its own window. The chrome owns
+                    // which tab is active, so it drives pop_out_tab off this event (routed to only the
+                    // focused window's chrome, curator's per-window emit pattern).
+                    shell_core::menu::ids::POP_OUT_TAB => {
+                        emit_to_focused_chrome(app, "pop-out-tab", ())
+                    }
+                    shell_core::menu::ids::CLOSE_WINDOW => {
+                        // Close the focused window via `close()` so it flows through the same
+                        // `CloseRequested` path as the native red button: that handler wipes the
+                        // closed window's unread/timers (the runtime stays registered so its cfg
+                        // survives for reopen via the Window menu) and quits curator if this was the
+                        // last window.
+                        if let Some(win) = app.get_focused_window() {
+                            let _ = win.close();
+                        }
+                    }
+                    id => {
+                        if let Some(wid) = shell_core::menu::selected_window(id) {
+                            open_or_focus_window(app, wid);
+                        }
                     }
                 }
-                id => {
-                    if let Some(wid) = shell_core::menu::selected_window(id) {
-                        open_or_focus_window(app, wid);
-                    }
-                }
+            });
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::get_tabs,
+            commands::window_identity,
+            commands::select_tab,
+            commands::reset_all,
+            commands::reload_tab,
+            commands::unload_tab,
+            commands::home_tab,
+            commands::nav_back,
+            commands::nav_forward,
+            commands::set_hole_rect,
+            commands::pop_out_tab,
+            commands::raise_popped_window,
+            commands::pop_in_tab,
+            commands::shell_home_create_config,
+            commands::shell_home_edit_config,
+            commands::shell_home_open_window,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building curator")
+        .run(|_app, event| {
+            // ExitRequested fires before every window's Destroyed during ⌘Q; mark quitting so a
+            // detached window's teardown doesn't reopen its origin mid-quit (see `redock`).
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                mark_quitting();
             }
         });
-
-        Ok(())
-    })
-    .invoke_handler(tauri::generate_handler![
-        commands::get_tabs,
-        commands::window_identity,
-        commands::select_tab,
-        commands::reset_all,
-        commands::reload_tab,
-        commands::unload_tab,
-        commands::home_tab,
-        commands::nav_back,
-        commands::nav_forward,
-        commands::set_hole_rect,
-        commands::pop_out_tab,
-        commands::raise_popped_window,
-        commands::pop_in_tab,
-        commands::shell_home_create_config,
-        commands::shell_home_edit_config,
-        commands::shell_home_open_window,
-    ])
-    .build(tauri::generate_context!())
-    .expect("error while building curator")
-    .run(|_app, event| {
-        // ExitRequested fires before every window's Destroyed during ⌘Q; mark quitting so a
-        // detached window's teardown doesn't reopen its origin mid-quit (see `redock`).
-        if let tauri::RunEvent::ExitRequested { .. } = event {
-            mark_quitting();
-        }
-    });
 }
 
 #[cfg(test)]
