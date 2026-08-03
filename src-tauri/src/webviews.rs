@@ -156,11 +156,14 @@ pub fn build_window(
     //
     // FOOTGUN: do NOT call any restore-geometry logic here by hand. It looks right — windows are
     // built at runtime, so restore them inline — but reading/setting geometry marshals to the main
-    // event loop, and `build_window` always runs *off* it (the setup hook runs before the loop
-    // starts; hot-reload runs on the watcher thread). Off the loop that marshal blocks: a self-hang
-    // at launch, or a mutex-holding deadlock against the auto-hook on reload. This is exactly why the
-    // restore lives in the plugin's `on_window_ready` hook rather than here — that hook fires from
-    // inside the main-thread dispatch a manual restore would have to reproduce.
+    // event loop, and `build_window` runs from two call sites: the setup hook (main thread, before
+    // the loop starts spinning) and hot-reload (the watcher thread). tauri-runtime-wry's
+    // `send_user_message` dispatches by thread id, not by whether the loop has started spinning, so
+    // the setup-hook call resolves inline — no hang there. The watcher-thread call is genuinely off
+    // the main thread, so that marshal blocks and can deadlock against the auto-hook's own mutex on
+    // reload. This is exactly why the restore lives in the plugin's `on_window_ready` hook rather
+    // than here — that hook fires from inside the main-thread dispatch a manual restore would have
+    // to reproduce.
 
     // Route a user close (native red button or ⌘⇧W) through the shared close logic so it can't
     // strand the app and doesn't leak the window's unread/timers (see lib.rs). ⌘W no longer closes
