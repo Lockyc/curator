@@ -241,6 +241,11 @@ pub fn create_content_webview(
         .user_agent(DESKTOP_UA)
         .initialization_script(&init)
         .on_new_window(move |url, _features| {
+            // Google Chat/Gmail wrap every external link in Google's own `/url?q=` redirector,
+            // which is same-site with a Google tab — unwrap it first so the same-site test below
+            // sees the real destination rather than keeping the wrapper in-app (which then
+            // bounced the tab straight out to the external site). See `escape::redirector_target`.
+            let url = escape::redirector_target(&url).unwrap_or(url);
             // Keep the app's own popups/auth flows (same site as the tab) in-app by navigating
             // the tab itself, so sign-in completes in the tab's own login session. Genuinely
             // external links (a different site) still escape to the default browser.

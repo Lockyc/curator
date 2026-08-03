@@ -32,6 +32,37 @@ fn registrable(host: &str) -> String {
     labels.join(".")
 }
 
+/// Whether `host` is one of Google's own hosts (`www.google.com`, `google.com.au`, …): an
+/// optional `www.` prefix followed by a `google.` label. Used only to recognise the link
+/// redirector below, so it deliberately doesn't try to be a general Google-property test.
+fn is_google_host(host: &str) -> bool {
+    host.strip_prefix("www.")
+        .unwrap_or(host)
+        .starts_with("google.")
+}
+
+/// Google's link redirector — `https://www.google.com/url?q=<target>` — which Google Chat and
+/// Gmail interpose on every external link a message contains. It is same-registrable-domain
+/// with a `*.google.com` tab, so [`same_site`] alone reads it as the app's own flow and keeps
+/// it in-app; the redirector then bounces the tab straight out to the external site. Its whole
+/// purpose is to *leave*, so a new-window request for one is unwrapped to its real destination
+/// before the same-site test runs — and the browser gets the clean URL, not the interstitial.
+///
+/// Returns the target of `url`'s `q` (or `url`) param when `url` is such a redirector and that
+/// target is http(s); any other URL — or a redirector with a missing/garbage target — yields
+/// `None`, leaving the navigation to be classified as it was.
+pub fn redirector_target(url: &url::Url) -> Option<url::Url> {
+    if url.path() != "/url" || !url.host_str().is_some_and(is_google_host) {
+        return None;
+    }
+    let target = url
+        .query_pairs()
+        .find(|(k, _)| k == "q" || k == "url")
+        .map(|(_, v)| v.into_owned())?;
+    let target = url::Url::parse(&target).ok()?;
+    matches!(target.scheme(), "http" | "https").then_some(target)
+}
+
 /// Whether a new-window `target` belongs to the same site as the tab's `home_url` — i.e. it's
 /// the app's own flow (a sign-in popup goes to the provider's domain) rather than an external
 /// link. Same-site new windows are kept in-app so they complete in the tab's own login session;
@@ -245,6 +276,60 @@ mod tests {
             "https://chat.google.com/",
             &url("mailto:a@b.test")
         ));
+    }
+
+    #[test]
+    fn redirector_unwraps_googles_link_wrapper() {
+        // What Google Chat actually hands the new-window handler for an external link.
+        let u = url(
+            "https://www.google.com/url?q=https%3A%2F%2Flocus.ccfnq.com.au%2Fgantt%3Fcharts%3D01k&sa=D&usg=AOv",
+        );
+        assert_eq!(
+            redirector_target(&u).map(|t| t.to_string()),
+            Some("https://locus.ccfnq.com.au/gantt?charts=01k".to_string())
+        );
+        // Country domains and the bare host wrap links the same way.
+        assert!(
+            redirector_target(&url("https://google.com.au/url?q=https%3A%2F%2Fx.test%2F"))
+                .is_some()
+        );
+        // The `url` param form is the same redirector.
+        assert!(redirector_target(&url(
+            "https://www.google.com/url?url=https%3A%2F%2Fx.test%2F"
+        ))
+        .is_some());
+    }
+
+    #[test]
+    fn redirector_ignores_everything_else() {
+        // Not the redirect endpoint — an OAuth popup carries an absolute `redirect_uri` and
+        // must stay in-app, so only the `/url` path counts as a redirector.
+        assert!(redirector_target(&url(
+            "https://accounts.google.com/o/oauth2/auth?redirect_uri=https%3A%2F%2Fapp.test%2Fcb"
+        ))
+        .is_none());
+        // Not a Google host.
+        assert!(
+            redirector_target(&url("https://notgoogle.test/url?q=https%3A%2F%2Fx.test%2F"))
+                .is_none()
+        );
+        // Missing or non-http target → leave the navigation alone.
+        assert!(redirector_target(&url("https://www.google.com/url")).is_none());
+        assert!(
+            redirector_target(&url("https://www.google.com/url?q=javascript%3Aalert(1)")).is_none()
+        );
+    }
+
+    #[test]
+    fn unwrapped_redirector_escapes_where_the_wrapper_would_not() {
+        // The bug this exists to fix: the wrapper is same-site with the Chat tab (so it was
+        // kept in-app, then bounced the tab out to the external site) …
+        let wrapper = url("https://www.google.com/url?q=https%3A%2F%2Flocus.ccfnq.com.au%2Fgantt");
+        assert!(same_site("https://chat.google.com/", &wrapper));
+        // … while its real destination is cross-site, and so escapes to the default browser.
+        let target = redirector_target(&wrapper).unwrap();
+        assert!(!same_site("https://chat.google.com/", &target));
+        assert!(is_escapable_scheme(&target));
     }
 
     #[test]

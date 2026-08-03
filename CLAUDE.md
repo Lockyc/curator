@@ -150,6 +150,22 @@ required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel wit
 page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
 sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
 
+**Link escape policy — new-window intents only; same-tab navigation always wanders freely.**
+A `window.open` / `target="_blank"` request reaches `on_new_window`, which keeps it **in-app**
+(navigating the tab itself) when it's `escape::same_site` with the tab's configured `url`, so a
+provider sign-in popup completes in the tab's own login session; anything cross-site is handed
+to the macOS opener. A plain main-frame navigation is always allowed (`allow_same_tab_navigation`)
+— the tab is home base. cmd/middle-click never reaches `on_new_window` at all, which is what the
+escape-click shim exists for.
+- **Footgun: a same-site URL can still be an "escape this app" intent — a link redirector.**
+  Google Chat and Gmail wrap every external link as `https://www.google.com/url?q=<target>`,
+  which is same-registrable-domain with a `chat.google.com` tab, so `same_site` reads it as the
+  app's own flow, keeps it in-app, and the redirector then bounces the tab out to the external
+  site. `escape::redirector_target` unwraps such a wrapper **before** the same-site test, so the
+  decision is made on the real destination. Don't fold it into `same_site` or widen it to "any
+  param holding an absolute URL": an OAuth popup's `redirect_uri` is exactly that shape and must
+  stay in-app, so the match is pinned to the `/url` redirect endpoint.
+
 **Chrome CSP.** `tauri.conf.json`'s `app.security.csp` locks down the chrome (App-URL) webview:
 `default-src 'self'`, `script-src`/`style-src 'self' 'unsafe-inline'`, `img-src 'self' data:`,
 `connect-src 'self' ipc: http://ipc.localhost` (the Tauri IPC channel), `frame-src 'none'`,
