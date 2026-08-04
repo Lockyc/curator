@@ -42,11 +42,12 @@ fn is_google_host(host: &str) -> bool {
 }
 
 /// Google's link redirector — `https://www.google.com/url?q=<target>` — which Google Chat and
-/// Gmail interpose on every external link a message contains. It is same-registrable-domain
-/// with a `*.google.com` tab, so [`same_site`] alone reads it as the app's own flow and keeps
-/// it in-app; the redirector then bounces the tab straight out to the external site. Its whole
-/// purpose is to *leave*, so a new-window request for one is unwrapped to its real destination
-/// before the same-site test runs — and the browser gets the clean URL, not the interstitial.
+/// Gmail interpose on every external link a message contains. Its whole purpose is to *leave*,
+/// so it is unwrapped to its real destination before any routing decision runs. That matters in
+/// both directions: a wrapper clicked as a plain same-tab navigation would otherwise be waved
+/// through by [`allow_same_tab_navigation`] and bounce the tab out to the external site, while a
+/// wrapper pointing back at the tab's own host is ordinary in-app navigation that must not
+/// escape. Unwrapping also hands the browser the clean URL rather than Google's interstitial.
 ///
 /// Returns the target of `url`'s `q` (or `url`) param when `url` is such a redirector and that
 /// target is http(s); any other URL — or a redirector with a missing/garbage target — yields
@@ -63,10 +64,32 @@ pub fn redirector_target(url: &url::Url) -> Option<url::Url> {
     matches!(target.scheme(), "http" | "https").then_some(target)
 }
 
+/// A host with any leading `www.` dropped, so `www.example.com` and `example.com` compare equal.
+fn bare(host: &str) -> &str {
+    host.strip_prefix("www.").unwrap_or(host)
+}
+
+/// Whether `host`'s leading label names an authentication surface (`accounts.google.com`,
+/// `login.example.com`, `sso.example.org`, …). Deliberately a small, bounded set of *auth*
+/// labels rather than an open-ended list of a provider's app hosts — see [`same_site`].
+fn is_auth_host(host: &str) -> bool {
+    matches!(
+        host.split('.').next().unwrap_or_default(),
+        "accounts" | "account" | "login" | "signin" | "auth" | "oauth" | "sso" | "id" | "secure"
+    )
+}
+
 /// Whether a new-window `target` belongs to the same site as the tab's `home_url` — i.e. it's
-/// the app's own flow (a sign-in popup goes to the provider's domain) rather than an external
+/// the app's own flow (a sign-in popup goes to the provider's auth host) rather than an external
 /// link. Same-site new windows are kept in-app so they complete in the tab's own login session;
 /// cross-site ones escape to the default browser. http(s) only.
+///
+/// "Same site" is the tab's **own host** (`www.`-insensitive), not its whole registrable domain.
+/// A shared provider domain hosts many *unrelated services* — `meet.google.com` and
+/// `docs.google.com` are no more the Chat tab's own flow than an outside link is, and treating
+/// them as such navigated the tab away from Chat instead of opening them in the browser. The one
+/// carve-out is an auth host on the same registrable domain ([`is_auth_host`]), which is the
+/// sign-in popup this test exists to keep in-app.
 pub fn same_site(home_url: &str, target: &url::Url) -> bool {
     if !matches!(target.scheme(), "http" | "https") {
         return false;
@@ -74,10 +97,13 @@ pub fn same_site(home_url: &str, target: &url::Url) -> bool {
     let (Some(t_host), Ok(home)) = (target.host_str(), url::Url::parse(home_url)) else {
         return false;
     };
-    match home.host_str() {
-        Some(h_host) => registrable(h_host) == registrable(t_host),
-        None => false,
+    let Some(h_host) = home.host_str() else {
+        return false;
+    };
+    if bare(h_host) == bare(t_host) {
+        return true;
     }
+    registrable(h_host) == registrable(t_host) && is_auth_host(t_host)
 }
 
 /// Sentinel host the injected Notification override navigates to so the native
@@ -265,6 +291,21 @@ mod tests {
     }
 
     #[test]
+    fn same_site_escapes_sibling_services_on_a_shared_provider_domain() {
+        // Google Chat's "Join video meeting" card is a `target="_blank"` link to meet.google.com.
+        // It shares `google.com` with the tab, but it is a different *service*, not the tab's own
+        // auth flow — so it must escape to the browser rather than navigate the Chat tab away.
+        assert!(!same_site(
+            "https://chat.google.com/",
+            &url("https://meet.google.com/abc-defg-hij")
+        ));
+        assert!(!same_site(
+            "https://chat.google.com/",
+            &url("https://docs.google.com/document/d/1/edit")
+        ));
+    }
+
+    #[test]
     fn same_site_escapes_external_links() {
         // A genuinely external link is cross-site → not kept in-app.
         assert!(!same_site(
@@ -321,15 +362,50 @@ mod tests {
     }
 
     #[test]
-    fn unwrapped_redirector_escapes_where_the_wrapper_would_not() {
-        // The bug this exists to fix: the wrapper is same-site with the Chat tab (so it was
-        // kept in-app, then bounced the tab out to the external site) …
+    fn unwrapped_redirector_is_routed_on_its_real_destination() {
+        // A wrapped external link resolves to a cross-site target, so it escapes to the browser
+        // — and the browser gets the clean URL, not Google's interstitial.
         let wrapper = url("https://www.google.com/url?q=https%3A%2F%2Flocus.ccfnq.com.au%2Fgantt");
-        assert!(same_site("https://chat.google.com/", &wrapper));
-        // … while its real destination is cross-site, and so escapes to the default browser.
         let target = redirector_target(&wrapper).unwrap();
+        assert_eq!(target.as_str(), "https://locus.ccfnq.com.au/gantt");
         assert!(!same_site("https://chat.google.com/", &target));
         assert!(is_escapable_scheme(&target));
+
+        // The other direction: a wrapper pointing back at the tab's own host is in-app
+        // navigation, and only unwrapping reveals that (the wrapper's own host is not the tab's).
+        let inward = url("https://www.google.com/url?q=https%3A%2F%2Fchat.google.com%2Froom%2Fx");
+        assert!(!same_site("https://chat.google.com/", &inward));
+        assert!(same_site(
+            "https://chat.google.com/",
+            &redirector_target(&inward).unwrap()
+        ));
+    }
+
+    #[test]
+    fn same_site_keeps_auth_hosts_and_www_variants_in_app() {
+        // A sign-in popup on the provider's auth host is the tab's own flow.
+        assert!(same_site(
+            "https://git.example.org/",
+            &url("https://sso.example.org/login")
+        ));
+        assert!(same_site(
+            "https://app.example.com/",
+            &url("https://login.example.com/oauth/authorize")
+        ));
+        // `www.` is not a meaningful host difference.
+        assert!(same_site(
+            "https://www.notion.so/",
+            &url("https://notion.so/x")
+        ));
+        assert!(same_site(
+            "https://notion.so/",
+            &url("https://www.notion.so/x")
+        ));
+        // An auth-looking host on a *different* registrable domain is still external.
+        assert!(!same_site(
+            "https://chat.google.com/",
+            &url("https://login.example.com/")
+        ));
     }
 
     #[test]

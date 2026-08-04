@@ -157,14 +157,24 @@ provider sign-in popup completes in the tab's own login session; anything cross-
 to the macOS opener. A plain main-frame navigation is always allowed (`allow_same_tab_navigation`)
 — the tab is home base. cmd/middle-click never reaches `on_new_window` at all, which is what the
 escape-click shim exists for.
-- **Footgun: a same-site URL can still be an "escape this app" intent — a link redirector.**
-  Google Chat and Gmail wrap every external link as `https://www.google.com/url?q=<target>`,
-  which is same-registrable-domain with a `chat.google.com` tab, so `same_site` reads it as the
-  app's own flow, keeps it in-app, and the redirector then bounces the tab out to the external
-  site. `escape::redirector_target` unwraps such a wrapper **before** the same-site test, so the
-  decision is made on the real destination. Don't fold it into `same_site` or widen it to "any
-  param holding an absolute URL": an OAuth popup's `redirect_uri` is exactly that shape and must
-  stay in-app, so the match is pinned to the `/url` redirect endpoint.
+- **`same_site` compares the tab's *own host*, not its registrable domain** (`www.`-insensitive),
+  because a shared provider domain hosts many unrelated services: `meet.google.com` and
+  `docs.google.com` are no more a Chat tab's own flow than an outside link is, so a
+  registrable-domain test navigated the Chat tab away to Meet instead of opening it in the browser.
+  The single carve-out is `escape::is_auth_host` — a bounded set of *auth* leading labels
+  (`accounts`, `login`, `sso`, …) on the same registrable domain, which is the sign-in popup the
+  same-site test exists for. **Don't widen that carve-out into a list of a provider's app hosts**
+  — that list has no end, and each entry silently re-imposes the bug above on one more service.
+- **Footgun: a same-registrable-domain URL can still be an "escape this app" intent — a link
+  redirector.** Google Chat and Gmail wrap every external link as
+  `https://www.google.com/url?q=<target>`, whose whole purpose is to *leave*.
+  `escape::redirector_target` unwraps such a wrapper **before** any routing decision, so the
+  decision is made on the real destination — which matters in both directions: an unwrapped
+  cross-site target escapes to the browser (and the browser gets the clean URL, not Google's
+  interstitial), while a wrapper pointing back at the tab's own host is in-app navigation only
+  the unwrap can reveal. Don't fold it into `same_site` or widen it to "any param holding an
+  absolute URL": an OAuth popup's `redirect_uri` is exactly that shape and must stay in-app, so
+  the match is pinned to the `/url` redirect endpoint.
   **Both handlers unwrap it**, because whether a wrapped link arrives as a new-window request or
   a plain same-tab navigation is the service's choice, not something curator can rely on: a
   cross-site redirector reached in the same tab escapes to the browser (the one carve-out from
