@@ -11,6 +11,7 @@ docs/superpowers/
 /scripts/release.sh
 /scripts/gen-latest-json.sh
 /scripts/install-app.sh
+/scripts/launch-app.sh
 
 # macOS
 .DS_Store

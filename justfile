@@ -190,5 +190,9 @@ deploy: build
     set -euo pipefail
     bash scripts/install-app.sh "target/release/bundle/macos/curator.app"
     echo "→ launching"
-    open "/Applications/curator.app"
+    # Launching is its own shell-core script, NOT a bare `open`: `open` forwards the deploying
+    # terminal's whole environment to the app, so a deploy from a terminal runs curator in an
+    # environment no real (Dock/Spotlight) launch ever reproduces. launch-app.sh's header carries
+    # the full footgun.
+    bash scripts/launch-app.sh
     echo "✓ curator updated in /Applications"

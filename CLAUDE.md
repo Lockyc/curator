@@ -516,7 +516,7 @@ back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. 
    `APPLE_SIGNING_IDENTITY`) or without the updater key (no `TAURI_SIGNING_PRIVATE_KEY`), and only
    from a clean tree whose **HEAD is the tag** — so no un-notarized or post-tag artifact can
    masquerade as official. These three scripts are **generated from shell-core**, not tracked here:
-   `build.rs` materializes `scripts/{release,gen-latest-json,install-app}.sh` (git-ignored) from the
+   `build.rs` materializes `scripts/{release,gen-latest-json,install-app,launch-app}.sh` (git-ignored) from the
    pinned shell-core rev, and the tracked `scripts/tooling.env` supplies curator's params
    (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`). So warden, curator, and lector all run **one**
    shared release script — edit it in shell-core, never here (the local copy is regenerated on the
@@ -667,11 +667,18 @@ consumed by git-rev pin. It owns the build/release tooling and the byte-identica
 that is the same for curator, warden, lector, and any future sibling app.
 
 - **Release scripts are generated, not tracked.** `src-tauri/build.rs` calls
-  `shell_core::materialize_scripts("../scripts")`, writing `scripts/{release,gen-latest-json,install-app}.sh`
+  `shell_core::materialize_scripts("../scripts")`, writing `scripts/{release,gen-latest-json,install-app,launch-app}.sh`
   **git-ignored** from the pinned rev. The generic scripts read the tracked `scripts/tooling.env`
   (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`); everything else derives. **Edit them in shell-core**, never
   here — the local copy is overwritten on the next build. curator's `scripts/test-install-app.sh` is
   curator-specific and stays tracked.
+- **`just deploy` launches via `scripts/launch-app.sh`, never a bare `open`.** `open` forwards the
+  *caller's* whole environment to the launched app (process parentage is clean — launchd — the
+  environment is not), so deploying from a terminal runs curator with that terminal's `TERM*`,
+  `GHOSTTY_*`, `TMUX*`, `SHELL` and any agent/tooling vars: an environment no Dock/Spotlight launch
+  ever reproduces, which makes bugs appear or vanish by launch method. `launch-app.sh` wraps `open`
+  in `env -i` so the app gets only the launchd GUI-session environment. Shared with warden + lector;
+  the script's header carries the full footgun.
 - **The build stamp comes from shell-core.** `build.rs` calls `shell_core::build_stamp()`, emitting
   the shared, un-prefixed `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`).
 - **The menu spine and the home surface come from shell-core** (`menu::build_spine` /
