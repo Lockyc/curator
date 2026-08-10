@@ -323,11 +323,11 @@ mod tests {
     fn redirector_unwraps_googles_link_wrapper() {
         // What Google Chat actually hands the new-window handler for an external link.
         let u = url(
-            "https://www.google.com/url?q=https%3A%2F%2Flocus.ccfnq.com.au%2Fgantt%3Fcharts%3D01k&sa=D&usg=AOv",
+            "https://www.google.com/url?q=https%3A%2F%2Ftracker.test%2Fgantt%3Fcharts%3D01k&sa=D&usg=AOv",
         );
         assert_eq!(
             redirector_target(&u).map(|t| t.to_string()),
-            Some("https://locus.ccfnq.com.au/gantt?charts=01k".to_string())
+            Some("https://tracker.test/gantt?charts=01k".to_string())
         );
         // Country domains and the bare host wrap links the same way.
         assert!(
@@ -365,9 +365,9 @@ mod tests {
     fn unwrapped_redirector_is_routed_on_its_real_destination() {
         // A wrapped external link resolves to a cross-site target, so it escapes to the browser
         // — and the browser gets the clean URL, not Google's interstitial.
-        let wrapper = url("https://www.google.com/url?q=https%3A%2F%2Flocus.ccfnq.com.au%2Fgantt");
+        let wrapper = url("https://www.google.com/url?q=https%3A%2F%2Ftracker.test%2Fgantt");
         let target = redirector_target(&wrapper).unwrap();
-        assert_eq!(target.as_str(), "https://locus.ccfnq.com.au/gantt");
+        assert_eq!(target.as_str(), "https://tracker.test/gantt");
         assert!(!same_site("https://chat.google.com/", &target));
         assert!(is_escapable_scheme(&target));
 
