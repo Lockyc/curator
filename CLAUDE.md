@@ -579,9 +579,11 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
 - **Capability:** the chrome is granted `updater:default` + `process:allow-restart` in
   `capabilities/default.json` — local-origin only (no `remote` block), so remote content tabs never
   receive them, exactly like `core:event`.
-- **Arch:** these machines are Apple Silicon, so `latest.json` carries only a `darwin-aarch64`
-  platform entry (see `scripts/gen-latest-json.sh`). Add a `darwin-x86_64` entry (a second build) or
-  switch to a universal binary only if an Intel user ever needs updates.
+- **Arch:** the release artifact is a **universal binary** (shell-core's `release.sh` builds
+  `--target universal-apple-darwin`), so `latest.json` carries **both** `darwin-aarch64` and
+  `darwin-x86_64` pointing at the one tarball — a release cut on either kind of Mac serves every
+  user. shell-core's CLAUDE.md carries the keep-both-keys footgun: the updater matches on the
+  running install's own arch, so dropping a key makes auto-update go silently quiet for it.
 - **First-release bootstrap:** the release that first ships the updater must be installed the old way
   once (`install.sh` / download the `.zip`); every release after that updates in-app. Call this out
   in that release's notes.
