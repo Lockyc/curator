@@ -67,8 +67,10 @@ cd "$SRC"
 echo "→ building release bundle (this takes a few minutes)"
 ( cd src-tauri && cargo tauri build )
 
-# 5. Install the built app into /Applications.
-bash scripts/install-app.sh "src-tauri/target/release/bundle/macos/curator.app"
+# 5. Install the built app into /Applications. src-tauri is a workspace member, so
+# cargo resolves target/ to the workspace root — not src-tauri/target/, which the
+# `cd src-tauri` above makes it look like.
+bash scripts/install-app.sh "target/release/bundle/macos/curator.app"
 
 # 6. Seed the user config from the example (never overwrite an existing one).
 mkdir -p "$HOME/.config/curator"
