@@ -62,9 +62,11 @@ impl WindowRuntime {
 }
 
 /// A tab popped out into its own detached window (`commands::pop_out_tab`). Kept in
-/// [`AppState::detached`], **separate from `windows`**, so hot-reload reconcile never sees it (the
-/// detached-label prefix, [`shell_core::detach::is_detached_label`], keeps geometry persistence
-/// off it too). Holds the origin bookkeeping needed to return the tab: which window it came from,
+/// [`AppState::detached`], **separate from `windows`**, so hot-reload reconcile never sees it (it
+/// skips the detached-label prefix, [`shell_core::detach::is_detached_label`]). Geometry
+/// persistence, by contrast, *does* cover these windows — the label is stable per tab, so a
+/// popped-out tab reopens at the size it was left at.
+/// Holds the origin bookkeeping needed to return the tab: which window it came from,
 /// which tab, and the resolved [`curator_config::TabView`] to recreate its webview from — a curator
 /// tab is a webview that is *recreated* on redock (login survives via the session-keyed data store),
 /// so, unlike warden, there is no live native surface to hold here.

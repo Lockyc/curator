@@ -352,13 +352,15 @@ pub struct TabView {
 }
 
 /// Stable within-window webview label derived from a tab's URL. Position-independent so
-/// inserting/removing/reordering tabs doesn't remap an existing webview. (Task 3 namespaces
-/// this with the window id.)
+/// inserting/removing/reordering tabs doesn't remap an existing webview. Namespaced with the
+/// window id by the caller.
+///
+/// `fnv1a_64`, never `DefaultHasher` — see [`crate::hash`]'s module docs. This label is no longer
+/// runtime-only: it *is* a popped-out tab's detach token, and shell-core's geometry module keys
+/// that window's remembered size and position on it, so a `rustc` bump that reshuffled hashing
+/// would silently forget every pop-out's geometry and orphan its entry.
 fn url_label(url: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    url.hash(&mut h);
-    format!("tab-{:016x}", h.finish())
+    format!("tab-{:016x}", crate::hash::fnv1a_64(url.as_bytes()))
 }
 
 /// A configured `session` value, treating blank/whitespace-only as unset so an empty

@@ -334,8 +334,8 @@ closes the detached webview, recreates it on the origin (another reload), and re
 window first if the user closed it while the tab was out.
 
 - **`AppState.detached: Mutex<HashMap<String, CuratorDetached>>`** (keyed by the detached window's
-  label) is deliberately **separate from `AppState.windows`**, so hot-reload reconcile and
-  geometry persistence never see these ephemeral windows. `CuratorDetached` holds just what
+  label) is deliberately **separate from `AppState.windows`**, so hot-reload reconcile never sees
+  these windows. (Geometry persistence *does* — see the geometry section below.) `CuratorDetached` holds just what
   `redock` needs to return the tab: `origin_wid`, `tab_label`, and the `TabView` to recreate from
   (no live webview handle — there's nothing to hold).
 - **`TabState.detached`, kept distinct from `created`** (`webviews.rs`): a popped-out tab is
@@ -458,9 +458,12 @@ deadlocks (FOOTGUN comment in `webviews.rs`'s `build_window`, pointer in `lib.rs
 keyed by Tauri label (== `window_id`, derived from the title, stable across launches) *within a
 per-config store file* (shell-core's `geometry_filename` hashes the resolved config path — curator
 just hands it the path) so two configs that reuse a window title don't share bounds. The config
-`width`/`height` is only the first-run default — saved bounds override it once present. The transient
-home surface (`shell_core::home::HOME_LABEL`) and any detached-tab window are excluded structurally
-(the plugin's own `is_excluded`, not a caller-supplied skip list for the latter). Renaming a window's
+`width`/`height` is only the first-run default — saved bounds override it once present. Only the
+transient home surface (`shell_core::home::HOME_LABEL`) is excluded, structurally (the plugin's own
+`is_excluded`, not a caller-supplied skip list). **A popped-out tab's window is persisted like any
+other**, keyed by its `shell-detach:` label — which `detach_window_token` makes the tab's own
+webview label — so a re-popped tab reopens at the size and position it was last left at rather than
+`DETACHED_DEFAULT_*`. Renaming a window's
 `title` changes its id/label, so it normally restores fresh default bounds. Sidebar width is separate
 (per-title `localStorage`, above).
 
@@ -695,7 +698,8 @@ that is the same for curator, warden, lector, and any future sibling app.
   curator's tracked `src/default-config.toml` template — shell-core never touches config-core (the
   three cores stay mutually independent; see the constellation `CLAUDE.md`).
 - **Plugin registration comes from shell-core.** `lib.rs` registers geometry + updater + process via
-  `shell_core::register_plugins(builder, Some(&config_path), &[shell_core::home::HOME_LABEL])`, passing
+  `shell_core::register_plugins(builder, Some(&config_path), &[])` — the home surface is excluded
+  inside the plugin, so listing it would be redundant — passing
   curator's resolved config path — shell-core derives the per-config geometry store filename from it
   (`geometry_filename`), so the canonicalize→hash→format policy is single-sourced there, not per app.
   Geometry itself has no plugin crate of its own (it's a `tauri::plugin::Builder` shell-core builds
