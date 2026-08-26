@@ -520,13 +520,13 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         });
         // wire_return fires on `Destroyed`, by which point the window has already dropped this
         // tab's webview — and wry leaks a dropped webview still running (see
-        // `close_content_webview`). Blank it while the window is only *asking* to close, so a
+        // `close_content_webview`). End its page while the window is only *asking* to close, so a
         // popped-out tab stops when its window does.
         if let Some(win) = app.get_window(&detached_label) {
-            let blank_win = win.clone();
+            let closing = win.clone();
             win.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    webviews::close_window_pages(&blank_win);
+                    webviews::close_window_pages(&closing);
                 }
             });
         }

@@ -360,8 +360,9 @@ fn emit_to_focused_chrome<S: serde::Serialize + Clone>(
 /// timers) is wiped. Shared by the user-close path; the dock badge is applied to some *other*
 /// open window since this one is on its way out.
 fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
-    // The window's teardown drops its content webviews, which wry leaks *still running* — blank
-    // them first or every tab in a closed window goes on notifying (see `close_content_webview`).
+    // The window's teardown drops its content webviews, which wry leaks *still running* — end
+    // their pages first, or every tab in a closed window goes on notifying (see
+    // `close_content_webview`).
     if let Some(window) = app.get_window(window_id) {
         webviews::close_window_pages(&window);
     }
