@@ -351,6 +351,75 @@ pub fn reload_canonical(window: &Window, label: &str, canonical_url: &str) -> ta
     Ok(())
 }
 
+/// Tear down a content webview: end its page, then close it.
+///
+/// **Footgun: `Webview::close()` does not stop the page.** wry's `InnerWebView::drop`
+/// (`src/wkwebview/mod.rs`, 0.55.1) removes the `WKWebView` from its superview and then
+/// deliberately over-retains it — `self.webview.retain(); self.manager.retain();`, with no
+/// matching release — so the object is detached from the view hierarchy but never deallocated.
+/// Its document keeps running: timers fire, sockets stay open, and curator's own injected shims
+/// keep navigating the notify/badge sentinels into an `on_navigation` closure that is still alive
+/// too. A "closed" tab therefore goes on raising native banners, and since each close leaves
+/// another live copy behind, reopening the same tab stacks a second one — which is where
+/// duplicate notifications come from. Measured: a tab dropped from the config kept accumulating
+/// CPU in its own WebContent process long after its row left the sidebar.
+///
+/// **Ending the page must therefore be explicit, and it must be synchronous.** Navigating to
+/// `about:blank` first does stop a page — but not in front of a close: the close drops wry's
+/// navigation delegate mid-flight and the pending load is abandoned, leaving the original document
+/// running. `_close` is not cancellable that way; by the time the webview is dropped there is no
+/// page left to keep alive. Verified both ways against a tab whose page burns CPU on a timer: with
+/// the `_close`, its WebContent process exits on close; without it, the process outlives the tab
+/// and goes on accumulating CPU.
+///
+/// **Every path that destroys a content webview must come through here** — or, when a whole window
+/// is going away and its teardown will drop the webviews, [`close_window_pages`]. A bare `close()`
+/// silently reintroduces the leak.
+pub fn close_content_webview(wv: &tauri::Webview) {
+    close_page(wv);
+    let _ = wv.close();
+}
+
+/// End the page of every content webview in `window`, for the paths that close a *window* rather
+/// than a tab (user close, ⌘⇧W, a reload dropping the window, a detached window redocking). The
+/// window's teardown drops those webviews, which leaks them still running exactly as above — so
+/// their pages are ended first. The window's own main webview is its chrome (its label *is* the
+/// window's), which the window takes with it; only the content children need this.
+pub fn close_window_pages(window: &Window) {
+    for (label, wv) in window.app_handle().webviews() {
+        if label != window.label() && wv.window().label() == window.label() {
+            close_page(&wv);
+        }
+    }
+}
+
+/// End the page a content webview is running, synchronously, via `-[WKWebView _close]`.
+///
+/// WebKit SPI, guarded on `respondsToSelector:` in the same style as `inspector`'s `_inspector` /
+/// `detach`: a WebKit that renames it degrades to the leak above rather than aborting on an
+/// unrecognised selector. There is no public equivalent — every supported route to stopping a page
+/// is a navigation, and a navigation is exactly what the close cancels.
+fn close_page(wv: &tauri::Webview) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = wv.with_webview(|pw| {
+            use objc2::runtime::AnyObject;
+            use objc2::{msg_send, sel};
+            unsafe {
+                let Some(view) = (pw.inner() as *mut AnyObject).as_ref() else {
+                    return;
+                };
+                let can_close: bool = msg_send![view, respondsToSelector: sel!(_close)];
+                if can_close {
+                    let _: () = msg_send![view, _close];
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = wv;
+}
+
 /// Raise `label` to the front without hiding others (hiding throttles their sync). Live
 /// windows switch tabs with this. No-op if the webview doesn't exist.
 pub fn raise(window: &Window, label: &str) -> tauri::Result<()> {

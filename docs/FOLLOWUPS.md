@@ -12,6 +12,22 @@ Known, intentionally-deferred work. Each item is a conscious deferral, not an ov
 here so it isn't lost, and so "what's next in curator?" has one place to land. Remove an item when
 it's done.
 
+## Lift the content-webview teardown into shell-core — lector has the same leak
+
+`webviews::close_content_webview` / `close_window_pages` end a page with `-[WKWebView _close]`
+before the webview is dropped, because wry over-retains a dropped `WKWebView` and the page goes on
+running (full rationale on `close_content_webview`; the user-visible symptom was an unloaded Google
+Chat tab still raising banners, doubled after each reload). **lector hosts remote content webviews
+the same way and closes them the same way, so it has the same leak** — its closed tabs keep running
+too, minus curator's notification shims to make it audible.
+
+The mechanism is app-agnostic native Tauri/WebKit teardown — exactly shell-core's dividing line
+(alongside `mouse_nav` and `progress_bar`, which are the same shape: the core owns the native
+mechanism, the app calls it per content webview). Deferred, not skipped: the fix was wanted in
+curator first and a core change costs a core commit plus a re-pin in every consumer. **Unlock:** the
+next time shell-core is touched — lift it there, re-pin curator, and adopt it in lector, which is
+where the remaining live instance of the bug is.
+
 ## A scriptable "open window by title" entry point — build it in shell-core (shared)
 
 Nothing outside the app can open, raise, or reopen a specific window today: it's GUI-only (the

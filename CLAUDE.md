@@ -467,6 +467,20 @@ webview label — so a re-popped tab reopens at the size and position it was las
 `title` changes its id/label, so it normally restores fresh default bounds. Sidebar width is separate
 (per-title `localStorage`, above).
 
+**Footgun — closing a content webview does not stop its page; end the page explicitly.** wry's
+`InnerWebView::drop` removes the `WKWebView` from its superview and then deliberately over-retains
+it (`webview.retain()` / `manager.retain()`, no matching release), so a closed webview is detached
+but never deallocated — its document keeps running, and the injected shims keep driving the notify
+sentinel into an `on_navigation` closure that is also still alive. Left alone that means an unloaded
+tab goes on raising native banners, and each close+recreate stacks another live copy of the service,
+so the banners multiply. **Every teardown path therefore goes through
+`webviews::close_content_webview`** (page first, then close) — or `close_window_pages` where a whole
+window's teardown will drop the webviews. A bare `Webview::close()` silently reintroduces it.
+Navigating to `about:blank` instead is the tempting wrong fix: it does stop a page, but not ahead of
+a close, which drops the navigation delegate mid-flight and abandons the load. `-[WKWebView _close]`
+is used because it is synchronous and nothing can cancel it; the rationale and the measurements live
+on `close_content_webview`.
+
 **Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
 Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across
 webview ops (`add_child`/show/hide/raise/navigate). That's deadlock-free *only* because sync Tauri
