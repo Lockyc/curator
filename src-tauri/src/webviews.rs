@@ -87,8 +87,15 @@ pub use shell_core::compositing::{initial_hole, layout_webviews, HoleRect, CHROM
 /// role as [`CHROME_W`]: the chrome's reset/first-run default for the compact mode. Curator-only
 /// (lector has no compact mode), so it stays here rather than in the shared primitive.
 pub const COMPACT_CHROME_W: f64 = 200.0;
+/// Desktop UA for content webviews. WKWebView's native UA carries no `Version/… Safari/…` token,
+/// which Google Workspace (and others) read as an unsupported browser, so we present as Chrome.
+///
+/// **Footgun: the pinned major decays silently.** Nothing here breaks when it ages — the service
+/// just starts showing an "unsupported browser" banner (and eventually degrades features), with no
+/// error on curator's side. Bump it to a current Chrome major when that appears; Google supports
+/// only the last few.
 const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
-    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36";
 
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
 const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
