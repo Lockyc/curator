@@ -181,6 +181,19 @@ escape-click shim exists for.
   "same-tab navigation always wanders freely"), while one pointing back at the tab's own site is
   ordinary in-app navigation and stays.
 
+**Content webviews present as Safari, with the version derived from the installed Safari**
+(`webviews.rs`'s `desktop_ua`). WKWebView's native UA carries no `Version/… Safari/…` token, which
+Google Workspace and others read as an unsupported browser, so a UA override is required. It
+presents as Safari rather than Chrome because the engine genuinely *is* WebKit — an honest UA gets
+the code path the renderer can run, where a Chrome UA invites Chrome-only paths that break here.
+The version is read once from `/Applications/Safari.app`'s `CFBundleShortVersionString` (via
+`NSBundle`) and trimmed to `major.minor`; `SAFARI_VERSION_FALLBACK` covers an absent or
+unparseable bundle. **Footgun: a hard-coded UA version decays silently** — nothing errors, the
+service just starts showing an "unsupported browser" banner years after someone pinned it (which
+is exactly what happened to the previous `Chrome/126` literal). Don't re-pin the version; the
+`AppleWebKit`/`Safari` build token beside it (`SAFARI_WEBKIT_TOKEN`) is a frozen compatibility
+constant and genuinely doesn't move.
+
 **Chrome CSP.** `tauri.conf.json`'s `app.security.csp` locks down the chrome (App-URL) webview:
 `default-src 'self'`, `script-src`/`style-src 'self' 'unsafe-inline'`, `img-src 'self' data:`,
 `connect-src 'self' ipc: http://ipc.localhost` (the Tauri IPC channel), `frame-src 'none'`,
