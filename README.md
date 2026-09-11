@@ -64,7 +64,8 @@ file-driven, everything else is ephemeral.
   sessions are keyed independently of the window — but the page reloads from its canonical URL, so
   in-page state (scroll position, SPA route, unsent form input) doesn't carry across. Closing the
   popped-out window returns the tab to where it came from, reopening its origin window first if you
-  closed it.
+  closed it. A popped-out window remembers the size and position you last gave it, so a tab you pop
+  out often reopens where you left it.
 - **Window menu** — close a window (⌘⇧W); reopen any closed or dormant window from the Window
   menu. Closing the last open window drops to the home surface (listing every reopenable window)
   rather than quitting.
