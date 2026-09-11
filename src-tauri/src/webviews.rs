@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::OnceLock;
 
 /// Pure bookkeeping for which content webviews have been created (lazy-load tracking)
 /// and which is active. Webview side-effects live in the Tauri-aware code below.
@@ -87,15 +88,59 @@ pub use shell_core::compositing::{initial_hole, layout_webviews, HoleRect, CHROM
 /// role as [`CHROME_W`]: the chrome's reset/first-run default for the compact mode. Curator-only
 /// (lector has no compact mode), so it stays here rather than in the shared primitive.
 pub const COMPACT_CHROME_W: f64 = 200.0;
-/// Desktop UA for content webviews. WKWebView's native UA carries no `Version/… Safari/…` token,
-/// which Google Workspace (and others) read as an unsupported browser, so we present as Chrome.
+/// The frozen `AppleWebKit`/`Safari` build token every modern Safari UA carries. Safari stopped
+/// advancing it years ago (it is a compatibility constant, not a real build number), so unlike the
+/// marketing version below it does not decay.
+const SAFARI_WEBKIT_TOKEN: &str = "605.1.15";
+
+/// Used when [`installed_safari_version`] can't read a version — Safari removed, an unreadable
+/// bundle, an unparseable string. Only a floor: a stale fallback behaves exactly like the old
+/// pinned UA did (an "unsupported browser" banner), which is the failure this derivation removes,
+/// so bump it when you notice, but the normal path never reads it.
+const SAFARI_VERSION_FALLBACK: &str = "27.0";
+
+/// Desktop UA for content webviews, derived once from the Safari installed on this machine.
 ///
-/// **Footgun: the pinned major decays silently.** Nothing here breaks when it ages — the service
-/// just starts showing an "unsupported browser" banner (and eventually degrades features), with no
-/// error on curator's side. Bump it to a current Chrome major when that appears; Google supports
-/// only the last few.
-const DESKTOP_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
-    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36";
+/// WKWebView's native UA carries no `Version/… Safari/…` token, which Google Workspace (and
+/// others) read as an unsupported browser — hence a spoof. It presents as **Safari, not Chrome**:
+/// the engine genuinely is WebKit, so an honest UA gets the code path the renderer can actually
+/// run (a Chrome UA invites Chrome-only paths that break here), and — the reason this is derived
+/// rather than pinned — the version tracks macOS updates instead of decaying into that same
+/// unsupported-browser banner a couple of years after someone last hard-coded it.
+fn desktop_ua() -> &'static str {
+    static UA: OnceLock<String> = OnceLock::new();
+    UA.get_or_init(|| {
+        let version =
+            installed_safari_version().unwrap_or_else(|| SAFARI_VERSION_FALLBACK.to_string());
+        format!(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+             AppleWebKit/{SAFARI_WEBKIT_TOKEN} (KHTML, like Gecko) \
+             Version/{version} Safari/{SAFARI_WEBKIT_TOKEN}"
+        )
+    })
+}
+
+/// The installed Safari's marketing version, in the `major.minor` shape Safari's own UA uses.
+/// `None` if Safari is absent or its version isn't plain numeric (see [`major_minor`]).
+fn installed_safari_version() -> Option<String> {
+    use objc2_foundation::{NSBundle, NSString};
+
+    let bundle = NSBundle::bundleWithPath(&NSString::from_str("/Applications/Safari.app"))?;
+    let value =
+        bundle.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?;
+    major_minor(&value.downcast::<NSString>().ok()?.to_string())
+}
+
+/// Trim a marketing version to the two components Safari's UA carries (`27.0.1` → `27.0`,
+/// `27` → `27.0`). `None` unless both components are plain digits — a garbage version spliced
+/// into the UA is worse than [`SAFARI_VERSION_FALLBACK`].
+fn major_minor(raw: &str) -> Option<String> {
+    let mut parts = raw.split('.');
+    let major = parts.next()?;
+    let minor = parts.next().unwrap_or("0");
+    let numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    (numeric(major) && numeric(minor)).then(|| format!("{major}.{minor}"))
+}
 
 /// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
 const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
@@ -251,7 +296,7 @@ pub fn create_content_webview(
         // superview, occluding the live-but-background `load_on_open` tabs across the content rect.
         .disable_drag_drop_handler()
         .data_store_identifier(crate::session::data_store_id(&view.session))
-        .user_agent(DESKTOP_UA)
+        .user_agent(desktop_ua())
         .initialization_script(&init)
         .on_new_window(move |url, _features| {
             // Google Chat/Gmail wrap every external link in Google's own `/url?q=` redirector,
@@ -627,5 +672,33 @@ mod tests {
         assert_eq!(s.active(), None); // was active → cleared, so content falls back to blank
         assert!(s.is_created("grafana")); // surviving tab untouched
         assert!(s.orphans(&keep).is_empty()); // nothing left to prune
+    }
+
+    #[test]
+    fn major_minor_trims_to_safaris_ua_shape() {
+        assert_eq!(major_minor("27.0"), Some("27.0".into()));
+        assert_eq!(major_minor("27.0.1"), Some("27.0".into()));
+        assert_eq!(major_minor("27"), Some("27.0".into()));
+    }
+
+    #[test]
+    fn major_minor_rejects_non_numeric() {
+        // Falling back beats splicing junk into the UA.
+        assert_eq!(major_minor("Technology Preview"), None);
+        assert_eq!(major_minor("27.x"), None);
+        assert_eq!(major_minor(""), None);
+    }
+
+    #[test]
+    fn desktop_ua_presents_as_safari() {
+        let ua = desktop_ua();
+        assert!(ua.starts_with("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "));
+        assert!(ua.contains(&format!(
+            "AppleWebKit/{SAFARI_WEBKIT_TOKEN} (KHTML, like Gecko)"
+        )));
+        assert!(ua.contains(&format!("Safari/{SAFARI_WEBKIT_TOKEN}")));
+        // The whole point: a real Version/ token, which WKWebView's native UA lacks.
+        assert!(ua.contains("Version/"));
+        assert!(!ua.contains("Chrome/"));
     }
 }
