@@ -4,7 +4,17 @@
 // curator-only nav pill (browser navigation), which mounts into the component's header slot.
 
 const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+// **Footgun: a bare `listen()` is app-wide, not window-scoped — so per-window events leaked to
+// every window.** The JS API registers a listener as `EventTarget::Any` unless given a target, and
+// Tauri's dispatch short-circuits an `Any` listener *past* the emit's target filter
+// (`match_any_or_filter` in tauri's event/listener.rs) — so `emit_to(<this chrome's label>, …)`
+// was delivered to every window's chrome regardless. Symptom: ⌘1 cycled the tabs of BOTH windows,
+// and the same leak sat under `close-tab`, `pop-out-tab`, `focus-tab` and `service-badge`.
+// Binding to this webview registers `EventTarget::Webview { label }`, which the emit's `AnyLabel`
+// filter matches for this window only. Every per-window listener below must use this, not the raw
+// `window.__TAURI__.event.listen`.
+const chromeWebview = window.__TAURI__.webview.getCurrentWebview();
+const listen = (event, handler) => chromeWebview.listen(event, handler);
 // In-app updates are a chrome-core capability (check / install / relaunch + the 6h re-check cadence);
 // see chrome-core's dividing-line decision. This controller only passes curator's `auto_update` gate
 // (autoUpdate in the mount config) and forwards the menu event to sb.checkForUpdateNow(). curator
@@ -261,12 +271,13 @@ listen("service-badge", (e) => {
 listen("nav-tab", (e) => sb.selectByOffset(e.payload, { liveOnly: true }));
 listen("jump-tab", (e) => sb.selectByIndex(e.payload));
 // The menu spine's ⌘W (Tabs ▸ Close Tab): unloads whichever tab is active in THIS window. lib.rs
-// routes it via emit_to_focused_chrome, so only the focused window's chrome receives it.
+// routes it via emit_to_focused_chrome; the webview-scoped `listen` above is what makes that
+// targeting actually bind (see the footgun).
 listen("close-tab", () => {
   if (activeLabel) unloadTab(activeLabel);
 });
 // The menu spine's ⌘⇧O (Tabs ▸ Pop Out Tab): pop THIS window's active tab out into its own window.
-// lib.rs routes it via emit_to_focused_chrome, so only the focused window's chrome receives it.
+// lib.rs routes it via emit_to_focused_chrome; scoped by the webview-bound `listen` above.
 listen("pop-out-tab", () => {
   if (activeLabel) popOutTab(activeLabel);
 });

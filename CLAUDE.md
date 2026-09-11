@@ -194,6 +194,19 @@ is exactly what happened to the previous `Chrome/126` literal). Don't re-pin the
 `AppleWebKit`/`Safari` build token beside it (`SAFARI_WEBKIT_TOKEN`) is a frozen compatibility
 constant and genuinely doesn't move.
 
+**Per-window events must be scoped on BOTH sides — the emit target alone does nothing.**
+`emit_to_focused_chrome` / `emit_to_all_chrome` (`lib.rs`) address a chrome by its webview label,
+but Tauri's dispatch short-circuits any listener registered as `EventTarget::Any` *past* the emit's
+target filter (`match_any_or_filter`, tauri `src/event/listener.rs`) — and a bare JS
+`listen(event, handler)` registers exactly that. **Footgun: it looks scoped and isn't.** Until
+fixed, every window's chrome received every per-window event: ⌘1 cycled the tabs of *all* windows
+at once, and `close-tab`, `pop-out-tab`, `focus-tab` and `service-badge` leaked the same way.
+`src/chrome.js` therefore binds its listeners to the chrome webview
+(`window.__TAURI__.webview.getCurrentWebview().listen`), registering
+`EventTarget::Webview { label }` — the only target the emit's `AnyLabel` filter actually narrows
+on. A new per-window listener must use that local `listen` wrapper, never the raw
+`window.__TAURI__.event.listen`.
+
 **Chrome CSP.** `tauri.conf.json`'s `app.security.csp` locks down the chrome (App-URL) webview:
 `default-src 'self'`, `script-src`/`style-src 'self' 'unsafe-inline'`, `img-src 'self' data:`,
 `connect-src 'self' ipc: http://ipc.localhost` (the Tauri IPC channel), `frame-src 'none'`,
@@ -249,8 +262,9 @@ them into the request's `userInfo`; the same delegate's `didReceiveNotificationR
 them back on a tap (the *default* action only — dismiss is ignored), raises that window
 (`set_focus`, which also activates curator from the background), and emits `focus-tab` to that
 window's chrome so the sidebar selects the tab. `init` captures the `AppHandle` the delegate needs. The event targets the
-precise chrome webview label, so it reaches only the originating window (no per-window leak — unlike
-warden, whose `emit_to` leaks to siblings and so carries a label to filter). This surfaces curator's *own* tab; it does **not** invoke the
+precise chrome webview label, which reaches only the originating window **because `chrome.js`
+binds its listeners to that webview** — an emit-side target alone does not scope anything (see
+*Per-window events* below). This surfaces curator's *own* tab; it does **not** invoke the
 web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
 `src/inject/notification.js`).
 
