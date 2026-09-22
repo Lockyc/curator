@@ -189,7 +189,7 @@ async function mountChrome() {
         setSidebarWidth(width);
         reportRect();
       },
-      // onKill: unused — curator sets killable:false, so the component never invokes it.
+      // onSuspend/onDestroy: unused — curator sets neither killable nor suspendable, so no row arms.
     },
     {
       header: buildNavPill(),
