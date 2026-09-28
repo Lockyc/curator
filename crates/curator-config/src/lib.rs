@@ -52,7 +52,7 @@ pub struct Config {
     /// available regardless. The chrome gates its launch check on this.
     #[serde(default = "config_core::default_true")]
     pub auto_update: bool,
-    /// What ⌘1/⌘2 do in the Tabs menu (whole-app, no per-window cascade). Default `jump` —
+    /// What ⌘1/⌘2 do in the Tab menu (whole-app, no per-window cascade). Default `jump` —
     /// ⌘1–⌘9 jump to that tab position. `cycle` makes ⌘1 next / ⌘2 previous and shifts the
     /// jumps to ⌘3–⌘9. Hot-reloads: the app menu is rebuilt on every clean reload.
     #[serde(default)]

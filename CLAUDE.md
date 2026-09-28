@@ -48,7 +48,7 @@ false — reformat the file in house style on a clean hot-reload),
 chrome is a window-move drag handle → the component's `windowDrag` flag; `false` turns it off), and
 `auto_update` (bool, default true — check for a new release on launch; `false` suppresses the
 automatic check, the **Check for Updates…** menu item still works — see *In-app updates*), and
-`tab_digit_keys` (`jump` default / `cycle` — what ⌘1/⌘2 do in the **Tabs** menu; `jump` makes
+`tab_digit_keys` (`jump` default / `cycle` — what ⌘1/⌘2 do in the **Tab** menu; `jump` makes
 ⌘1–⌘9 jump to a tab position, `cycle` makes ⌘1 next tab / ⌘2 previous and shifts the jumps to
 ⌘3–⌘9 — see *App menu*).
 These are kept live in `AppState` across hot-reload (like `dark_mode`; `sidebar_drag`/`auto_update`
@@ -334,7 +334,7 @@ user-close path), so a reload that drops a window doesn't trip last-window-quit 
 **⌘W is now Close Tab, not Close Window — a user-visible behaviour change to a shipped, notarized
 app.** Before the family menu spine landed, curator's ⌘W closed the whole window; that was the
 bug, not a legitimate divergence. ⌘W now unloads the active tab to cold (kill the webview → it
-respawns on next select) via the spine's `Close Tab` item, which curator places in its own **Tabs**
+respawns on next select) via the spine's `Close Tab` item, which curator places in its own **Tab**
 submenu (see below) — matching warden, which always had this right, and lector, which adopted it
 fresh. ⌘⇧W closes the window.
 
@@ -394,7 +394,7 @@ them. The **Edit** submenu is load-bearing: its predefined items own the clipboa
 (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content webviews. Keep Edit (and
 Window/Hide) when touching the menu.
 
-The **Tabs** submenu also carries keyboard tab navigation, now built from **shell-core's**
+The **Tab** submenu also carries keyboard tab navigation, now built from **shell-core's**
 `shell_core::menu::build_tab_nav(manager, mode.is_cycle())` — the same block warden shares —
 which returns the `nav` items (**⌘⇧]** / **⌘⇧[** cycle next/previous, or, under
 `tab_digit_keys = "cycle"`, ⌘1 next / ⌘2 previous) and the `jumps` items (**⌘1–9**, or **⌘3–9**
@@ -756,12 +756,12 @@ that is the same for curator, warden, lector, and any future sibling app.
   the chrome-caller command gate (`is_chrome_caller` is curator-only — but as *redundant*
   belt-and-braces, not because "only curator hosts untrusted content": lector hosts remote content
   too, and origin dispatch isolates it — see shell-core's command-isolation model), and the
-  **app-specific menu items** — curator's Edit (clipboard accelerators) and the Tabs submenu's
+  **app-specific menu items** — curator's Edit (clipboard accelerators) and the Tab submenu's
   own items (Reload Tab, Reset All Tabs, Open Developer Tools) genuinely aren't app-agnostic, unlike
-  the spine that now wraps them. **The Tabs submenu's keyboard *navigation* items are shared**,
+  the spine that now wraps them. **The Tab submenu's keyboard *navigation* items are shared**,
   though: `shell_core::menu::build_tab_nav` + `tab_nav_action` own the ⌘⇧]/⌘⇧[/⌘1–9 block and the
   `tab_digit_keys` cycle-alias behaviour (see *App menu* above) — curator only interleaves those
-  items into its own Tabs submenu alongside its app-specific ones. See shell-core's CLAUDE.md for
+  items into its own Tab submenu alongside its app-specific ones. See shell-core's CLAUDE.md for
   the full dividing line.
 - Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
   `#PATCH:shell#`), mirroring the chrome-/config- pairs.

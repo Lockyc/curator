@@ -832,7 +832,7 @@ fn reconcile_window_tabs(
 }
 
 /// Build the full app menu: the shared spine (App/Config/Window submenus + the Close Tab item)
-/// interleaved with curator's own Edit and Tabs submenus. Edit is the standard macOS Edit menu —
+/// interleaved with curator's own Edit and Tab submenus. Edit is the standard macOS Edit menu —
 /// its clipboard accelerators are what make ⌘C/⌘V/⌘X/⌘A work in content webviews; it is not
 /// app-agnostic (nothing to hand to the spine), so it stays curator's own and must not be dropped.
 /// Tabs carries curator's keyboard tab-nav + reload/reset/devtools, plus the spine's Close Tab
@@ -897,7 +897,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     // Order matches warden's and lector's tab submenus — nav, then the spine's Close/Pop Out, then
     // the jumps — so the shared items sit in the same place in every app. Only the trailing
     // app-specific items (Reload Tab / Reset All Tabs / Open Developer Tools) are curator's own.
-    let tabs_menu = SubmenuBuilder::new(manager, "Tabs")
+    let tabs_menu = SubmenuBuilder::new(manager, "Tab")
         .items(&nav_refs)
         .separator()
         .item(&spine.close_tab)
