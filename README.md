@@ -56,25 +56,27 @@ file-driven, everything else is ephemeral.
 - **`load_on_open` keeps a tab live** — mark a chat/service `load_on_open` and it loads at
   launch, stays live in the background, fires native banners, and rolls its unread count up
   to the dock badge. Tabs without it are lazy and stay quiet until you open them. That one
-  per-tab flag is the only knob today — no per-window modes (yet).
+  per-tab flag is the only knob; there are no per-window modes.
 - **Dock badge aggregates across windows** — the badge total sums unread across every
   window's loaded tabs.
-- **Pop a tab out** — pop the active tab into its own banner-only window with **⌘⇧O** (or the ⤢
-  control on its row); a ⇱ control pops it back in from the sidebar. Your **login survives** —
+- **Pop a tab out** — pop the active tab into its own banner-only window with **⌘⇧O** (or hover
+  the row's letter tile and click its pop-out icon); the pop-in icon on its sidebar tile brings it
+  back. Your **login survives** —
   sessions are keyed independently of the window — but the page reloads from its canonical URL, so
   in-page state (scroll position, SPA route, unsent form input) doesn't carry across. Closing the
   popped-out window returns the tab to where it came from, reopening its origin window first if you
   closed it. A popped-out window remembers the size and position you last gave it, so a tab you pop
   out often reopens where you left it.
-- **Window menu** — close a window (⌘⇧W); reopen any closed or dormant window from the Window
-  menu. Closing the last open window drops to the home surface (listing every reopenable window)
-  rather than quitting.
 - **Keyboard tab navigation** (the **Tab** menu) — **⌘⇧[** / **⌘⇧]** cycle the previous/next
   *loaded* tab (cold tabs are skipped, so cycling never loads one) and **⌘1–⌘9** jump to a
   position; set `tab_digit_keys = "cycle"` to make **⌘1** / **⌘2** cycle instead (jumps shift to
   **⌘3–⌘9**).
 
 ## Install
+
+**Download (no build):** grab `curator-<version>-macos.zip` from the
+[latest release](https://github.com/Lockyc/curator/releases/latest), unzip, and move
+`curator.app` to `/Applications`. macOS only.
 
 In **Claude Code**, run `/curator:install` — it checks prerequisites (offering to install
 any that are missing), builds curator from source into `~/.curator`, installs `curator.app`
@@ -86,8 +88,7 @@ Or install from a terminal:
 curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | bash
 ```
 
-Re-running either path updates curator (`git pull` + rebuild). The steps below describe the
-manual / contributor flow.
+Re-running either path updates curator (`git pull` + rebuild).
 
 ## Updates
 
@@ -122,26 +123,12 @@ build from source.
    Either way it lives under `~/.config/` so it slots into a dotfiles workflow — your curated tab
    set becomes versioned, portable config.
 
-2. Run it (requires Rust + the Tauri CLI; the installer backstops this via `cargo install tauri-cli`):
-
-   ```sh
-   just run
-   ```
-
-   `just run` loads the repo's `examples/config.toml` (via the `CURATOR_CONFIG` env var) so
-   iterating never touches your real `~/.config/curator/config.toml`. Point `CURATOR_CONFIG`
-   at any file to test another config.
-
-   `just build` produces a `.app` bundle; **`just deploy`** builds and installs/updates it
-   in `/Applications` (quitting the running copy and relaunching). `just test` runs the Rust
-   tests. The app icon source is `src-tauri/icons/icon.svg` — re-run `cargo tauri icon
-   src-tauri/icons/icon.svg` after editing it.
-
-3. Edit `~/.config/curator/config.toml` and save — the sidebar **hot-reloads**, no restart.
-   A malformed file keeps the last-good config running and shows an error banner instead of
-   crashing. The **Config** menu has *Edit Config* / *Reveal Config in Finder* so you needn't
-   memorise the path; the **Tab** menu has *Reload Tab* (⌘R) and *Reset All Tabs* to snap
-   every open tab back to its canonical URL.
+2. Edit `~/.config/curator/config.toml` (or the file `CURATOR_CONFIG` names) and save — the
+   sidebar **hot-reloads**, no restart. A malformed file keeps the last-good config running and
+   shows an error banner instead of crashing. The **Config** menu has *Edit Config* / *Reveal
+   Config in Finder* so you needn't memorise the path; the **Tab** menu has *Reload Tab* (⌘R),
+   *Reset All Tabs* to snap every open tab back to its canonical URL, and *Open Developer Tools*
+   (⌘⌥I) for the active tab.
 
 ## Config
 
@@ -191,48 +178,60 @@ title = "Comms"
     load_on_open = true     # kept live → fires banners + unread in the background
 ```
 
-### Per-window options
+### Global
 
-| Field             | Type                     | Default       | Meaning                                                                    |
-|-------------------|--------------------------|---------------|----------------------------------------------------------------------------|
-| `title`           | string                   | **required**  | Window title; must be unique across all windows.                           |
-| `width`/`height`  | int                      | `1500`/`1000` | First-run window size in logical pixels. After that, curator remembers each window's size + position across launches, so this is only the initial default (move/resize a window and it reopens where you left it). |
-| `open_on_start`   | bool                     | `true`        | Whether this window materializes at launch. `false` registers it **dormant** — configured but not shown, opened on demand from the **Window** menu / home surface. A launch-only gate (flipping it on a running window takes effect at the next launch). |
-| `open_on_launch`  | bool                     | *(unset)*     | Unset/`false` opens the first `load_on_open` tab, else a blank screen. `true` opens the first tab even if it isn't loaded. (Titles are display labels, not addresses, so there's no "open the tab named X" form.) |
-| `colour`          | `#rgb` / `#rrggbb` hex    | none          | Accent colour for this window — colours the title bar (nav pill + window name), giving each window a distinct identity. |
-| `session`         | string                   | none          | Default login store for this window's tabs (overridden per tab). See sessions below. |
+| Key | Default | What it does |
+|---|---|---|
+| `dark_mode` | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark. |
+| `allow_insecure` | `[]` | Hosts whose self-signed/invalid TLS certs are accepted. Applied at launch (restart to change). |
+| `session` | none | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). **Cascades.** |
+| `density` | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down for denser tab lists). Hot-reloads. |
+| `sidebar_drag` | `true` | Whether the sidebar chrome is a window-move drag handle (drag the banner/empty list area). Hot-reloads. |
+| `auto_update` | `true` | Check for a new release on launch and every 6 hours. `false` suppresses the automatic checks; **Check for Updates…** still works. Applies to windows opened after the change. |
+| `format_on_save` | `false` | Reformat the config in curator's house style on each clean hot-reload (same as `curator fmt`). A reload that fails to parse leaves the file untouched. |
+| `tab_digit_keys` | `jump` | What ⌘1/⌘2 do in the **Tab** menu: `jump` — ⌘1–⌘9 jump to a position; `cycle` — ⌘1 next, ⌘2 previous, jumps shift to ⌘3–⌘9. Hot-reloads. |
 
-### Per-tab options
+### `[[window]]`
 
-Each tab (loose `[[window.tab]]` or grouped `[[window.group.tab]]`) requires `title` and `url`.
-Tab titles are display labels, so duplicates are allowed (a tab's identity is its URL, not its
-title); group names must be unique within a window. Optional:
+| Key | Default | What it does |
+|---|---|---|
+| `title` | *required* | Window title; unique across all windows. |
+| `width` / `height` | `1500` / `1000` | First-run size in logical pixels; after that curator remembers each window's size and position. |
+| `open_on_start` | `true` | `false` registers the window **dormant** — opened on demand from the **Window** menu / home surface. Read at launch. |
+| `open_on_launch` | unset | Unset/`false` opens the first `load_on_open` tab, else a blank screen; `true` opens the first tab even if it isn't loaded. |
+| `colour` | none | `#rgb` / `#rrggbb` accent for the title bar (nav pill + window name). |
+| `session` | inherited from global | Default login store for this window's tabs. **Cascades.** |
 
-| Field          | Type         | Default | Meaning                                         |
-|----------------|--------------|---------|--------------------------------------------------|
-| `load_on_open` | bool         | `false` | Load when the window opens and keep the tab live in the background, so it fires native banners and reports unread even when it isn't the active tab. |
-| `reload_every` | positive int | none    | Auto-refresh the canonical URL every N minutes.  |
-| `unread`       | string       | `all`   | Which of the service's unread signals badge the row. `all` — every signal, including a countless "something is unread" marker. `count` — only a real number (a `(N)`/`[N]` title count, a Badging count); the countless marker is ignored, while a *delivered* notification still dots the row. `off` — never badge this tab. See [Unread badges](#unread-badges). |
-| `session`      | string       | none    | Login store for this tab. Tabs sharing a value share a login (even across windows); distinct values are isolated accounts. Falls back to the window's `session`, then the app-wide top-level `session`, then the shared default. A blank or whitespace-only value is treated as unset and falls through the chain. |
+### `[[window.tab]]` / `[[window.group.tab]]`
 
-### App-global options
+| Key | Default | What it does |
+|---|---|---|
+| `title` | *required* | Display label; duplicates are allowed (a tab's identity is its URL). |
+| `url` | *required* | The tab's canonical URL — where ⌂ home and a reset return it. |
+| `load_on_open` | `false` | Load when the window opens and stay live in the background, so it fires banners and reports unread while inactive. |
+| `reload_every` | none | Auto-refresh the canonical URL every N minutes (positive integer). |
+| `unread` | `all` | Which unread signals badge the row: `all` — every signal, including a countless marker; `count` — only a real number (a delivered notification still dots the row); `off` — never. See [Unread badges](#unread-badges). |
+| `session` | inherited from window | Login store. Tabs sharing a value share a login, even across windows. Blank falls through the chain. |
 
-| Field            | Type          | Default | Meaning                                                                                       |
-|------------------|---------------|---------|-----------------------------------------------------------------------------------------------|
-| `dark_mode`      | bool          | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark.                  |
-| `allow_insecure` | list of hosts | `[]`    | Accept self-signed/invalid TLS certs for these hosts. Applied at launch (restart to change).  |
-| `session`        | string        | none    | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). |
-| `density`        | string        | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down proportionally for denser tab lists). Hot-reloads. |
-| `sidebar_drag`   | bool          | `true`  | Whether the sidebar chrome is a window-move drag handle (drag the banner/empty list area to move the window). `false` turns it off. Hot-reloads. |
-| `auto_update`    | bool          | `true`  | Check for a new release on launch and every 6 hours while a window is open. `false` suppresses the automatic checks; the **Check for Updates…** menu item still works, and the update banner's × dismisses it for the session. A changed value takes effect for windows opened after the change. |
-| `format_on_save` | bool          | `false` | Reformat `config.toml` in curator's house style on a clean hot-reload (same formatting as `curator fmt`). Leaves the file untouched if a reload fails to parse. |
-| `tab_digit_keys` | string        | `jump`  | What ⌘1/⌘2 do in the **Tab** menu. `jump` — ⌘1–⌘9 jump to a tab position. `cycle` — ⌘1 is next tab, ⌘2 previous, and the jumps shift to ⌘3–⌘9. Hot-reloads. |
+### `[[window.group]]`
 
-Run **`curator validate [path]`** to check a config without launching: it prints the resolved
-window/tab tree (each tab's cascaded session, plus its `unread` mode where it isn't the default)
-and any non-fatal warnings (e.g. a URL repeated
-within a window), exiting non-zero on a parse/validation error. A bad config never crashes the
-app either — it keeps the last-good config running behind an error banner.
+| Key | Default | What it does |
+|---|---|---|
+| `name` | *required* | Section header in the sidebar; unique within its window. Holds `[[window.group.tab]]`s. |
+
+### CLI
+
+The app binary doubles as a config tool — `/Applications/curator.app/Contents/MacOS/curator`
+(or `just validate [path]` from a checkout):
+
+- **`curator validate [path]`** prints the resolved window/tab tree (each tab's cascaded session,
+  and its `unread` mode where it isn't the default) and any non-fatal warnings (e.g. a URL
+  repeated within a window), exiting non-zero on a parse/validation error.
+- **`curator fmt [--check] [path]`** rewrites a config in curator's house TOML style; `--check`
+  reports without writing.
+
+A bad config never crashes the app either — it keeps the last-good config running behind an error
+banner.
 
 Tabs are lazy by default: a webview is created on first activation and kept warm for the
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
@@ -358,6 +357,22 @@ you actually run.
 ```toml
 allow_insecure = ["10.0.0.1", "nas.local"]
 ```
+
+## Build
+
+Needs Rust and the Tauri CLI (`cargo install tauri-cli --version ^2`).
+
+```sh
+just run      # launch against examples/config.toml (never touches your real config)
+just test     # Rust tests
+just gate     # the full pre-merge gate (no active [patch], fmt-check, clippy, tests, example-config fmt)
+just build    # build curator.app
+just deploy   # build, install to /Applications, and relaunch
+git config core.hooksPath .githooks   # once per clone: arms the pre-commit / pre-push hooks
+```
+
+The app icon source is `src-tauri/icons/icon.svg`; regenerate with
+`cargo tauri icon src-tauri/icons/icon.svg`.
 
 ## Related projects
 
