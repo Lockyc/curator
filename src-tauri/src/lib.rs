@@ -835,7 +835,7 @@ fn reconcile_window_tabs(
 /// interleaved with curator's own Edit and Tab submenus. Edit is the standard macOS Edit menu —
 /// its clipboard accelerators are what make ⌘C/⌘V/⌘X/⌘A work in content webviews; it is not
 /// app-agnostic (nothing to hand to the spine), so it stays curator's own and must not be dropped.
-/// Tabs carries curator's keyboard tab-nav + reload/reset/devtools, plus the spine's Close Tab
+/// Tab carries curator's keyboard tab-nav + reload/reset/devtools, plus the spine's Close Tab
 /// (⌘W) — curator's own `close_window` menu-id/accelerator are gone: ⌘W used to close the whole
 /// window, which was the bug; the spine's Window submenu now owns Close Window at ⌘⇧W instead.
 /// Rebuilt on every hot-reload so the Window submenu's per-window reopen items track the config.
