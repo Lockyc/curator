@@ -1,10 +1,13 @@
 name: CI
 
 on:
+  # Release-time only, never per push: main advances only at a release.
+  # `just gate` is the local check; `gh workflow run ci.yml` runs this on demand.
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
