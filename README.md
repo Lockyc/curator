@@ -6,7 +6,6 @@
 
 <p align="center">
   <a href="https://github.com/Lockyc/curator/releases/latest"><img src="https://img.shields.io/github/v/release/Lockyc/curator?sort=semver&label=release" alt="Latest release"></a>
-  <a href="https://github.com/Lockyc/curator/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Lockyc/curator/ci.yml?branch=dev&label=CI" alt="CI status"></a>
   <img src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" alt="Platform: macOS">
   <img src="https://img.shields.io/badge/built%20with-Tauri%20v2-24C8DB?logo=tauri&logoColor=white" alt="Built with Tauri v2">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Lockyc/curator" alt="License: MIT"></a>

@@ -5,6 +5,10 @@ status  = "active"
 tags    = ["browser", "webviews", "keeper-tabs", "macos"]
 stack   = ["rust", "tauri", "typescript"]
 
+[fleet]
+exempt      = ["ci"]
+exempt_note = "macOS-only: the local `just gate` covers the one platform it ships on"
+
 [github]
 topics_extra = ["desktop-app", "tab-management", "tabs", "tauri-app", "webview", "wkwebview", "productivity"]
 
