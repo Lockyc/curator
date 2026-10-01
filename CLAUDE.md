@@ -14,9 +14,8 @@ there before planning new work; add to it rather than leaving a deferral in a se
 
 Dev: `just run`. Build a release `.app`: `just build`. Install/replace it in
 `/Applications` and relaunch: `just deploy`. Tests: `just test` (`cargo test --workspace`).
-CI (`.github/workflows/ci.yml`) runs `just gate` (format check, clippy, tests, example-config
-format check) on pushes to `main` (releases) and PRs; `just gate` locally is the
-check that runs per change — confirm it is green before tagging a release.
+No CI: curator ships on macOS only, so the local `just gate` (format check, clippy, tests,
+example-config format check) is the check — run it per change and green before tagging a release.
 
 The launch config path is `$CURATOR_CONFIG` if set, else `~/.config/curator/config.toml`
 (`curator_config::resolve_config_path`). `just run` sets `CURATOR_CONFIG` to the repo's
