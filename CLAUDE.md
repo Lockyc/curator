@@ -149,13 +149,16 @@ required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel wit
 page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
 sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
 
-**Link escape policy — new-window intents only; same-tab navigation always wanders freely.**
-A `window.open` / `target="_blank"` request reaches `on_new_window`, which keeps it **in-app**
-(navigating the tab itself) when it's `escape::same_site` with the tab's configured `url`, so a
-provider sign-in popup completes in the tab's own login session; anything cross-site is handed
-to the macOS opener. A plain main-frame navigation is always allowed (`allow_same_tab_navigation`)
-— the tab is home base. cmd/middle-click never reaches `on_new_window` at all, which is what the
-escape-click shim exists for.
+**Link escape policy — a followed link stays in the tab only if it's the tab's own site; the
+page's own navigation wanders freely.** Every followed link goes through one decision,
+`escape::route_link`: **in-app** (navigate the tab itself) when it's `escape::same_site` with the
+tab's configured `url`, so a provider sign-in popup completes in the tab's own login session;
+anything else is handed to the macOS opener. A `window.open` / `target="_blank"` request reaches it
+via `on_new_window`. A plain link click arrives natively only as a main-frame navigation —
+indistinguishable from a redirect or SSO bounce, which must be followed — so the escape-click shim
+catches clicks on links to another host and sends them through the escape sentinel with `r=1`
+(routed); cmd/middle-click go through the same sentinel unrouted (always the browser). Any
+navigation that isn't a click is allowed (`allow_same_tab_navigation`).
 - **`same_site` compares the tab's *own host*, not its registrable domain** (`www.`-insensitive),
   because a shared provider domain hosts many unrelated services: `meet.google.com` and
   `docs.google.com` are no more a Chat tab's own flow than an outside link is, so a
@@ -176,8 +179,8 @@ escape-click shim exists for.
   the match is pinned to the `/url` redirect endpoint.
   **Both handlers unwrap it**, because whether a wrapped link arrives as a new-window request or
   a plain same-tab navigation is the service's choice, not something curator can rely on: a
-  cross-site redirector reached in the same tab escapes to the browser (the one carve-out from
-  "same-tab navigation always wanders freely"), while one pointing back at the tab's own site is
+  cross-site redirector reached in the same tab escapes to the browser even when it wasn't a
+  click, while one pointing back at the tab's own site is
   ordinary in-app navigation and stays.
 
 **Content webviews present as Safari, with the version derived from the installed Safari**

@@ -42,8 +42,9 @@ file-driven, everything else is ephemeral.
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.
-- **New-tab intents escape** — `target="_blank"`, `window.open`, cmd/middle-click all
-  shell out to `open`, routing to your macOS default browser instead of opening in curator.
+- **Outside links escape** — a link to another site (a plain click, `target="_blank"`,
+  `window.open`) opens in your macOS default browser, leaving the tab where it was; cmd/middle-click
+  always does. Links within the tab's own site stay in the tab.
 - **Sessions persist, and are shareable** — log into a site once in-app and it stays. By
   default every tab shares one login store, so signing into a provider covers its related
   services (Gmail, Calendar, …). Set a tab's (or a window's) `session = "name"` to give it a
