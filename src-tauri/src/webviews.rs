@@ -299,22 +299,16 @@ pub fn create_content_webview(
         .user_agent(desktop_ua())
         .initialization_script(&init)
         .on_new_window(move |url, _features| {
-            // Google Chat/Gmail wrap every external link in Google's own `/url?q=` redirector,
-            // which is same-site with a Google tab — unwrap it first so the same-site test below
-            // sees the real destination rather than keeping the wrapper in-app (which then
-            // bounced the tab straight out to the external site). See `escape::redirector_target`.
-            let url = escape::redirector_target(&url).unwrap_or(url);
-            // Keep the app's own popups/auth flows (same site as the tab) in-app by navigating
-            // the tab itself, so sign-in completes in the tab's own login session. Genuinely
-            // external links (a different site) still escape to the default browser.
-            if escape::same_site(&home_url, &url) {
-                if let Some(wv) = open_app.get_webview(&open_label) {
-                    let _ = wv.navigate(url);
+            // The app's own popups/auth flows (same site as the tab) navigate the tab itself, so
+            // sign-in completes in the tab's own login session; anything else escapes.
+            match escape::route_link(&home_url, url) {
+                escape::LinkRoute::InApp(url) => {
+                    if let Some(wv) = open_app.get_webview(&open_label) {
+                        let _ = wv.navigate(url);
+                    }
                 }
-                return NewWindowResponse::Deny;
-            }
-            if escape::is_escapable_scheme(&url) {
-                escape::escape_to_default_browser(url.as_str());
+                escape::LinkRoute::Browser(url) => escape::escape_to_default_browser(url.as_str()),
+                escape::LinkRoute::Refuse => {}
             }
             NewWindowResponse::Deny
         })
@@ -334,8 +328,28 @@ pub fn create_content_webview(
                     // The banner doubles as an unread source for services that report through
                     // neither the Badging API nor a title count (see awareness::displayed).
                     crate::awareness::on_notification(&nav_app, &nav_window_id, &nav_label);
-                } else if let Some(target) = escape::sentinel_target(url) {
-                    escape::escape_to_default_browser(&target);
+                } else if let Some(click) = escape::sentinel_target(url) {
+                    if !click.routed {
+                        escape::escape_to_default_browser(click.target.as_str());
+                    } else {
+                        match escape::route_link(&nav_home_url, click.target) {
+                            escape::LinkRoute::InApp(target) => {
+                                // Deferred off this navigation-policy callback rather than
+                                // navigating re-entrantly from inside it.
+                                let app = nav_app.clone();
+                                let label = nav_label.clone();
+                                let _ = nav_app.run_on_main_thread(move || {
+                                    if let Some(wv) = app.get_webview(&label) {
+                                        let _ = wv.navigate(target);
+                                    }
+                                });
+                            }
+                            escape::LinkRoute::Browser(target) => {
+                                escape::escape_to_default_browser(target.as_str())
+                            }
+                            escape::LinkRoute::Refuse => {}
+                        }
+                    }
                 }
                 return false;
             }

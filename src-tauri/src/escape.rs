@@ -1,6 +1,34 @@
-/// A same-tab/main-frame navigation: allow it (return true = "home base, wander freely").
+/// A same-tab/main-frame navigation: allow it. Link clicks never reach this as a cross-site
+/// navigation — the escape-click shim routes those through [`route_link`] first — so what
+/// arrives here is the page's own navigation (redirects, scripted `location` changes, SSO
+/// bounces), which must be free to follow.
 pub fn allow_same_tab_navigation(_url: &str) -> bool {
     true
+}
+
+/// Where a link the user followed out of a tab goes.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LinkRoute {
+    /// The tab's own site (or its provider's auth host): navigate the tab itself.
+    InApp(url::Url),
+    /// Anywhere else: hand to the default browser.
+    Browser(url::Url),
+    /// A scheme curator won't hand to the opener ([`is_escapable_scheme`]): drop it.
+    Refuse,
+}
+
+/// The one routing decision for a link leaving a tab — a new-window request and a plain
+/// cross-site click both come through here. Google's link redirector is unwrapped first so the
+/// decision is made on the real destination ([`redirector_target`]).
+pub fn route_link(home_url: &str, url: url::Url) -> LinkRoute {
+    let url = redirector_target(&url).unwrap_or(url);
+    if same_site(home_url, &url) {
+        LinkRoute::InApp(url)
+    } else if is_escapable_scheme(&url) {
+        LinkRoute::Browser(url)
+    } else {
+        LinkRoute::Refuse
+    }
 }
 
 /// Build the argv for handing a URL to the macOS default handler (the user's default browser).
@@ -168,25 +196,38 @@ pub fn badge_sentinel(nav_url: &url::Url) -> Option<BadgeSignal> {
 }
 
 /// Sentinel host the injected click-interceptor navigates to so the native
-/// `on_navigation` handler can escape cmd/middle-clicks (which WKWebView does not route
-/// through `on_new_window`). Must be a host no real keeper site will ever use.
+/// `on_navigation` handler can see link clicks (which WKWebView otherwise delivers as ordinary
+/// main-frame navigations, indistinguishable from the page's own redirects). Must be a host no
+/// real keeper site will ever use.
 pub const SENTINEL_HOST: &str = "curator.escape.invalid";
 
-/// If `nav_url` is the escape sentinel, return the real URL to hand off (its decoded `u`
-/// query param, restricted to http/https). Any other navigation — or a sentinel with a
-/// missing/garbage target — yields `None` (don't escape junk; let it navigate normally).
-pub fn sentinel_target(nav_url: &url::Url) -> Option<String> {
+/// A link click decoded from the escape sentinel.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LinkClick {
+    pub target: url::Url,
+    /// `false`: cmd/middle-click — an explicit "open elsewhere", always the browser.
+    /// `true` (`r` param): a plain click, routed by [`route_link`].
+    pub routed: bool,
+}
+
+/// If `nav_url` is the escape sentinel, decode the click: its `u` param (restricted to
+/// http/https) and whether it is routed. Any other navigation — or a sentinel with a
+/// missing/garbage target — yields `None` (don't act on junk).
+pub fn sentinel_target(nav_url: &url::Url) -> Option<LinkClick> {
     if nav_url.host_str() != Some(SENTINEL_HOST) {
         return None;
     }
-    let target = nav_url
-        .query_pairs()
-        .find(|(k, _)| k == "u")
-        .map(|(_, v)| v.into_owned())?;
-    match url::Url::parse(&target).ok()?.scheme() {
-        "http" | "https" => Some(target),
-        _ => None,
-    }
+    let param = |key: &str| {
+        nav_url
+            .query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.into_owned())
+    };
+    let target = url::Url::parse(&param("u")?).ok()?;
+    matches!(target.scheme(), "http" | "https").then(|| LinkClick {
+        target,
+        routed: param("r").is_some(),
+    })
 }
 
 /// True if `url`'s host is one of curator's internal sentinel hosts (notify / badge / escape).
@@ -232,7 +273,41 @@ mod tests {
         let u = url("https://curator.escape.invalid/?u=https%3A%2F%2Fexample.org%2Fa%3Fb%3Dc");
         assert_eq!(
             sentinel_target(&u),
-            Some("https://example.org/a?b=c".to_string())
+            Some(LinkClick {
+                target: url("https://example.org/a?b=c"),
+                routed: false
+            })
+        );
+    }
+
+    #[test]
+    fn sentinel_r_param_marks_a_routed_click() {
+        let u = url("https://curator.escape.invalid/?u=https%3A%2F%2Fexample.org%2F&r=1&k=x");
+        assert!(sentinel_target(&u).unwrap().routed);
+    }
+
+    #[test]
+    fn route_link_keeps_own_site_and_sends_the_rest_to_the_browser() {
+        let home = "https://chat.google.com/";
+        assert_eq!(
+            route_link(home, url("https://chat.google.com/room/x")),
+            LinkRoute::InApp(url("https://chat.google.com/room/x"))
+        );
+        assert_eq!(
+            route_link(home, url("https://example.com/a")),
+            LinkRoute::Browser(url("https://example.com/a"))
+        );
+        // Decided on the redirector's real destination, not the wrapper.
+        assert_eq!(
+            route_link(
+                home,
+                url("https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fa")
+            ),
+            LinkRoute::Browser(url("https://example.com/a"))
+        );
+        assert_eq!(
+            route_link(home, url("file:///etc/passwd")),
+            LinkRoute::Refuse
         );
     }
 
