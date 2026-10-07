@@ -281,6 +281,10 @@ listen("close-tab", () => {
 listen("pop-out-tab", () => {
   if (activeLabel) popOutTab(activeLabel);
 });
+// ⌘⇧F (shell-core's Find in Sidebar): lib.rs has already made this webview the key view.
+listen("find-in-sidebar", () => {
+  if (sb) sb.focusSearch();
+});
 // A desktop-notification banner was clicked (A2): select+activate the tab that fired it.
 // Skip when it's already the active tab — re-selecting it would trip the home-on-active gesture
 // (onSelect wasActive → home_tab), navigating away from the very thing the banner was about; the

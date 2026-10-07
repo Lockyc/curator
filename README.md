@@ -59,6 +59,9 @@ file-driven, everything else is ephemeral.
   per-tab flag is the only knob; there are no per-window modes.
 - **Dock badge aggregates across windows** — the badge total sums unread across every
   window's loaded tabs.
+- **Sidebar search** — the field above the tab list narrows it as you type, matching tab titles,
+  folder paths and group names. **⌘⇧F** jumps into it; **↑**/**↓** pick a match, **Enter** opens
+  it, **Esc** clears the search.
 - **Pop a tab out** — pop the active tab into its own banner-only window with **⌘⇧O** (or hover
   the row's letter tile and click its pop-out icon); the pop-in icon on its sidebar tile brings it
   back. Your **login survives** —

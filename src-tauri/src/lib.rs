@@ -902,6 +902,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         .separator()
         .item(&spine.close_tab)
         .item(&spine.pop_out_tab)
+        .item(&spine.find_in_sidebar)
         .separator()
         .items(&jump_refs)
         .separator()
@@ -1148,6 +1149,17 @@ pub fn run() {
                     // focused window's chrome, curator's per-window emit pattern).
                     shell_core::menu::ids::POP_OUT_TAB => {
                         emit_to_focused_chrome(app, "pop-out-tab", ())
+                    }
+                    // ⌘⇧F: the content webview may hold first responder, so make the chrome (the
+                    // window's main webview, same label) the key view before it focuses its field.
+                    shell_core::menu::ids::FIND_IN_SIDEBAR => {
+                        if let Some(chrome) = app
+                            .get_focused_window()
+                            .and_then(|w| app.get_webview(w.label()))
+                        {
+                            let _ = chrome.set_focus();
+                        }
+                        emit_to_focused_chrome(app, "find-in-sidebar", ())
                     }
                     shell_core::menu::ids::CLOSE_WINDOW => {
                         // Close the focused window via `close()` so it flows through the same
