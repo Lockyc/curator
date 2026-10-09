@@ -12,4 +12,4 @@ url = "2"
 # the shared formatter must format identically in all three apps, so an unpinned dep floating forward
 # in only one repo would silently diverge `curator fmt` from its siblings. Bump in lockstep with
 # warden, lector, and config-core.
-config-core = { git = "https://github.com/Lockyc/config-core", rev = "e99ea215835d254db0e1ef88892eaeb33349b7c3" }
+config-core = { git = "https://github.com/Lockyc/config-core", rev = "206c69cc4589ec086320eb27e9f877cd8a8fdfa6" }
