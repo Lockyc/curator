@@ -509,7 +509,6 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         crate::CuratorDetached {
             origin_wid: origin_wid.clone(),
             tab_label: label.clone(),
-            view,
         },
     );
     {

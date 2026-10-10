@@ -66,14 +66,13 @@ impl WindowRuntime {
 /// skips the detached-label prefix, [`shell_core::detach::is_detached_label`]). Geometry
 /// persistence, by contrast, *does* cover these windows — the label is stable per tab, so a
 /// popped-out tab reopens at the size it was left at.
-/// Holds the origin bookkeeping needed to return the tab: which window it came from,
-/// which tab, and the resolved [`curator_config::TabView`] to recreate its webview from — a curator
-/// tab is a webview that is *recreated* on redock (login survives via the session-keyed data store),
-/// so, unlike warden, there is no live native surface to hold here.
+/// Holds the origin bookkeeping needed to return the tab: which window it came from and which tab.
+/// A curator tab is a webview that is *recreated* on redock from the origin's current config (login
+/// survives via the session-keyed data store), so, unlike warden, there is no live native surface
+/// to hold here.
 pub struct CuratorDetached {
     pub origin_wid: String,
     pub tab_label: String,
-    pub view: curator_config::TabView,
 }
 
 /// Set once on `RunEvent::ExitRequested` (see [`run`]), which fires before every window's
@@ -677,9 +676,15 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
     }
 
     // Now take the bookkeeping and recreate the tab on the origin.
-    let Some(det) = state.detached.lock().unwrap().remove(detached_label) else {
+    if state
+        .detached
+        .lock()
+        .unwrap()
+        .remove(detached_label)
+        .is_none()
+    {
         return; // raced with a double-close
-    };
+    }
     let Some(window) = app.get_window(&origin_wid) else {
         return; // origin gone from config entirely — the tab has no home; nothing to free
     };
@@ -692,24 +697,28 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
             return;
         };
         let views = rt.cfg.tab_views(rt.global_session.as_deref());
-        let still_in_config = views.iter().any(|v| v.label == tab_label);
+        // Recreate from the *current* config's view, not the one captured at pop-out: a session
+        // (or other per-tab) edit made while the tab was out applies on return.
+        let current = views.iter().find(|v| v.label == tab_label).cloned();
         rt.tabs.clear_detached(&tab_label);
-        if !still_in_config {
-            None // tab removed from config while detached — it simply ends
-        } else {
-            rt.tabs.mark_created(&tab_label);
-            rt.tabs.set_active(&tab_label);
-            Some((
-                rt.hole,
-                views,
-                rt.tabs.active().map(str::to_string),
-                rt.cfg.colour.clone(),
-            ))
+        match current {
+            None => None, // tab removed from config while detached — it simply ends
+            Some(view) => {
+                rt.tabs.mark_created(&tab_label);
+                rt.tabs.set_active(&tab_label);
+                Some((
+                    view,
+                    rt.hole,
+                    views,
+                    rt.tabs.active().map(str::to_string),
+                    rt.cfg.colour.clone(),
+                ))
+            }
         }
     };
     match plan {
-        Some((hole, views, active, colour)) => {
-            let _ = webviews::create_content_webview(&window, &det.view, hole, colour.as_deref());
+        Some((view, hole, views, active, colour)) => {
+            let _ = webviews::create_content_webview(&window, &view, hole, colour.as_deref());
             let _ = webviews::apply_active(&window, active.as_deref(), &views);
         }
         // The popped-out webview reported unread into the origin's runtime; with the tab gone,
@@ -724,6 +733,22 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
     let _ = app.emit_to(origin_wid.as_str(), "config-reloaded", ());
 }
 
+/// Labels present in both `old` and `new` whose resolved login `session` differs. A tab's label
+/// hashes its URL alone, so a session edit keeps the label — but a live webview's data store is
+/// fixed at creation, so such a tab must be rebuilt to pick the new session up.
+fn session_changed(
+    old: &[curator_config::TabView],
+    new: &[curator_config::TabView],
+) -> HashSet<String> {
+    new.iter()
+        .filter(|n| {
+            old.iter()
+                .any(|o| o.label == n.label && o.session != n.session)
+        })
+        .map(|n| n.label.clone())
+        .collect()
+}
+
 /// Reconcile one kept window's content webviews to its new config: eager-create newly-added
 /// load_on_open tabs (others stay lazy), close orphaned webviews and drop their
 /// unread/authoritative state, recompute the dock badge, then re-apply the active layout.
@@ -735,7 +760,6 @@ fn reconcile_window_tabs(
     win_cfg: &curator_config::WindowConfig,
 ) {
     let views = win_cfg.tab_views(global_session);
-    let keep: HashSet<String> = views.iter().map(|v| v.label.clone()).collect();
 
     // Decide everything under the lock, but perform the webview ops AFTER releasing it.
     // reconcile runs on the watcher thread; Tauri marshals webview ops (add_child / close) to
@@ -747,14 +771,22 @@ fn reconcile_window_tabs(
         let Some(rt) = windows.get_mut(window_id) else {
             return;
         };
+        let rebuild = session_changed(&rt.cfg.tab_views(rt.global_session.as_deref()), &views);
+        let keep: HashSet<String> = views
+            .iter()
+            .map(|v| v.label.clone())
+            .filter(|l| !rebuild.contains(l))
+            .collect();
+        let prior_active = rt.tabs.active().map(str::to_string);
         rt.cfg = win_cfg.clone();
         rt.global_session = global_session.map(str::to_string);
         // Read the current hole rect under the lock to pass to create below (re-locking inside
         // create_content_webview would self-deadlock the non-reentrant mutex).
         let hole = rt.hole;
 
-        // Orphans: created tabs no longer in the config (removed, or URL/label changed). Forget
-        // all their state; the webviews are closed after the lock is dropped.
+        // Orphans: created tabs no longer in the config (removed, or URL/label changed) or whose
+        // session changed. Forget all their state; the webviews are closed after the lock is
+        // dropped, and a session-changed tab is recreated below like any uncreated one.
         let orphans = rt.tabs.orphans(&keep);
         for label in &orphans {
             rt.tabs.mark_unloaded(label);
@@ -776,13 +808,15 @@ fn reconcile_window_tabs(
         }
 
         // Resolve the active tab: keep the current one if it survived (mark_unloaded already
-        // cleared it if it was orphaned), else fall back to startup_label (by default the first
-        // load_on_open tab). Ensure it's created. A detached tab can't be active (its content is on
-        // the detached window), so it's never created or promoted here.
+        // cleared it if it was orphaned) or is only being rebuilt for a session change, else fall
+        // back to startup_label (by default the first load_on_open tab). Ensure it's created. A
+        // detached tab can't be active (its content is on the detached window), so it's never
+        // created or promoted here.
         let active = rt
             .tabs
             .active()
             .map(str::to_string)
+            .or_else(|| prior_active.filter(|a| rebuild.contains(a)))
             .or_else(|| win_cfg.startup_label(global_session))
             .filter(|a| !rt.tabs.is_detached(a));
         if let Some(a) = &active {
@@ -1235,5 +1269,30 @@ mod tests {
         );
         // A real (config-defined) window label is never mistaken for a detached one.
         assert!(!shell_core::detach::is_detached_label(tab_label));
+    }
+
+    fn view(label: &str, session: &str) -> curator_config::TabView {
+        curator_config::TabView {
+            label: label.to_string(),
+            group: None,
+            title: label.to_string(),
+            url: format!("https://{label}.example"),
+            load_on_open: false,
+            reload_every: None,
+            unread: Default::default(),
+            session: session.to_string(),
+        }
+    }
+
+    #[test]
+    fn session_changed_flags_only_kept_labels_with_a_new_session() {
+        let old = vec![
+            view("a", "default"),
+            view("b", "default"),
+            view("gone", "x"),
+        ];
+        let new = vec![view("a", "work"), view("b", "default"), view("added", "y")];
+        let changed = session_changed(&old, &new);
+        assert_eq!(changed, HashSet::from(["a".to_string()]));
     }
 }

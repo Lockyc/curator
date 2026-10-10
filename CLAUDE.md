@@ -365,8 +365,8 @@ window first if the user closed it while the tab was out.
 - **`AppState.detached: Mutex<HashMap<String, CuratorDetached>>`** (keyed by the detached window's
   label) is deliberately **separate from `AppState.windows`**, so hot-reload reconcile never sees
   these windows. (Geometry persistence *does* — see the geometry section below.) `CuratorDetached` holds just what
-  `redock` needs to return the tab: `origin_wid`, `tab_label`, and the `TabView` to recreate from
-  (no live webview handle — there's nothing to hold).
+  `redock` needs to return the tab: `origin_wid` and `tab_label` (no live webview handle — there's
+  nothing to hold; `redock` recreates from the origin's current config).
 - **`TabState.detached`, kept distinct from `created`** (`webviews.rs`): a popped-out tab is
   `is_detached` but not `is_created`, so reconcile's create-list, the active-tab fallback, and
   `orphans()` all skip it — it's never recreated on the origin, never promoted active, while
