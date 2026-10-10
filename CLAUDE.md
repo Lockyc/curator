@@ -372,9 +372,9 @@ window first if the user closed it while the tab was out.
   `orphans()` all skip it — it's never recreated on the origin, never promoted active, while
   it's out. The row stays in the sidebar as a placeholder (`TabItem.detached` in the DTO) until it
   redocks.
-- **`reconcile_home` counts detached windows** (`lib.rs`: `has_windows = !entries.is_empty() ||
-  !detached.is_empty()`) — a popped-out tab is a real surface on screen, so the shared home
-  surface must stay closed while one is open even if every configured window happens to be closed.
+- **`reconcile_home` counts detached windows** (`lib.rs`: `has_windows` is true when a window is
+  live-open or a detached window exists) — a popped-out tab is a real surface on screen, so the
+  shared home surface must stay closed while one is open even if every configured window is closed.
 - **`chrome.js`'s DTO mapping forwards `detached`**, and a detached row's click routes to
   `raise_popped_window` (bring its window forward) instead of `select_tab` — there is no local
   webview to select.
