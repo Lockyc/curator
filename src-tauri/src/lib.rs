@@ -177,8 +177,8 @@ pub struct AppState {
     pub windows: Mutex<HashMap<String, WindowRuntime>>,
     /// Tabs currently popped out into their own detached window, keyed by the detached window's
     /// Tauri label ([`shell_core::detach::detached_label`]). **Separate from `windows`** so
-    /// reconcile/geometry never touch these ephemeral windows, and so the home-surface check can
-    /// still count them (`reconcile_home`) — a detached window is a real surface on screen.
+    /// reconcile never touches these ephemeral windows, and so the home-surface check can still
+    /// count them (`reconcile_home`) — a detached window is a real surface on screen.
     pub detached: Mutex<HashMap<String, CuratorDetached>>,
     /// Current app-wide `dark_mode`, kept live across hot-reload so Window-menu reopen themes a
     /// window to match every other open window (not the stale launch-time value).
@@ -1012,13 +1012,13 @@ pub fn run() {
     // Register the shell-core plugins (geometry + updater + process) — the set every sibling app
     // installs identically. Geometry persists each window's size/position, in AppKit points, keyed by
     // Tauri label within a per-config store file (scoped by shell-core's `geometry_filename` from the
-    // config path below) so two configs sharing a window title don't share bounds. `maximized` is no
-    // longer persisted at all — on macOS the green button zooms to a fullscreen space, and geometry
-    // recorded while fullscreen is exactly what the plugin refuses to save. Both save (on move/resize
-    // and at exit) and restore (the plugin's `on_window_ready` hook, on the main loop) are automatic —
-    // build_window must NOT restore by hand (deadlocks; see the footgun there). The shared home
-    // surface and detached-tab windows are excluded from geometry save/restore structurally inside
-    // shell-core, not via the skip_labels argument.
+    // config path below) so two configs sharing a window title don't share bounds. `maximized` is
+    // not persisted — on macOS the green button zooms to a fullscreen space, and geometry recorded
+    // while fullscreen is exactly what the plugin refuses to save. Both save (on move/resize and at
+    // exit) and restore (the plugin's `on_window_ready` hook, on the main loop) are automatic —
+    // build_window must NOT restore by hand (deadlocks; see the footgun there). Only the shared home
+    // surface is excluded, structurally inside shell-core rather than via the skip_labels argument;
+    // popped-out tab windows persist, keyed by their `shell-detach:` label.
     let config_path = curator_config::resolve_config_path();
     shell_core::register_plugins(tauri::Builder::default(), Some(&config_path), &[])
         .setup(move |app| {
