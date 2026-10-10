@@ -205,8 +205,9 @@ pub fn build_window(
     // own `on_window_ready` hook, which Tauri dispatches inside `run_on_main_thread` — so its
     // `set_size`/`set_position` (and the per-monitor clamp that keeps a stale or oversized rect from
     // stranding the window off-screen or larger than the target monitor) resolve inline on the main
-    // loop. Every window is covered except the shared home surface and any detached-tab window,
-    // which the plugin excludes structurally (see shell-core's `geometry` module).
+    // loop. Every window is covered except the shared home surface, which the plugin excludes
+    // structurally; a popped-out tab's window persists too, keyed by its `shell-detach:` label (see
+    // shell-core's `geometry` module).
     //
     // FOOTGUN: do NOT call any restore-geometry logic here by hand. It looks right — windows are
     // built at runtime, so restore them inline — but reading/setting geometry marshals to the main
