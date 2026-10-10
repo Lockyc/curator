@@ -558,10 +558,11 @@ pub(crate) fn refresh_window_menu(app: &tauri::AppHandle) {
 /// actually **open** (or a detached surface is up) — not whether the config merely *defines*
 /// windows. That distinction is load-bearing: an `open_on_start = false` window is registered but
 /// dormant, so at launch the app can have configured windows yet nothing on screen, and the home
-/// surface must then appear (listing every configured window, dormant ones included, for the user to
-/// open) rather than leave the app stranded invisible. The `entries` list still carries *all* configured windows with their live `open`
-/// flag, so the home surface can list the dormant ones as reopenable. Shared by setup, every
-/// hot-reload (successful or failed), and a menu/home-driven window reopen.
+/// surface must then appear (listing every configured window, dormant ones included, for the user
+/// to open) rather than leave the app stranded invisible. The `entries` list still carries *all*
+/// configured windows with their live `open` flag, so the home surface can list the dormant ones as
+/// reopenable. Shared by setup, every hot-reload (successful or failed), and a menu/home-driven
+/// window reopen.
 fn reconcile_home(
     app: &tauri::AppHandle,
     entries: &[shell_core::menu::WindowEntry],
