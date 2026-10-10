@@ -150,6 +150,8 @@ const VISIBILITY_SHIM_JS: &str = include_str!("../../src/inject/visibility.js");
 const NOTIFICATION_JS: &str = include_str!("../../src/inject/notification.js");
 /// Reroutes the Badging API through the badge sentinel for unread pills + dock badge.
 const BADGE_JS: &str = include_str!("../../src/inject/badge.js");
+/// Shows a hovered link's destination in a status overlay at the bottom of the tab.
+const LINK_STATUS_JS: &str = include_str!("../../src/inject/link-status.js");
 
 /// A per-webview anti-forgery key, baked into that webview's injected shims as a function-local
 /// literal (never exposed on `window`, so page scripts can't read it) and required on every
@@ -270,7 +272,7 @@ pub fn create_content_webview(
     let escape_js = ESCAPE_CLICK_JS.replace("__CURATOR_KEY__", &nonce);
     let notification_js = NOTIFICATION_JS.replace("__CURATOR_KEY__", &nonce);
     let badge_js = BADGE_JS.replace("__CURATOR_KEY__", &nonce);
-    let init = format!("{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}");
+    let init = format!("{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}\n;\n{LINK_STATUS_JS}");
 
     let nav_app = window.app_handle().clone();
     let nav_label = view.label.clone();
