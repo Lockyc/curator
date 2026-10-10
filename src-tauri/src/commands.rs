@@ -342,6 +342,40 @@ pub(crate) fn fallback_active(
     shell_core::pick_live_neighbour(idx, created).map(|n| views[n].label.clone())
 }
 
+/// Take `label` off the window's live tabs with `remove` (`mark_unloaded` / `mark_detached`) and,
+/// if it was the active tab, promote the nearest created neighbour ([`fallback_active`]). Returns
+/// the views and new active tab to relayout with once the `windows` lock drops, or `None` when the
+/// removed tab wasn't active and the layout is untouched.
+fn promote_after_removal(
+    rt: &mut crate::WindowRuntime,
+    label: &str,
+    remove: fn(&mut webviews::TabState, &str),
+) -> Option<(Vec<TabView>, Option<String>)> {
+    let was_active = rt.tabs.active() == Some(label);
+    remove(&mut rt.tabs, label);
+    if !was_active {
+        return None;
+    }
+    let views = rt.cfg.tab_views(rt.global_session.as_deref());
+    let created: Vec<bool> = views.iter().map(|v| rt.tabs.is_created(&v.label)).collect();
+    let new_active = fallback_active(&views, label, &created);
+    if let Some(a) = &new_active {
+        rt.tabs.set_active(a);
+    }
+    Some((views, new_active))
+}
+
+/// The label of the detached window hosting tab `label` popped out of `origin_wid`, if any.
+fn detached_window_for(state: &AppState, origin_wid: &str, label: &str) -> Option<String> {
+    state
+        .detached
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(_, d)| d.origin_wid == origin_wid && d.tab_label == label)
+        .map(|(l, _)| l.clone())
+}
+
 /// Destroy a tab's content webview, freeing its memory. The tab stays in the sidebar and
 /// reloads lazily on next selection. No-op if it isn't loaded.
 #[tauri::command]
@@ -357,20 +391,9 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     // sidebar that highlights nothing. If it wasn't active, the layout is untouched.
     let relayout = {
         let mut windows = state.windows.lock().unwrap();
-        windows.get_mut(&wid).and_then(|rt| {
-            let was_active = rt.tabs.active() == Some(label.as_str());
-            rt.tabs.mark_unloaded(&label);
-            if !was_active {
-                return None;
-            }
-            let views = rt.cfg.tab_views(rt.global_session.as_deref());
-            let created: Vec<bool> = views.iter().map(|v| rt.tabs.is_created(&v.label)).collect();
-            let new_active = fallback_active(&views, &label, &created);
-            if let Some(a) = &new_active {
-                rt.tabs.set_active(a);
-            }
-            Some((views, new_active))
-        })
+        windows
+            .get_mut(&wid)
+            .and_then(|rt| promote_after_removal(rt, &label, webviews::TabState::mark_unloaded))
     };
     // Drop the gone webview's unread contribution: clear its sidebar pill and refresh the dock
     // badge. The closed webview can never send a clear, so without this its count is stranded.
@@ -420,18 +443,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         let colour = rt.cfg.colour.clone();
         let (width, height) = (rt.cfg.width as f64, rt.cfg.height as f64);
         let origin_hole = rt.hole;
-        let was_active = rt.tabs.active() == Some(label.as_str());
-        rt.tabs.mark_detached(&label);
-        let relayout = if was_active {
-            let created: Vec<bool> = views.iter().map(|v| rt.tabs.is_created(&v.label)).collect();
-            let new_active = fallback_active(&views, &label, &created);
-            if let Some(a) = &new_active {
-                rt.tabs.set_active(a);
-            }
-            Some((views, new_active))
-        } else {
-            None
-        };
+        let relayout = promote_after_removal(rt, &label, webviews::TabState::mark_detached);
         (view, colour, width, height, origin_hole, relayout)
     };
 
@@ -548,14 +560,7 @@ pub fn raise_popped_window(label: String, webview: Webview, state: State<AppStat
     }
     let origin_wid = calling_window_id(&webview);
     let app = webview.app_handle();
-    let target = state
-        .detached
-        .lock()
-        .unwrap()
-        .iter()
-        .find(|(_, d)| d.origin_wid == origin_wid && d.tab_label == label)
-        .map(|(l, _)| l.clone());
-    if let Some(l) = target {
+    if let Some(l) = detached_window_for(&state, &origin_wid, &label) {
         if let Some(win) = app.get_window(&l) {
             let _ = win.unminimize();
             let _ = win.set_focus();
@@ -576,14 +581,7 @@ pub fn pop_in_tab(label: String, webview: Webview, state: State<AppState>) {
     }
     let origin_wid = calling_window_id(&webview);
     let app = webview.app_handle();
-    let target = state
-        .detached
-        .lock()
-        .unwrap()
-        .iter()
-        .find(|(_, d)| d.origin_wid == origin_wid && d.tab_label == label)
-        .map(|(l, _)| l.clone());
-    if let Some(l) = target {
+    if let Some(l) = detached_window_for(&state, &origin_wid, &label) {
         if let Some(win) = app.get_window(&l) {
             let _ = win.close();
         }
