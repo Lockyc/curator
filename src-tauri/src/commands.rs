@@ -559,6 +559,9 @@ pub fn raise_popped_window(label: String, webview: Webview, state: State<AppStat
             let _ = win.unminimize();
             let _ = win.set_focus();
         }
+        // Raising the popped-out window is how its row is "looked at" — the same act that clears
+        // a docked tab's notification dot in `select_tab`.
+        crate::awareness::mark_read(app, &origin_wid, &label);
     }
 }
 

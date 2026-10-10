@@ -707,9 +707,14 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
             ))
         }
     };
-    if let Some((hole, views, active, colour)) = plan {
-        let _ = webviews::create_content_webview(&window, &det.view, hole, colour.as_deref());
-        let _ = webviews::apply_active(&window, active.as_deref(), &views);
+    match plan {
+        Some((hole, views, active, colour)) => {
+            let _ = webviews::create_content_webview(&window, &det.view, hole, colour.as_deref());
+            let _ = webviews::apply_active(&window, active.as_deref(), &views);
+        }
+        // The popped-out webview reported unread into the origin's runtime; with the tab gone,
+        // nothing will ever clear it.
+        None => awareness::forget_tab(app, &origin_wid, &tab_label),
     }
 
     // Re-render the origin chrome so the returned row loses its ⤢ detached mark and reflects the new

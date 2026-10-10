@@ -130,6 +130,19 @@ struct BadgeEvent {
     text: String,
 }
 
+/// The window id whose runtime owns the unread state of a tab whose webview lives in the window
+/// labelled `window_label`. A popped-out tab's webview lives on a `shell-detach:` window that has no
+/// runtime of its own, so its state stays with the window it was popped out of — which is also
+/// whose sidebar row and dock contribution it drives.
+fn owning_window_id(state: &AppState, window_label: &str) -> String {
+    if shell_core::detach::is_detached_label(window_label) {
+        if let Some(d) = state.detached.lock().unwrap().get(window_label) {
+            return d.origin_wid.clone();
+        }
+    }
+    window_label.to_string()
+}
+
 /// Update `label`'s unread state within its window, push the per-window `service-badge`, and
 /// refresh the single aggregate dock badge from every window's counts.
 fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: Unread) {
@@ -143,7 +156,8 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
         };
         // Ignore a late event for a tab that's been unloaded or orphaned (its webview is on
         // its way out) — otherwise a stale unread could re-appear and linger on the dock badge.
-        if !rt.tabs.is_created(&label) {
+        // A popped-out tab still has a live webview, on its detached window.
+        if !rt.tabs.is_created(&label) && !rt.tabs.is_detached(&label) {
             return;
         }
         // The one place the tab's `unread` mode narrows a service-reported state — both the title
@@ -221,7 +235,7 @@ pub fn on_title_changed(webview: &tauri::Webview, title: &str) {
         return;
     };
     let label = webview.label().to_string();
-    let window_id = webview.window().label().to_string();
+    let window_id = owning_window_id(&state, webview.window().label());
     {
         let windows = state.windows.lock().unwrap();
         if let Some(rt) = windows.get(&window_id) {
@@ -256,16 +270,18 @@ pub fn on_badge_signal(app: &tauri::AppHandle, label: &str, signal: BadgeSignal)
 /// looking at, for a Badging-authoritative service (its own count beats a dot), and for a tab set
 /// to `unread = "off"`. `unread = "count"` deliberately does *not* suppress it: a delivered banner
 /// is evidence of a real event, not a marker read off a title.
-pub fn on_notification(app: &tauri::AppHandle, window_id: &str, label: &str) {
+pub fn on_notification(app: &tauri::AppHandle, window_label: &str, label: &str) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
+    let window_id = owning_window_id(&state, window_label);
+    let window_id = window_id.as_str();
     let shown = {
         let mut windows = state.windows.lock().unwrap();
         let Some(rt) = windows.get_mut(window_id) else {
             return;
         };
-        if !rt.tabs.is_created(label)
+        if !(rt.tabs.is_created(label) || rt.tabs.is_detached(label))
             || rt.badge_authoritative.contains(label)
             || rt.tabs.active() == Some(label)
             || !rt.unread_mode(label).allows_any()
@@ -278,7 +294,8 @@ pub fn on_notification(app: &tauri::AppHandle, window_id: &str, label: &str) {
     emit_badge(app, &state, window_id, label.to_string(), shown);
 }
 
-/// Clear a tab's notification-derived dot — called when the user selects the tab. Selecting is the
+/// Clear a tab's notification-derived dot — called when the user selects the tab (or, for a
+/// popped-out tab, raises its window from the sidebar row). Selecting is the
 /// *only* thing that clears it: a title count is retracted by the service itself once the message
 /// is read, but nothing in the page ever tells curator a banner was seen.
 pub fn mark_read(app: &tauri::AppHandle, window_id: &str, label: &str) {
