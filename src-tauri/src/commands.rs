@@ -235,9 +235,12 @@ pub fn set_hole_rect(
     };
     // A detached (popped-out) window reports its own hole via this same command (shell-core's
     // `detach.html`, whose primary webview label == the detached window label, so `require_chrome`
-    // passes). It's NOT in `AppState.windows` — its bookkeeping lives in `AppState.detached` — so
-    // skip the runtime store and just position its recreated content webview under the banner.
+    // passes). It's NOT in `AppState.windows` — its bookkeeping lives in `AppState.detached`, so
+    // the hole is stored there — then its recreated content webview is positioned under the banner.
     if shell_core::detach::is_detached_label(&wid) {
+        if let Some(det) = state.detached.lock().unwrap().get_mut(&wid) {
+            det.hole = Some(hole);
+        }
         webviews::layout_webviews(&window, hole);
         return Ok(());
     }
@@ -509,6 +512,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         crate::CuratorDetached {
             origin_wid: origin_wid.clone(),
             tab_label: label.clone(),
+            hole: None,
         },
     );
     {

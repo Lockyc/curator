@@ -134,9 +134,10 @@ fn restore_all(app: &AppHandle) {
         }
     }
     for (label, window) in app.windows() {
+        // A popped-out tab's window keeps its hole on `AppState.detached`, not `windows`.
         let hole = app.try_state::<crate::AppState>().and_then(|state| {
-            let windows = state.windows.lock().unwrap();
-            windows.get(&label).map(|rt| rt.hole)
+            let from_windows = state.windows.lock().unwrap().get(&label).map(|rt| rt.hole);
+            from_windows.or_else(|| state.detached.lock().unwrap().get(&label)?.hole)
         });
         if let Some(hole) = hole {
             crate::webviews::layout_webviews(&window, hole);
