@@ -333,20 +333,17 @@ window's unread/timers while keeping its `WindowRuntime` registered so its cfg s
 than lingering as a menu-bar-only app. Config-reload window removal uses `destroy()` (not the
 user-close path), so a reload that drops a window doesn't trip last-window-quit mid-reconcile.
 
-**⌘W is now Close Tab, not Close Window — a user-visible behaviour change to a shipped, notarized
-app.** Before the family menu spine landed, curator's ⌘W closed the whole window; that was the
-bug, not a legitimate divergence. ⌘W now unloads the active tab to cold (kill the webview → it
-respawns on next select) via the spine's `Close Tab` item, which curator places in its own **Tab**
-submenu (see below) — matching warden, which always had this right, and lector, which adopted it
-fresh. ⌘⇧W closes the window.
+**⌘W is Close Tab, not Close Window** — the family standard, shared with warden and lector. It
+unloads the active tab to cold (kill the webview → it respawns on next select) via the spine's
+`Close Tab` item, which curator places in its own **Tab** submenu (see below). ⌘⇧W closes the
+window.
 
 **Unloading the active tab promotes the nearest created neighbour, via shell-core's
 `pick_live_neighbour`** (`commands.rs`'s `fallback_active`) — the shared warden/curator/lector
 policy, not a curator-only first-in-list scan. The eligibility predicate is `is_created` (any
 loaded tab, matching curator's own sidebar live dot), not `load_on_open` — a loaded-but-not-
-`load_on_open` tab (created, just throttled/hidden in the background) is a valid fallback, where
-it was previously skipped and could strand the content area on an empty background despite a
-loaded tab existing.
+`load_on_open` tab (created, just throttled/hidden in the background) is a valid fallback, so the
+content area never strands on an empty background while a loaded tab exists.
 
 **Pop-out tabs (⤢ / ⌘⇧O) — RECREATE, not reparent, because curator has no native surface to
 move.** The chrome-core row control and the spine's **Pop Out Tab** menu item (shell-core
