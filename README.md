@@ -62,6 +62,8 @@ file-driven, everything else is ephemeral.
 - **Sidebar search** — the field above the tab list narrows it as you type, matching tab titles,
   folder paths and group names. **⌘⇧F** jumps into it; **↑**/**↓** pick a match, **Enter** opens
   it, **Esc** clears the search.
+- **Link destinations on hover** — hovering a link shows where it goes in a small status overlay at
+  the bottom of the tab, as a browser does.
 - **Pop a tab out** — pop the active tab into its own banner-only window with **⌘⇧O** (or hover
   the row's letter tile and click its pop-out icon); the pop-in icon on its sidebar tile brings it
   back. Your **login survives** —

@@ -271,8 +271,8 @@ web page's `Notification.onclick` (the injected stub's JS handlers stay inert �
 `src/inject/notification.js`).
 
 **Loading is driven by per-tab `load_on_open`** — currently the only loading knob; there are no per-window mode flags today (a window-level default could be added if a need arises).
-Every content webview gets the full shim set (escape-click — cmd/middle-click escape only —
-visibility, notification, badge), so any *loaded* tab can fire native banners and report unread.
+Every content webview gets the full shim set (escape-click, visibility, notification, badge, and
+link-status — the hovered-link overlay, purely in-page), so any *loaded* tab can fire native banners and report unread.
 The notification shim covers **both** ways a page raises one — `new Notification(...)` and
 `ServiceWorkerRegistration.showNotification(...)` — because a service may use only the latter
 (Google Chat does, calling it straight from the page rather than a push handler).
