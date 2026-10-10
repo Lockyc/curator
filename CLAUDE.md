@@ -228,10 +228,10 @@ What actually stops a remote page from invoking the command surface (`get_tabs`,
 `capabilities/default.json` grants only `core:*`/`updater`/`process`), so dispatch rejects every
 remote (`Origin::Remote`) invoke before the command body runs — verified against the pinned tauri
 2.11.5. See **shell-core's CLAUDE.md "command-isolation security model"** for the single-sourced
-reasoning. So `require_chrome` is **redundant belt-and-braces against remote pages**; the one thing
-it uniquely covers is a *second local surface* (which curator has none of — the home/detach pages
-are shell-core-bundled, and content webviews stay `External`). It is retained defense-in-depth for
-now; whether to narrow or drop it is a security-sensitive maintainer call (see the lift-plan). While
+reasoning. So `require_chrome` is **redundant belt-and-braces against remote pages**, and it screens no
+local surface either: every main webview passes it (chrome, the home surface, `detach.html` —
+`set_hole_rect` relies on that), so it rejects only child content webviews, which origin dispatch
+already blocks. It is retained defense-in-depth for now; whether to narrow or drop it is a security-sensitive maintainer call (see the lift-plan). While
 it exists, the guard is `label == webview.window().label()` (`label_is_chrome`; the same check
 `layout_webviews` uses to skip the chrome), and a new `#[tauri::command]` taking a `Webview` should
 keep calling it — but it is a second layer, not the sole defense the origin dispatch already provides.

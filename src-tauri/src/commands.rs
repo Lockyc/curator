@@ -28,13 +28,11 @@ fn calling_window_id(webview: &Webview) -> String {
     webview.window().label().to_string()
 }
 
-/// True only when the caller is a window's trusted chrome sidebar webview. `withGlobalTauri`
-/// injects the IPC bridge into *every* webview (including remote `External` content tabs) and
-/// app commands aren't ACL-gated, so without this gate a remote page could invoke the whole
-/// command surface — read sibling tabs' URLs via `get_tabs`, force-reload/unload/select tabs,
-/// etc. The chrome is the window's MAIN webview (hole-punch), so its label IS the window label;
-/// content webviews are `{window_id}:tab-<hash>`, always distinct (the same check
-/// `layout_webviews` relies on).
+/// True when the caller is a window's main webview — the chrome sidebar, but equally the shell-core
+/// home surface and `detach.html`, each of which is its window's main webview too. It rejects only
+/// content child webviews (`{window_id}:tab-<hash>`, never equal to the bare window label — the
+/// same check `layout_webviews` relies on), which remote-origin dispatch already blocks: see
+/// [`require_chrome`].
 fn is_chrome_caller(webview: &Webview) -> bool {
     label_is_chrome(webview.label(), webview.window().label())
 }
@@ -52,10 +50,10 @@ fn label_is_chrome(label: &str, window_label: &str) -> bool {
 /// (`External`) URLs, so Tauri's origin dispatch already rejects their invokes before any command
 /// body runs — curator's `capabilities/default.json` grants no app-command permissions, so a
 /// remote-origin invoke is denied by origin regardless of label (verified vs pinned tauri; see
-/// shell-core's command-isolation security doc for the single-sourced model). This static label
-/// check can't drift, and it uniquely screens a *second local-origin surface* (e.g. the
-/// `shell-home://` home surface) that origin dispatch — local-vs-remote only — would let through.
-/// Keep it: redundant vs remote, load-bearing vs a future second local surface.
+/// shell-core's command-isolation security doc for the single-sourced model). The label check passes
+/// every main-webview surface (chrome, home, detach) and rejects only child content webviews — the
+/// callers origin dispatch already rejects — so it screens no local surface. Whether to keep,
+/// narrow or drop it is a maintainer call (CLAUDE.md, *Commands are chrome-gated*).
 fn require_chrome(webview: &Webview) -> Result<(), String> {
     if is_chrome_caller(webview) {
         Ok(())
