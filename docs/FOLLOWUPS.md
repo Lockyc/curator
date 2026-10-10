@@ -119,3 +119,10 @@ default`): `WindowConfig`/`Config` grow an `Option<UnreadMode>` and `tab_views` 
 way `normalized_session` resolves the session chain — the resolution point is already there, so
 this is a schema + one-cascade change, not new machinery. Worth doing once a real config wants
 the same mode on a whole window; until then the per-tab key is the honest surface.
+
+## Lift the hovered-link status overlay into shell-core when lector wants it
+
+`src/inject/link-status.js` is app-agnostic (no sentinel, no curator state) and lector hosts remote
+content webviews the same way. Kept in curator for now because only curator needs it and a core
+change costs a core commit plus a re-pin in every consumer. **Unlock:** lector wanting link hover —
+move the script to shell-core then, and have both apps inject it from there.
