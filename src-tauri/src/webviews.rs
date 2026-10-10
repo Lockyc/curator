@@ -488,10 +488,19 @@ fn close_page(wv: &tauri::Webview) {
     let _ = wv;
 }
 
+/// `label`'s webview, only if it lives in `window`. `Window::get_webview` is `Manager::get_webview`,
+/// which looks the label up across the whole app — and a popped-out tab keeps its label on its
+/// detached window, so an unscoped lookup from the origin window would act on the popped-out copy.
+fn own_webview(window: &Window, label: &str) -> Option<tauri::Webview> {
+    window
+        .get_webview(label)
+        .filter(|wv| wv.window().label() == window.label())
+}
+
 /// Raise `label` to the front without hiding others (hiding throttles their sync). Live
-/// windows switch tabs with this. No-op if the webview doesn't exist.
+/// windows switch tabs with this. No-op if the webview doesn't exist in `window`.
 pub fn raise(window: &Window, label: &str) -> tauri::Result<()> {
-    if let Some(_wv) = window.get_webview(label) {
+    if let Some(_wv) = own_webview(window, label) {
         #[cfg(target_os = "macos")]
         {
             let _ = _wv.with_webview(|pw| crate::zorder::raise_to_front(pw.inner()));
@@ -503,10 +512,11 @@ pub fn raise(window: &Window, label: &str) -> tauri::Result<()> {
 /// Lay out a window's created webviews around the `active` tab: the active tab is shown and
 /// raised to the front; `load_on_open` tabs stay shown (live behind it, so they keep syncing and
 /// can notify in the background); every other created tab is hidden (and thus throttled). This
-/// is the single switching primitive — `load_on_open` alone decides what stays live.
+/// is the single switching primitive — `load_on_open` alone decides what stays live. It touches
+/// only `window`'s own webviews ([`own_webview`]), never a tab popped out of it.
 pub fn apply_active(window: &Window, active: Option<&str>, views: &[TabView]) -> tauri::Result<()> {
     for v in views {
-        if let Some(wv) = window.get_webview(&v.label) {
+        if let Some(wv) = own_webview(window, &v.label) {
             if v.load_on_open || Some(v.label.as_str()) == active {
                 wv.show()?;
             } else {
