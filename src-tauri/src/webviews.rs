@@ -186,11 +186,11 @@ pub fn build_window(
     // whole window (index.html renders the sidebar in a left column and leaves a "hole" on the
     // right); the Rust-positioned content webviews are `add_child` siblings, added later so they
     // composite ABOVE this webview over the hole. `hidden_title` drops the OS title (the in-app
-    // banner names the window); the traffic lights float over the sidebar's padding-top inset.
+    // banner names the window); the traffic lights float over chrome-core's `#cc-titlebar` strip.
     //
     // The main webview's label IS the window label (window_id) — Tauri ties them. Content webviews
     // are `{window_id}:tab-<hash>`, so `label == window.label()` uniquely identifies the chrome
-    // (see `is_chrome_label` in commands.rs and the skip in `layout_webviews`). `core:event` stays
+    // (see `label_is_chrome` in commands.rs and the skip in `layout_webviews`). `core:event` stays
     // off remote content because capabilities apply to local app URLs only (content is `External`).
     let webview_window =
         tauri::WebviewWindowBuilder::new(app, window_id, WebviewUrl::App("index.html".into()))

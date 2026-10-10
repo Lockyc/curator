@@ -385,11 +385,10 @@ fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
     }
 }
 
-/// Handle a user-initiated close (native red button or ⌘W) of a real window. Always lets the
+/// Handle a user-initiated close (native red button or ⌘⇧W) of a real window. Always lets the
 /// close proceed (returns `false`); closing the **last** window quits curator
 /// (last-window-quit — matching warden), rather than lingering as a menu-bar-only app with no
-/// visible UI. Runs `cleanup_closed_window` first either way. (The fallback error window isn't
-/// built via `build_window`, so it never reaches here.)
+/// visible UI. Runs `cleanup_closed_window` first either way.
 pub(crate) fn on_real_window_close(app: &tauri::AppHandle, window_id: &str) -> bool {
     cleanup_closed_window(app, window_id);
     if app.windows().len() <= 1 {
@@ -431,7 +430,7 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
 
     // Closed windows: drop the window and its runtime, and stop its reload timers. Use
     // `destroy()` (not `close()`) so this programmatic removal bypasses `on_real_window_close` —
-    // a reload that drops the last window must reconcile to the new config (error window or
+    // a reload that drops the last window must reconcile to the new config (the home surface or a
     // replacement), not trip last-window-quit and exit the app mid-reconcile.
     for id in &diff.removed {
         if let Some(win) = app.get_window(id) {
