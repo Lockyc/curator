@@ -182,11 +182,11 @@ pub fn build_window(
 ) -> tauri::Result<Window> {
     // The sidebar chrome is the window's MAIN webview (hole-punch, warden-style): built as the
     // window's content view, so `data-tauri-drag-region` in it moves the window natively — a child
-    // (`add_child`) webview cannot. It spans the
-    // whole window (index.html renders the sidebar in a left column and leaves a "hole" on the
-    // right); the Rust-positioned content webviews are `add_child` siblings, added later so they
-    // composite ABOVE this webview over the hole. `hidden_title` drops the OS title (the in-app
-    // banner names the window); the traffic lights float over chrome-core's `#cc-titlebar` strip.
+    // (`add_child`) webview cannot. It spans the whole window (index.html renders the sidebar in a
+    // left column and leaves a "hole" on the right); the Rust-positioned content webviews are
+    // `add_child` siblings, added later so they composite ABOVE this webview over the hole.
+    // `hidden_title` drops the OS title (the in-app banner names the window); the traffic lights
+    // float over chrome-core's `#cc-titlebar` strip.
     //
     // The main webview's label IS the window label (window_id) — Tauri ties them. Content webviews
     // are `{window_id}:tab-<hash>`, so `label == window.label()` uniquely identifies the chrome
@@ -221,8 +221,9 @@ pub fn build_window(
     // to reproduce.
 
     // Route a user close (native red button or ⌘⇧W) through the shared close logic so it can't
-    // strand the app and doesn't leak the window's unread/timers (see lib.rs). ⌘W unloads the active
-    // tab (the spine's Close Tab item), so it never reaches here. Content-webview repositioning is NOT wired here: the chrome's `#content-hole` is a flex child, so a window
+    // strand the app and doesn't leak the window's unread/timers (see lib.rs). ⌘W unloads the
+    // active tab (the spine's Close Tab item), so it never reaches here. Content-webview
+    // repositioning is NOT wired here: the chrome's `#content-hole` is a flex child, so a window
     // resize reflows it in the webview, the chrome's ResizeObserver fires `reportRect`, and the
     // resulting `set_hole_rect` repositions the content — the same JS-reported path warden uses.
     // (No Rust-side resize relayout means no Rust-side sidebar-width clamp to keep in sync.)
