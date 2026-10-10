@@ -559,10 +559,7 @@ pub(crate) fn refresh_window_menu(app: &tauri::AppHandle) {
 /// windows. That distinction is load-bearing: an `open_on_start = false` window is registered but
 /// dormant, so at launch the app can have configured windows yet nothing on screen, and the home
 /// surface must then appear (listing every configured window, dormant ones included, for the user to
-/// open) rather than leave the app stranded invisible. (This used to test the registry
-/// `!entries.is_empty()`, which was safe only while every configured window opened at launch and
-/// last-window-quit guaranteed "configured but none open" couldn't occur — `open_on_start` breaks
-/// that guarantee.) The `entries` list still carries *all* configured windows with their live `open`
+/// open) rather than leave the app stranded invisible. The `entries` list still carries *all* configured windows with their live `open`
 /// flag, so the home surface can list the dormant ones as reopenable. Shared by setup, every
 /// hot-reload (successful or failed), and a menu/home-driven window reopen.
 fn reconcile_home(
@@ -878,8 +875,7 @@ fn reconcile_window_tabs(
 /// its clipboard accelerators are what make ⌘C/⌘V/⌘X/⌘A work in content webviews; it is not
 /// app-agnostic (nothing to hand to the spine), so it stays curator's own and must not be dropped.
 /// Tab carries curator's keyboard tab-nav + reload/reset/devtools, plus the spine's Close Tab
-/// (⌘W) — curator's own `close_window` menu-id/accelerator are gone: ⌘W used to close the whole
-/// window, which was the bug; the spine's Window submenu now owns Close Window at ⌘⇧W instead.
+/// (⌘W); the spine's Window submenu owns Close Window (⌘⇧W).
 /// Rebuilt on every hot-reload so the Window submenu's per-window reopen items track the config.
 fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     manager: &M,
@@ -1181,8 +1177,7 @@ pub fn run() {
                     }
                     // ⌘W unloads the ACTIVE TAB — it does not close the window. The chrome owns which
                     // tab is active and the dot repaint, so it drives unload_tab off this event
-                    // (warden's model, now the family standard — curator's ⌘W used to close the whole
-                    // window, which was the bug this fixes).
+                    // (the family standard, shared with warden and lector).
                     shell_core::menu::ids::CLOSE_TAB => {
                         emit_to_focused_chrome(app, "close-tab", ())
                     }
