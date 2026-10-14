@@ -696,8 +696,8 @@ active** (the safety net).
 
 **Visual feedback loop — iterate the sidebar without building curator.** chrome-core ships a checked-in
 **`preview.html`** that mounts `ChromeSidebar` in isolation against a representative DTO (loose tabs, a
-plain group, a project-tree with folders + leaves, across the dot states). **`just chrome-preview`** opens
-it (or `just preview` / `just shot` inside chrome-core) so you *see* a CSS/JS change without the app
+plain group, a project-tree with folders + leaves, across the dot states). **`just chrome-preview`** serves
+it with live reload (or `just dev` / `just shot` inside chrome-core) so you *see* a CSS/JS change without the app
 round-trip. URL params: **`?density=compact`** previews the compact scale, and **`?header=1`** mounts a
 stand-in in the banner's `header` slot (curator fills it with the nav pill; the preview uses a neutral
 placeholder) plus a live readout of `#cc-banner`'s height — proving the banner is one fixed height with or
