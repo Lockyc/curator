@@ -372,7 +372,7 @@ just run      # launch against examples/config.toml (never touches your real con
 just test     # Rust tests
 just gate     # the full pre-merge gate (no active [patch], fmt-check, clippy, tests, example-config fmt)
 just build    # build curator.app
-just deploy   # build, install to /Applications, and relaunch
+just install  # build, install to /Applications, and relaunch
 git config core.hooksPath .githooks   # once per clone: arms the pre-commit / pre-push hooks
 ```
 
