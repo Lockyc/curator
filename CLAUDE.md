@@ -13,7 +13,7 @@ Built as the operator-side console for a self-hosted homelab.
 there before planning new work; add to it rather than leaving a deferral in a session or a plan.
 
 Dev: `just run`. Build a release `.app`: `just build`. Install/replace it in
-`/Applications` and relaunch: `just deploy`. Tests: `just test` (`cargo test --workspace`).
+`/Applications` and relaunch: `just install`. Tests: `just test` (`cargo test --workspace`).
 No CI: curator ships on macOS only, so the local `just gate` (format check, clippy, tests,
 example-config format check) is the check — run it per change and green before tagging a release.
 
@@ -606,7 +606,7 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
   build env alongside the Apple creds. **`createUpdaterArtifacts` is enabled release-only via
   `scripts/release.sh`'s (`just release`) `--config` override, NOT in the committed `tauri.conf.json`** — footgun:
   baking it into the config makes *every* `cargo tauri build` demand the signing key, which breaks
-  `install.sh` / `just build` / `just deploy` (a keyless from-source build errors with "A public key
+  `install.sh` / `just build` / `just install` (a keyless from-source build errors with "A public key
   has been found, but no private key"). So the emit of the signed `curator.app.tar.gz` + `.sig`
   happens only under the release recipe; without the key there, `gen-latest-json.sh` errors and the
   release simply isn't auto-updatable (fail-safe). The `pubkey` stays in the committed config (it's
@@ -717,9 +717,9 @@ that is the same for curator, warden, lector, and any future sibling app.
   (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`); everything else derives. **Edit them in shell-core**, never
   here — the local copy is overwritten on the next build. curator's `scripts/test-install-app.sh` is
   curator-specific and stays tracked.
-- **`just deploy` launches via `scripts/launch-app.sh`, never a bare `open`.** `open` forwards the
+- **`just install` launches via `scripts/launch-app.sh`, never a bare `open`.** `open` forwards the
   *caller's* whole environment to the launched app (process parentage is clean — launchd — the
-  environment is not), so deploying from a terminal runs curator with that terminal's `TERM*`,
+  environment is not), so installing from a terminal runs curator with that terminal's `TERM*`,
   `GHOSTTY_*`, `TMUX*`, `SHELL` and any agent/tooling vars: an environment no Dock/Spotlight launch
   ever reproduces, which makes bugs appear or vanish by launch method. `launch-app.sh` wraps `open`
   in `env -i` so the app gets only the launchd GUI-session environment. Shared with warden + lector;

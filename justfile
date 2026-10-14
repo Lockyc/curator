@@ -186,13 +186,13 @@ release: gate
 
 # Build a release .app and install/replace it in /Applications, then relaunch
 [group("dist")]
-deploy: build
+install: build
     #!/usr/bin/env bash
     set -euo pipefail
     bash scripts/install-app.sh "target/release/bundle/macos/curator.app"
     echo "→ launching"
-    # Launching is its own shell-core script, NOT a bare `open`: `open` forwards the deploying
-    # terminal's whole environment to the app, so a deploy from a terminal runs curator in an
+    # Launching is its own shell-core script, NOT a bare `open`: `open` forwards the installing
+    # terminal's whole environment to the app, so an install from a terminal runs curator in an
     # environment no real (Dock/Spotlight) launch ever reproduces. launch-app.sh's header carries
     # the full footgun.
     bash scripts/launch-app.sh
