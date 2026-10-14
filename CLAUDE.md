@@ -547,23 +547,19 @@ release and stays a clean ancestor of `dev`; if a doc/chore commit landed straig
 back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. To cut one:
 
 1. On `dev`, bump the version in `src-tauri/Cargo.toml` (the single source of version truth —
-   `package.json` no longer exists), refresh `Cargo.lock`, and commit `chore(release): curator <v>`.
-2. Confirm `just gate` is green before tagging (`just release` re-runs it, but after the tag is public).
-3. Tag the release commit `v<version>`, fast-forward `main` to it, and push `dev` + `main` + the tag.
-4. Publish the notes: `gh release create v<version> --target main --title v<version> --notes "<changelog>"`,
-   summarising what shipped since the previous tag.
-5. Attach the notarized binaries: **`just release`** (= `scripts/release.sh`) — **one command** that
-   builds + notarizes `curator.app`, `ditto`-zips it to `curator-<v>-macos.zip`, and attaches it
-   **plus the updater artifacts** (`curator.app.tar.gz` + `.sig` + `latest.json`, via
-   `gen-latest-json.sh`) so existing installs auto-update. It **refuses to run** unsigned (no
-   `APPLE_SIGNING_IDENTITY`) or without the updater key (no `TAURI_SIGNING_PRIVATE_KEY`), and only
-   from a clean tree whose **HEAD is the tag** — so no un-notarized or post-tag artifact can
-   masquerade as official. These three scripts are **generated from shell-core**, not tracked here:
-   `build.rs` materializes `scripts/{release,gen-latest-json,install-app,launch-app}.sh` (git-ignored) from the
-   pinned shell-core rev, and the tracked `scripts/tooling.env` supplies curator's params
-   (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`). So warden, curator, and lector all run **one**
-   shared release script — edit it in shell-core, never here (the local copy is regenerated on the
-   next build).
+   `package.json` no longer exists), refresh `Cargo.lock`, commit `chore(release): curator <v>`,
+   and push `dev`.
+2. **`just release [notes=<file>]`** (= `gate` + `scripts/release.sh`) — **one command**: gate,
+   build + notarize `curator.app`, `ditto`-zip it to `curator-<v>-macos.zip` and produce the updater
+   artifacts (`curator.app.tar.gz` + `.sig` + `latest.json`), then tag `v<version>`, fast-forward
+   `main`, push `main` + the tag, and `gh release create` with the notes and every asset. Notes
+   default to the commit subjects since the previous tag; pass a file for prose. It **refuses to
+   run** off `dev`, from a dirty tree or one out of sync with `origin/dev`, unsigned (no
+   `APPLE_SIGNING_IDENTITY`) or without the updater key (no `TAURI_SIGNING_PRIVATE_KEY`), and
+   nothing goes public until the build succeeds. The script is **generated from shell-core**, not
+   tracked here: `build.rs` materializes it (git-ignored) from the pinned shell-core rev, and the
+   tracked `scripts/tooling.env` supplies curator's params. So warden, curator, and lector all run
+   **one** shared release script — edit it in shell-core, never here.
 
 This is part of cutting a release, not a follow-up; do it without being asked. `just release` needs
 `TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD`) present in the build env alongside the Apple notary creds
@@ -689,8 +685,9 @@ For active chrome work, **`just chrome-dev`** activates a normally-commented, sc
 the mirror pair** — **`just config-dev`** / **`just config-pin`** (rev in `crates/curator-config/Cargo.toml`),
 scoped `#PATCH:config#` — since config-core is git-pinned the same way. **shell-core has a third pair** —
 **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped `#PATCH:shell#`). Each
-core uses its own sentinel so each `*-dev` uncomments only its own patch. (All are `just`-managed —
-don't hand-edit the `#PATCH:*#` lines.)
+core uses its own sentinel so each `*-dev` uncomments only its own patch. (All wrap shell-core's
+generated `scripts/core-patch.sh`, driven by `CORES` in `scripts/tooling.env` — don't hand-edit the
+`#PATCH:*#` lines.)
 **Never commit an active patch** — it breaks fresh clones/CI; **`just gate` refuses to pass while it's
 active** (the safety net).
 
@@ -712,9 +709,9 @@ consumed by git-rev pin. It owns the build/release tooling and the byte-identica
 that is the same for curator, warden, lector, and any future sibling app.
 
 - **Release scripts are generated, not tracked.** `src-tauri/build.rs` calls
-  `shell_core::materialize_scripts("../scripts")`, writing `scripts/{release,gen-latest-json,install-app,launch-app}.sh`
-  **git-ignored** from the pinned rev. The generic scripts read the tracked `scripts/tooling.env`
-  (`APP_NAME`/`TAURI_CRATE_DIR`/`UPDATER_REPO`); everything else derives. **Edit them in shell-core**, never
+  `shell_core::materialize_scripts("../scripts")`, writing the shared scripts (listed in
+  `.gitignore`) **git-ignored** from the pinned rev. The generic scripts read the tracked
+  `scripts/tooling.env`; everything else derives. **Edit them in shell-core**, never
   here — the local copy is overwritten on the next build. curator's `scripts/test-install-app.sh` is
   curator-specific and stays tracked.
 - **`just install` launches via `scripts/launch-app.sh`, never a bare `open`.** `open` forwards the
