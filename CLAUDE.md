@@ -548,7 +548,7 @@ back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. 
 
 1. On `dev`, bump the version in `src-tauri/Cargo.toml` (the single source of version truth —
    `package.json` no longer exists), refresh `Cargo.lock`, and commit `chore(release): curator <v>`.
-2. Confirm the release gate is green: `just gate` (the notarized build doesn't run the tests).
+2. Confirm `just gate` is green before tagging (`just release` re-runs it, but after the tag is public).
 3. Tag the release commit `v<version>`, fast-forward `main` to it, and push `dev` + `main` + the tag.
 4. Publish the notes: `gh release create v<version> --target main --title v<version> --notes "<changelog>"`,
    summarising what shipped since the previous tag.
