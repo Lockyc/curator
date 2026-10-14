@@ -176,11 +176,12 @@ build:
 
 # Version comes from src-tauri/Cargo.toml. Run AFTER the release is tagged/pushed and
 # `gh release create v<version>` published the notes (see CLAUDE.md › Releases). One command:
-# build → notarize → zip → upload the app + the signed updater tarball/.sig/latest.json. Refuses
-# to run without the Apple signing/notary env AND the updater key. Mirrors warden's `just release`.
+# gate → build → notarize → zip → upload the app + the signed updater tarball/.sig/latest.json.
+# The gate's clippy also runs build.rs, which materialises scripts/release.sh on a fresh clone.
+# Refuses to run without the Apple signing/notary env AND the updater key. Mirrors warden's `just release`.
 # Build a NOTARIZED curator.app + updater artifacts and attach them to its GitHub release
 [group("dist")]
-release:
+release: gate
     bash scripts/release.sh
 
 # Build a release .app and install/replace it in /Applications, then relaunch
