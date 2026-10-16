@@ -361,7 +361,7 @@ Needs Rust and the Tauri CLI (`cargo install tauri-cli --version ^2`).
 ```sh
 just run      # launch against examples/config.toml (never touches your real config)
 just test     # Rust tests
-just gate     # the full pre-merge gate (no active [patch], fmt-check, clippy, tests, example-config fmt)
+just gate     # the full pre-merge gate (fmt-check, clippy, no active [patch], tests, example-config fmt)
 just build    # build curator.app
 just install  # build, install to /Applications, and relaunch
 git config core.hooksPath .githooks   # once per clone: arms the pre-commit / pre-push hooks
