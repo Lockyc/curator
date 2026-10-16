@@ -55,8 +55,7 @@ file-driven, everything else is ephemeral.
   handle (drag the banner or an empty area to move the window; toggle with `sidebar_drag`).
 - **`load_on_open` keeps a tab live** — mark a chat/service `load_on_open` and it loads at
   launch, stays live in the background, fires native banners, and rolls its unread count up
-  to the dock badge. Tabs without it are lazy and stay quiet until you open them. That one
-  per-tab flag is the only knob; there are no per-window modes.
+  to the dock badge. Tabs without it are lazy and stay quiet until you open them.
 - **Dock badge aggregates across windows** — the badge total sums unread across every
   window's loaded tabs.
 - **Sidebar search** — the field above the tab list narrows it as you type, matching tab titles,
@@ -66,8 +65,7 @@ file-driven, everything else is ephemeral.
   the bottom of the tab, as a browser does.
 - **Pop a tab out** — pop the active tab into its own banner-only window with **⌘⇧O** (or hover
   the row's letter tile and click its pop-out icon); the pop-in icon on its sidebar tile brings it
-  back. Your **login survives** —
-  sessions are keyed independently of the window — but the page reloads from its canonical URL, so
+  back. Your **login survives**, but the page reloads from its canonical URL, so
   in-page state (scroll position, SPA route, unsent form input) doesn't carry across. Closing the
   popped-out window returns the tab to where it came from, reopening its origin window first if you
   closed it. A popped-out window remembers the size and position you last gave it, so a tab you pop
@@ -103,12 +101,10 @@ shows an *Update available: v X* bar with a one-click **Update & Relaunch**.
 
 - **Confirm-to-install** — nothing installs silently; you approve each update, and the bar's
   **×** dismisses it for the session.
-- **Signed** — each update is verified against curator's own minisign key before it installs,
-  independent of Apple notarization.
+- **Signed** — each update's signature is verified before it installs.
 - **Opt out** with `auto_update = false` (the **Check for Updates…** menu item still works).
 
-Re-running `install.sh` is only needed to bootstrap the first updater-capable version, or to
-build from source.
+Re-run `install.sh` only to build from source, or on an install too old to update itself.
 
 ## Setup
 
@@ -124,9 +120,6 @@ build from source.
    mkdir -p ~/.config/curator
    cp examples/config.toml ~/.config/curator/config.toml
    ```
-
-   Either way it lives under `~/.config/` so it slots into a dotfiles workflow — your curated tab
-   set becomes versioned, portable config.
 
 2. Edit `~/.config/curator/config.toml` (or the file `CURATOR_CONFIG` names) and save — the
    sidebar **hot-reloads**, no restart. A malformed file keeps the last-good config running and
@@ -211,7 +204,7 @@ title = "Comms"
 
 | Key | Default | What it does |
 |---|---|---|
-| `title` | *required* | Display label; duplicates are allowed (a tab's identity is its URL). |
+| `title` | *required* | Display label; duplicates are allowed. |
 | `url` | *required* | The tab's canonical URL — where ⌂ home and a reset return it. |
 | `load_on_open` | `false` | Load when the window opens and stay live in the background, so it fires banners and reports unread while inactive. |
 | `reload_every` | none | Auto-refresh the canonical URL every N minutes (positive integer). |
@@ -235,12 +228,9 @@ The app binary doubles as a config tool — `/Applications/curator.app/Contents/
 - **`curator fmt [--check] [path]`** rewrites a config in curator's house TOML style; `--check`
   reports without writing.
 
-A bad config never crashes the app either — it keeps the last-good config running behind an error
-banner.
-
-Tabs are lazy by default: a webview is created on first activation and kept warm for the
+Tabs are lazy by default: a tab loads when you first open it and stays loaded for the
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
-that webview's memory); the tab reloads on next click. A navigation pill at the top of the
+its memory); the tab reloads on next click. A navigation pill at the top of the
 sidebar drives the active tab: **◀ back** and **▶ forward** through in-page history, and
 **⌂ home** to snap back to its canonical URL. The mouse's side buttons drive the same
 back/forward, and a determinate progress bar tracks each tab's page load.
@@ -268,8 +258,7 @@ only the mention count badges it:
     unread       = "count"   # mentions badge the row; "• unread somewhere" doesn't
 ```
 
-Notifications still dot the row under `count` — a banner that actually fired is evidence of a
-real event, not a marker read off a title. Use `unread = "off"` to silence a tab entirely.
+Notifications still dot the row under `count`. Use `unread = "off"` to silence a tab entirely.
 
 ## Recipes
 
@@ -381,24 +370,18 @@ The app icon source is `src-tauri/icons/icon.svg`; regenerate with
 
 ## Related projects
 
-curator is built on three shared library crates. Building it from source pulls them in
-automatically — they're pinned Git dependencies, resolved by a plain `cargo build` / `just run`
-with nothing extra to install:
+curator is built on three shared library crates; a source build fetches them automatically:
 
 - **[chrome-core](https://github.com/Lockyc/chrome-core)** — the sidebar chrome (banner,
-  grouped tab rows, resize drag, density tokens). A build-dependency: its CSS/JS is
-  materialized into curator's bundled web assets at compile time.
+  grouped tab rows, resize drag, density tokens).
 - **[config-core](https://github.com/Lockyc/config-core)** — the TOML config engine (parse,
   validate, format, hot-reload diff) behind curator's config and `curator fmt`.
-- **[shell-core](https://github.com/Lockyc/shell-core)** — the shared release tooling + Tauri
-  runtime setup. `build.rs` materializes the release scripts (git-ignored) and stamps the
-  build; the app registers geometry/updater/process via its `register_plugins`, and draws its
-  mouse side-button navigation (an NSEvent monitor) and content-load progress bar from shell-core too.
+- **[shell-core](https://github.com/Lockyc/shell-core)** — shared release tooling and app-shell
+  runtime (window geometry, updater, mouse side-button navigation, load progress bar).
 
-Those same cores are also shared with two **sibling apps, [warden](https://github.com/Lockyc/warden)**
+The same cores are shared with two **sibling apps, [warden](https://github.com/Lockyc/warden)**
 (curates **terminals**) and **[lector](https://github.com/Lockyc/lector)** (curates **local
-documentation sites**), the way curator curates **browser tabs**. Neither is a dependency of
-curator — they're peer projects that just draw from the same cores.
+documentation sites**), the way curator curates **browser tabs**.
 
 If you want to iterate on a shared core, `just chrome-dev` builds curator against a sibling
 `../chrome-core` checkout (including uncommitted edits) and `just chrome-pin` re-pins to its
