@@ -43,8 +43,8 @@ file-driven, everything else is ephemeral.
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.
 - **Outside links escape** — a link to another site (a plain click, `target="_blank"`,
-  `window.open`) opens in your macOS default browser, leaving the tab where it was; cmd/middle-click
-  always does. Links within the tab's own site stay in the tab.
+  `window.open`) opens in your macOS default browser, leaving the tab where it was. A cmd-click or
+  middle-click opens any link there. Plain clicks on links within the tab's own site stay in the tab.
 - **Sessions persist, and are shareable** — log into a site once in-app and it stays. By
   default every tab shares one login store, so signing into a provider covers its related
   services (Gmail, Calendar, …). Set a tab's (or a window's) `session = "name"` to give it a
@@ -52,7 +52,8 @@ file-driven, everything else is ephemeral.
   `session` name, so renaming a window or editing a URL never signs you out.
 - **Page-first chrome** — the active page fills the content area under an overlay title bar;
   the traffic lights float over the top of the sidebar, which doubles as a window-move drag
-  handle (drag the banner or an empty area to move the window; toggle with `sidebar_drag`).
+  handle (drag the window-name banner at its top, or an empty area, to move the window; toggle
+  with `sidebar_drag`).
 - **`load_on_open` keeps a tab live** — mark a chat/service `load_on_open` and it loads at
   launch, stays live in the background, fires native banners, and rolls its unread count up
   to the dock badge. Tabs without it are lazy and stay quiet until you open them.
@@ -63,7 +64,7 @@ file-driven, everything else is ephemeral.
   it, **Esc** clears the search.
 - **Link destinations on hover** — hovering a link shows where it goes in a small status overlay at
   the bottom of the tab, as a browser does.
-- **Pop a tab out** — pop the active tab into its own banner-only window with **⌘⇧O** (or hover
+- **Pop a tab out** — pop the active tab into its own window (just the name banner, no sidebar) with **⌘⇧O** (or hover
   the row's letter tile and click its pop-out icon); the pop-in icon on its sidebar tile brings it
   back. Your **login survives**, but the page reloads from its canonical URL, so
   in-page state (scroll position, SPA route, unsent form input) doesn't carry across. Closing the
@@ -91,7 +92,8 @@ Or install from a terminal:
 curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | bash
 ```
 
-Re-running either path updates curator (`git pull` + rebuild).
+Re-running either path rebuilds curator from the latest source; a downloaded or installed
+curator also updates itself (below).
 
 ## Updates
 
@@ -104,8 +106,6 @@ shows an *Update available: v X* bar with a one-click **Update & Relaunch**.
 - **Signed** — each update's signature is verified before it installs.
 - **Opt out** with `auto_update = false` (the **Check for Updates…** menu item still works).
 
-Re-run `install.sh` only to build from source, or on an install too old to update itself.
-
 ## Setup
 
 1. Get a config in place. Launch curator with no config and it opens its **home** screen, which
@@ -113,8 +113,8 @@ Re-run `install.sh` only to build from source, or on an install too old to updat
    curator writes a minimal starter to `~/.config/curator/config.toml` for you. (It never
    overwrites: if a config is already there, it says so and leaves it untouched.)
 
-   Prefer to start from the fuller two-window example instead, or want it in place before first
-   launch:
+   To start from the fuller two-window example instead, or to have a config in place before first
+   launch, copy it from a checkout of this repo:
 
    ```sh
    mkdir -p ~/.config/curator
@@ -217,6 +217,8 @@ title = "Comms"
 |---|---|---|
 | `name` | *required* | Section header in the sidebar; unique within its window. Holds `[[window.group.tab]]`s. |
 
+See `examples/config.toml` for a two-window starting-point example.
+
 ### CLI
 
 The app binary doubles as a config tool — `/Applications/curator.app/Contents/MacOS/curator`
@@ -228,14 +230,14 @@ The app binary doubles as a config tool — `/Applications/curator.app/Contents/
 - **`curator fmt [--check] [path]`** rewrites a config in curator's house TOML style; `--check`
   reports without writing.
 
+### Tab loading and navigation
+
 Tabs are lazy by default: a tab loads when you first open it and stays loaded for the
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
 its memory); the tab reloads on next click. A navigation pill at the top of the
 sidebar drives the active tab: **◀ back** and **▶ forward** through in-page history, and
 **⌂ home** to snap back to its canonical URL. The mouse's side buttons drive the same
 back/forward, and a determinate progress bar tracks each tab's page load.
-
-See `examples/config.toml` for a two-window starting-point example.
 
 ### Unread badges
 
@@ -262,7 +264,7 @@ Notifications still dot the row under `count`. Use `unread = "off"` to silence a
 
 ## Recipes
 
-A few setups the model makes easy. All four compose freely — one window can mix them.
+curator's config makes a few setups easy. All four combine freely — one window can mix them.
 
 ### Same web app, multiple accounts side by side
 
@@ -379,9 +381,9 @@ curator is built on three shared library crates; a source build fetches them aut
 - **[shell-core](https://github.com/Lockyc/shell-core)** — shared release tooling and app-shell
   runtime (window geometry, updater, mouse side-button navigation, load progress bar).
 
-The same cores are shared with two **sibling apps, [warden](https://github.com/Lockyc/warden)**
-(curates **terminals**) and **[lector](https://github.com/Lockyc/lector)** (curates **local
-documentation sites**), the way curator curates **browser tabs**.
+Two **sibling apps** share the same cores: [warden](https://github.com/Lockyc/warden) curates
+**terminals** and [lector](https://github.com/Lockyc/lector) curates **local documentation
+sites**, the way curator curates **browser tabs**.
 
 If you want to iterate on a shared core, `just chrome-dev` builds curator against a sibling
 `../chrome-core` checkout (including uncommitted edits) and `just chrome-pin` re-pins to its
