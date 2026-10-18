@@ -386,6 +386,9 @@ pub fn create_content_webview(
         let insp_app = window.app_handle().clone();
         let _ =
             webview.with_webview(move |pw| crate::inspector::watch_frame(pw.inner(), &insp_app));
+        // Report the pointer leaving the sidebar for this webview, which the chrome can't see.
+        let ptr_app = window.app_handle().clone();
+        let _ = webview.with_webview(move |pw| crate::pointer::watch_pointer(pw.inner(), &ptr_app));
         // Thin determinate loading bar at the top of this content webview (shell-core-owned).
         shell_core::progress_bar::install(&webview, accent_rgba(accent));
     }

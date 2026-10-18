@@ -6,6 +6,8 @@ mod insecure;
 #[cfg(target_os = "macos")]
 mod inspector;
 mod notification;
+#[cfg(target_os = "macos")]
+mod pointer;
 mod session;
 mod watcher;
 mod webviews;
