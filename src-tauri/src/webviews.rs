@@ -650,11 +650,9 @@ mod tests {
 
     #[test]
     fn unload_fallback_picks_nearest_created_neighbour_not_first_in_list() {
-        // tab-0 and tab-2 are both created (loaded); tab-1 is active and gets unloaded. The old
-        // first-in-list, load_on_open-gated scan would skip tab-0 (load_on_open: false) and land
-        // on tab-2 (load_on_open: true) — the first list entry satisfying the old predicate.
-        // shell-core's nearest-neighbour policy instead promotes tab-0: it's the nearest created
-        // neighbour to the unloaded index, regardless of list order or load_on_open.
+        // tab-0 and tab-2 are both created (loaded); tab-1 is active and gets unloaded. The
+        // nearest created neighbour wins (shell-core's policy), regardless of list order or
+        // load_on_open: tab-0, not tab-2.
         let views = vec![tv("tab-0", false), tv("tab-1", true), tv("tab-2", true)];
         let created = [true, false, true];
         assert_eq!(
@@ -665,10 +663,9 @@ mod tests {
 
     #[test]
     fn unload_fallback_accepts_a_created_tab_that_is_not_load_on_open() {
-        // The only other created tab is not load_on_open. The previous fallback gated on
-        // `load_on_open` and would have skipped it, dropping to the empty background even
-        // though a loaded tab existed. The new predicate is `is_created` alone, matching
-        // curator's own sidebar live dot, so it's accepted.
+        // The only other created tab is not load_on_open. Being created is all that counts,
+        // matching curator's own sidebar live dot, so it's accepted rather than dropping to
+        // the empty background.
         let views = vec![tv("tab-0", true), tv("tab-1", false)];
         let created = [false, true];
         assert_eq!(
