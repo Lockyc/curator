@@ -401,6 +401,11 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     if let Some((views, new_active)) = relayout {
         webviews::apply_active(&window, new_active.as_deref(), &views)
             .map_err(|e| e.to_string())?;
+        // The promoted tab is now in view: clear its dot, or a click on it (the active row)
+        // would navigate home and leave the dot behind.
+        if let Some(a) = &new_active {
+            crate::awareness::mark_read(webview.app_handle(), &wid, a);
+        }
     }
     Ok(())
 }
@@ -456,6 +461,9 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
     crate::awareness::forget_tab(&app, &origin_wid, &label);
     if let Some((views, new_active)) = &relayout {
         let _ = webviews::apply_active(&origin_window, new_active.as_deref(), views);
+        if let Some(a) = new_active {
+            crate::awareness::mark_read(&app, &origin_wid, a);
+        }
     }
 
     // Phase 3 — build the detached window; its birth closure recreates the tab's webview under the
@@ -499,19 +507,26 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
             // Build/recreate failed: the tab has no webview anywhere (origin's is closed, and
             // open_detached tore its own window back down). Restore it on the origin so it isn't a
             // permanent placeholder, then report the failure.
-            {
+            // It comes back as the active tab — what the user was looking at — and the layout is
+            // re-applied, or the restored webview would cover whichever neighbour was promoted.
+            let views = {
                 let mut windows = state.windows.lock().unwrap();
-                if let Some(rt) = windows.get_mut(&origin_wid) {
+                windows.get_mut(&origin_wid).map(|rt| {
                     rt.tabs.clear_detached(&label);
                     rt.tabs.mark_created(&label);
-                }
-            }
+                    rt.tabs.set_active(&label);
+                    rt.cfg.tab_views(rt.global_session.as_deref())
+                })
+            };
             let _ = webviews::create_content_webview(
                 &origin_window,
                 &view,
                 origin_hole,
                 colour.as_deref(),
             );
+            if let Some(views) = views {
+                let _ = webviews::apply_active(&origin_window, Some(&label), &views);
+            }
             return Err(format!("couldn't pop out tab: {e}"));
         }
     };
@@ -601,6 +616,13 @@ fn focused_window_id(app: &AppHandle) -> Option<String> {
 /// shell-core's shared mouse side-button navigation.
 pub(crate) fn focused_active_webview(app: &AppHandle) -> Option<Webview> {
     let wid = focused_window_id(app)?;
+    // A popped-out window isn't in `windows`; its one content webview keeps the tab's
+    // (app-global) label, so ⌘R, devtools and side-button navigation reach it too.
+    if shell_core::detach::is_detached_label(&wid) {
+        let state = app.state::<AppState>();
+        let tab_label = state.detached.lock().unwrap().get(&wid)?.tab_label.clone();
+        return app.get_webview(&tab_label);
+    }
     let label = {
         let state = app.state::<AppState>();
         let windows = state.windows.lock().unwrap();
