@@ -50,14 +50,11 @@ pub fn is_escapable_scheme(url: &url::Url) -> bool {
     matches!(url.scheme(), "http" | "https" | "mailto" | "tel")
 }
 
-/// Naive registrable domain: the last two dot-labels of a host (`accounts.google.com` →
-/// `google.com`). Not public-suffix-aware (treats `foo.co.uk` as `co.uk`), which is fine for
-/// the everyday provider domains this is used to recognise.
-fn registrable(host: &str) -> String {
-    let mut labels: Vec<&str> = host.rsplitn(3, '.').collect();
-    labels.truncate(2);
-    labels.reverse();
-    labels.join(".")
+/// A host's registrable domain by the public-suffix list (`accounts.google.com` → `google.com`,
+/// `login.phish.com.au` → `phish.com.au`, never `com.au`). `None` for a host with no registrable
+/// part (an IP, a bare suffix), which therefore matches nothing.
+fn registrable(host: &str) -> Option<&str> {
+    psl::domain_str(host)
 }
 
 /// Whether `host` is one of Google's own hosts (`www.google.com`, `google.com.au`, …): an
@@ -131,7 +128,7 @@ pub fn same_site(home_url: &str, target: &url::Url) -> bool {
     if bare(h_host) == bare(t_host) {
         return true;
     }
-    registrable(h_host) == registrable(t_host) && is_auth_host(t_host)
+    registrable(h_host).is_some_and(|h| registrable(t_host) == Some(h)) && is_auth_host(t_host)
 }
 
 /// Sentinel host the injected Notification override navigates to so the native
@@ -480,6 +477,15 @@ mod tests {
         assert!(!same_site(
             "https://chat.google.com/",
             &url("https://login.example.com/")
+        ));
+        // A two-part public suffix is not a shared domain: anyone can own `phish.com.au`.
+        assert!(!same_site(
+            "https://mail.example.com.au/",
+            &url("https://login.phish.com.au/")
+        ));
+        assert!(same_site(
+            "https://mail.example.com.au/",
+            &url("https://login.example.com.au/")
         ));
     }
 
