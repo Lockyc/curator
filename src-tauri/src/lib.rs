@@ -381,10 +381,7 @@ fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
             rt.reload_cancel.cancel();
         }
     }
-    let total = awareness::dock_count(&state.all_unread());
-    if let Some(remaining) = app.windows().values().find(|w| w.label() != window_id) {
-        let _ = remaining.set_badge_count(total);
-    }
+    awareness::refresh_dock_badge(app, &state, Some(window_id));
 }
 
 /// Handle a user-initiated close (native red button or ⌘⇧W) of a real window. Always lets the
@@ -502,10 +499,7 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
     // Refresh the aggregate dock badge to reflect windows that came or went (a removed window's
     // unread is dropped with its runtime; without this its count would linger until the next
     // badge event).
-    let total = awareness::dock_count(&state.all_unread());
-    if let Some(win) = app.windows().values().next() {
-        let _ = win.set_badge_count(total);
-    }
+    awareness::refresh_dock_badge(app, &state, None);
 
     // Surface the reload on every window that's still open.
     emit_to_all_chrome(app, "config-reloaded", ());
@@ -723,6 +717,8 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
         Some((view, hole, views, active, colour)) => {
             let _ = webviews::create_content_webview(&window, &view, hole, colour.as_deref());
             let _ = webviews::apply_active(&window, active.as_deref(), &views);
+            // It returns as the active tab, so a dot it collected while out is now seen.
+            awareness::mark_read(app, &origin_wid, &tab_label);
         }
         // The popped-out webview reported unread into the origin's runtime; with the tab gone,
         // nothing will ever clear it.
@@ -866,11 +862,13 @@ fn reconcile_window_tabs(
         let _ = webviews::create_content_webview(window, v, hole, colour.as_deref());
     }
     spawn_reload_timers(window, &views, reload_cancel);
-    if let Some(win) = window.app_handle().get_window(window_id) {
-        let _ = win.set_badge_count(dock_total);
-    }
+    awareness::set_dock_badge(window.app_handle(), dock_total, None);
     // Re-apply the layout so the content area isn't left on a closed orphan.
     let _ = webviews::apply_active(window, active.as_deref(), &views);
+    // A tab made active here is one the user is now looking at: clear its dot.
+    if let Some(label) = active.as_deref() {
+        awareness::mark_read(window.app_handle(), window_id, label);
+    }
 }
 
 /// Build the full app menu: the shared spine (App/Config/Window submenus + the Close Tab item)

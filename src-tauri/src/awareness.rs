@@ -189,9 +189,23 @@ fn emit_badge(
             text: badge_text(shown),
         },
     );
-    // Single dock badge across all windows.
-    let total = dock_count(&state.all_unread());
-    if let Some(win) = app.get_window(window_id) {
+    refresh_dock_badge(app, state, None);
+}
+
+/// Recompute the single, app-wide dock badge and set it. The one place it is written.
+/// `skip` names a window that is closing and must not carry it.
+pub fn refresh_dock_badge(app: &tauri::AppHandle, state: &AppState, skip: Option<&str>) {
+    set_dock_badge(app, dock_count(&state.all_unread()), skip);
+}
+
+/// Set the dock badge to an already-computed `total`. macOS has one dock tile, so any live window
+/// can carry it — including a popped-out tab's, while its origin window is closed.
+pub fn set_dock_badge(app: &tauri::AppHandle, total: Option<i64>, skip: Option<&str>) {
+    if let Some(win) = app
+        .windows()
+        .into_values()
+        .find(|w| Some(w.label()) != skip)
+    {
         let _ = win.set_badge_count(total);
     }
 }
@@ -221,10 +235,7 @@ pub fn forget_tab(app: &tauri::AppHandle, window_id: &str, label: &str) {
             text: String::new(),
         },
     );
-    let total = dock_count(&state.all_unread());
-    if let Some(win) = app.get_window(window_id) {
-        let _ = win.set_badge_count(total);
-    }
+    refresh_dock_badge(app, &state, None);
 }
 
 /// Title-change handler: drive the badge from the title heuristic unless the service has gone
