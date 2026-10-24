@@ -52,8 +52,9 @@ automatic check, the **Check for Updates…** menu item still works — see *In-
 ⌘3–⌘9 — see *App menu*).
 These are kept live in `AppState` across hot-reload (like `dark_mode`; `sidebar_drag`/`auto_update`
 are `AtomicBool`, `density`/`tab_digit_keys` a `Mutex`); `window_identity` returns
-`dark_mode`/`density`/`sidebar_drag`/`auto_update` (plus a density-aware default
-sidebar width — compact is narrower) and the controller passes them in the DTO, so **chrome-core**
+`density`/`sidebar_drag`/`auto_update` (plus a density-aware default sidebar width — compact is
+narrower). The controller passes density and sidebar_drag in the DTO; auto_update reaches
+chrome-core only in the mount config, so it applies to windows opened afterwards. **chrome-core**
 applies `windowDrag` and sets
 `data-density` on `<html>` and swaps its `--cc-*` sizing tokens (`--cc-row-font`/`--cc-tile-size`/
 `--cc-dot-size`/… in chrome-core's `assets/sidebar.css`). `compact` is a proportional ~0.85× scale
@@ -191,22 +192,16 @@ the code path the renderer can run, where a Chrome UA invites Chrome-only paths 
 The version is read once from `/Applications/Safari.app`'s `CFBundleShortVersionString` (via
 `NSBundle`) and trimmed to `major.minor`; `SAFARI_VERSION_FALLBACK` covers an absent or
 unparseable bundle. **Footgun: a hard-coded UA version decays silently** — nothing errors, the
-service just starts showing an "unsupported browser" banner years after someone pinned it (which
-is exactly what happened to the previous `Chrome/126` literal). Don't re-pin the version; the
+service just starts showing an "unsupported browser" banner years after someone pinned it. Don't
+re-pin the version; the
 `AppleWebKit`/`Safari` build token beside it (`SAFARI_WEBKIT_TOKEN`) is a frozen compatibility
 constant and genuinely doesn't move.
 
 **Per-window events must be scoped on BOTH sides — the emit target alone does nothing.**
 `emit_to_focused_chrome` / `emit_to_all_chrome` (`lib.rs`) address a chrome by its webview label,
-but Tauri's dispatch short-circuits any listener registered as `EventTarget::Any` *past* the emit's
-target filter (`match_any_or_filter`, tauri `src/event/listener.rs`) — and a bare JS
-`listen(event, handler)` registers exactly that. **Footgun: it looks scoped and isn't.** Until
-fixed, every window's chrome received every per-window event: ⌘1 cycled the tabs of *all* windows
-at once, and `close-tab`, `pop-out-tab`, `focus-tab` and `service-badge` leaked the same way.
-`src/chrome.js` therefore binds its listeners to the chrome webview
-(`window.__TAURI__.webview.getCurrentWebview().listen`), registering
-`EventTarget::Webview { label }` — the only target the emit's `AnyLabel` filter actually narrows
-on. A new per-window listener must use that local `listen` wrapper, never the raw
+but a bare JS `listen()` registers `EventTarget::Any`, which receives every window's per-window
+events. **Footgun: it looks scoped and isn't.** A new per-window listener must use `src/chrome.js`'s
+local `listen` wrapper (the reason is at its definition), never the raw
 `window.__TAURI__.event.listen`.
 
 **Chrome CSP.** `tauri.conf.json`'s `app.security.csp` locks down the chrome (App-URL) webview:
@@ -462,21 +457,22 @@ flips for its bottom-left native `NSView`). **chrome-core is the *only* sidebar-
 160–520px, ≤40% of the window); because Rust just applies the reported hole there is **no Rust-side
 clamp to keep identical**. The window-shrink re-clamp lives in `chrome.js`'s
 `resize` handler (a shrink can push the sidebar past the 40% cap without a drag), which then
-re-reports the hole; there is **no Rust-side resize relayout** (`build_window` wires only the
-user-close handler now — JS drives resize, matching warden, which also drops restore-on-window-grow).
+re-reports the hole; there is **no Rust-side resize relayout** (`build_window` wires the
+user-close and `Destroyed` handlers only — JS drives resize, matching warden, which also drops
+restore-on-window-grow).
 chrome-core owns the drag handle + `localStorage` persistence
 (`storageKey: "curator:sidebar-width:<title>"`). The active-tab highlight tints with the window's
 accent colour (`--active-bg`), falling back to neutral blue.
 
 **Window size + position persist across launches** via shell-core's own `geometry` module (see its
-CLAUDE.md), which replaced `tauri-plugin-window-state`: geometry is recorded in **AppKit points**,
+CLAUDE.md): geometry is recorded in **AppKit points**,
 never physical pixels, so a rect saved on one monitor is never scaled wrong when restored on another
 of a different DPI; **every restore is clamped to the target monitor's work area**, so a stale or
 oversized rect can never come back bigger than the screen it lands on; and a window is never
 recorded while fullscreen or minimized, so a macOS Split View tile can't be saved and reopened as an
 ordinary window sized to the tile (this covers classic Split View, a fullscreen space — Sequoia's
 drag-to-edge window *tiling* is not a fullscreen space, so tiled bounds are still recorded, correctly,
-as ordinary window bounds). `maximized` is no longer persisted at all — on macOS the green button
+as ordinary window bounds). `maximized` is not persisted — on macOS the green button
 zooms into a fullscreen space, which the fullscreen guard above already excludes from being saved.
 The plugin's own `on_window_ready` hook restores geometry on the main event loop.
 **`build_window` must not restore geometry itself** — off the event loop the restore marshal
@@ -746,8 +742,7 @@ that is the same for curator, warden, lector, and any future sibling app.
 - **The config-file watcher mechanism is shared** — `shell_core::watch::watch_config` owns the
   parent-dir watch, the FSEvents-robust file-name match, and the echo-swallow; curator passes only the
   parse + apply closure (returning the formatted bytes on a format-on-save write so the echo is
-  swallowed). It replaced curator's inline `notify` thread, which matched events by exact path — a
-  latent bug on a symlinked config dir, fixed by the shared file-name match.
+  swallowed). Its file-name match is what sees events under a symlinked config dir.
 - **Deliberately NOT shared** (each diverges per app, don't consolidate): IPC fan-out,
   the chrome-caller command gate (`is_chrome_caller` is curator-only — but as *redundant*
   belt-and-braces, not because "only curator hosts untrusted content": lector hosts remote content

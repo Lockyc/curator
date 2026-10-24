@@ -4,13 +4,10 @@
 // curator-only nav pill (browser navigation), which mounts into the component's header slot.
 
 const { invoke } = window.__TAURI__.core;
-// **Footgun: a bare `listen()` is app-wide, not window-scoped — so per-window events leaked to
-// every window.** The JS API registers a listener as `EventTarget::Any` unless given a target, and
-// Tauri's dispatch short-circuits an `Any` listener *past* the emit's target filter
-// (`match_any_or_filter` in tauri's event/listener.rs) — so `emit_to(<this chrome's label>, …)`
-// was delivered to every window's chrome regardless. Symptom: ⌘1 cycled the tabs of BOTH windows,
-// and the same leak sat under `close-tab`, `pop-out-tab`, `focus-tab` and `service-badge`.
-// Binding to this webview registers `EventTarget::Webview { label }`, which the emit's `AnyLabel`
+// **Footgun: a bare `listen()` is app-wide, not window-scoped.** The JS API registers a listener
+// as `EventTarget::Any` unless given a target, and Tauri's dispatch short-circuits an `Any`
+// listener *past* the emit's target filter (`match_any_or_filter` in tauri's event/listener.rs) —
+// so `emit_to(<this chrome's label>, …)` reaches every window's chrome. Binding to this webview registers `EventTarget::Webview { label }`, which the emit's `AnyLabel`
 // filter matches for this window only. Every per-window listener below must use this, not the raw
 // `window.__TAURI__.event.listen`.
 const chromeWebview = window.__TAURI__.webview.getCurrentWebview();

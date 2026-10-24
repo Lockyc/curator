@@ -1092,8 +1092,7 @@ pub fn run() {
             // (and surfacing an error banner on each open window) if the new contents don't
             // parse/validate.
             // The shared shell-core watcher owns the parent-dir watch, the file-name match (macOS
-            // FSEvents-robust — this is the fix for the old exact-path bug that silently missed every
-            // event under a symlinked config dir), and the echo-swallow (via the `Option<String>` the
+            // FSEvents-robust, so a symlinked config dir's events are seen), and the echo-swallow (via the `Option<String>` the
             // closure returns when it format-writes). curator supplies just the parse + apply.
             let app_handle = app.handle().clone();
             let fmt_path = path.clone();
