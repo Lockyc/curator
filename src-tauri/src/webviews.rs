@@ -72,7 +72,7 @@ impl TabState {
 use crate::escape;
 use curator_config::TabView;
 use tauri::{
-    webview::{NewWindowResponse, WebviewBuilder},
+    webview::{DownloadEvent, NewWindowResponse, WebviewBuilder},
     AppHandle, LogicalPosition, LogicalSize, Manager, TitleBarStyle, WebviewUrl, Window,
     WindowEvent,
 };
@@ -288,6 +288,8 @@ pub fn create_content_webview(
     let open_app = window.app_handle().clone();
     let open_label = view.label.clone();
     let home_url = view.url.clone();
+    let dl_window_id = window.label().to_string();
+    let dl_label = view.label.clone();
 
     let builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
         // Let WKWebView deliver native OS file drops to the page's own HTML5 drop targets
@@ -371,6 +373,27 @@ pub fn create_content_webview(
         })
         .on_document_title_changed(|webview, title| {
             crate::awareness::on_title_changed(&webview, &title);
+        })
+        // Registering a handler at all is what makes WebKit treat attachments as downloads: without
+        // one, wry cancels every `download`-attribute/blob link and *allows* an unrenderable
+        // `Content-Disposition: attachment` response as a navigation, which WebKit then abandons
+        // mid-load — the tab tries to navigate, nothing saves, and the loading bar strands. wry
+        // picks a de-duplicated path in `~/Downloads`; curator only accepts it and reports the end.
+        .on_download(move |_webview, event| {
+            if let DownloadEvent::Finished { url, path, success } = event {
+                let name = path
+                    .as_deref()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| url.to_string());
+                let (title, body) = if success {
+                    ("Downloaded", format!("{name} — saved to Downloads"))
+                } else {
+                    ("Download failed", name)
+                };
+                crate::notification::fire(title, &body, &dl_window_id, &dl_label);
+            }
+            true
         });
 
     let webview = window.add_child(
