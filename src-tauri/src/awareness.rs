@@ -1,7 +1,7 @@
 //! Unread awareness: parse a service's `<title>` into an unread state, drive the sidebar
 //! badge and the aggregate macOS dock badge.
 
-use crate::escape::BadgeSignal;
+use crate::sentinels::BadgeSignal;
 use crate::AppState;
 use curator_config::UnreadMode;
 use serde::Serialize;
@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(dock_count(&[]), None);
     }
 
-    use crate::escape::BadgeSignal;
+    use crate::sentinels::BadgeSignal;
 
     #[test]
     fn badge_unread_maps_signal_to_state() {

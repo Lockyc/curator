@@ -22,7 +22,7 @@ chrome-core = { git = "https://github.com/Lockyc/chrome-core", rev = "cbb145cc32
 # Shared release tooling + build_stamp. build.rs materializes scripts/*.sh (git-ignored) and stamps
 # BUILD_GIT_SHA/BUILD_DATE. default-features=false keeps the build-dep zero-tauri (resolver 2 keeps
 # it separate from the runtime-featured [dependencies] entry below). Pinned by rev.
-shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "d8f3329739b012dc0cce8384cc08e6d80fb1bcf4", default-features = false }
+shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "7b496e6d2268f71d8b4855180a46addf64feba88", default-features = false }
 
 [dependencies]
 tauri = { version = "2", features = ["unstable", "devtools"] }
@@ -31,8 +31,6 @@ serde_json = "1"
 toml = "0.8"
 url = "2"
 dirs = "5"
-# OS CSPRNG for the per-webview sentinel anti-forgery nonce (webviews.rs::random_nonce).
-getrandom = "0.2"
 # updater/process are kept explicit so their capability permissions resolve, but plugin
 # *registration* now flows through shell_core::register_plugins (runtime feature), not the builder.
 # Window geometry persistence lives in shell-core's own `geometry` module (no plugin crate of its
@@ -41,7 +39,7 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 # Shared Tauri runtime helpers (register_plugins). runtime feature pulls tauri; the build-dep above
 # stays zero-tauri. Same rev as the build-dep — bump both in lockstep.
-shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "d8f3329739b012dc0cce8384cc08e6d80fb1bcf4", features = ["runtime"] }
+shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "7b496e6d2268f71d8b4855180a46addf64feba88", features = ["runtime"] }
 # curator's config parser, extracted into its own platform-neutral crate (mirrors warden's
 # warden-config). It re-exports config-core's shared house formatter + colour parsing, so the app
 # reaches those via `curator_config::{format_str, format_file, Colour}` — config-core is a transitive
@@ -49,7 +47,6 @@ shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "d8f3329739b0
 curator-config = { path = "../crates/curator-config" }
 # The public-suffix list, compiled in: the registrable domain `escape::same_site`'s sign-in
 # carve-out compares. A crate bump refreshes the list.
-psl = "2.1.245"
 
 # For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate, and
 # for posting native banners via UserNotifications (tauri-plugin-notification's NSUserNotification

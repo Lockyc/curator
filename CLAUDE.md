@@ -133,7 +133,7 @@ never logs you out since sessions key off `session`, not the window — see *Ses
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
 resolved `session` string via the full cascade
 `tab.session → window.session → top-level Config.session → DEFAULT_SESSION`
-(`curator-config`'s `tab_views(global_session)` builds `TabView::session`; `session::data_store_id`
+(`curator-config`'s `tab_views(global_session)` builds `TabView::session`; `shell_core::web::session::data_store_id`
 hashes it). An explicit `session = ""` at any level is treated as unset and falls through to the
 next. Tabs sharing a session string share a login (even across windows); distinct strings are
 isolated accounts. With no `session` set anywhere, all tabs share one app-wide store, so SSO
@@ -142,60 +142,19 @@ the window or URL — renaming a window or editing a tab's URL never logs you ou
 `Config.session` is captured per window in `WindowRuntime.global_session` so commands and
 menu-reopen re-resolve the chain without the whole `Config`.)
 
-**Sentinels are key-gated.** The notification/badge/escape shims signal the Rust side by
-navigating to dead sentinel hosts (`curator.*.invalid`) that `on_navigation` intercepts — the
-sentinel path itself exposes no command/IPC. Each content webview gets a random per-load key,
-substituted into its shims at injection (a function-local literal, never on `window`) and
-required on every sentinel URL (`&k=`); `on_navigation` rejects any sentinel without it, so a
-page can't forge a banner/badge/browser-escape by hitting the host directly. Any new
-sentinel-emitting shim must carry the `__CURATOR_KEY__` placeholder.
+**The webview layer lives in `shell_core::web`** (`content`, `escape`, `session`, `insecure`): the
+shared content-webview builder, link routing, the key-gated escape sentinel, the Safari-derived UA,
+per-session data stores, the insecure-TLS allowlist, and the `_close` teardown. Its docblocks and
+tests own the rules — a tab keeps a link only if it's the tab's own site, `same_site` compares
+hosts not registrable domains, redirectors are unwrapped before routing. Curator's part is
+`webviews::create_content_webview`, which fills a `ContentSpec` from the `TabView` and passes
+`ContentHooks`; every path that destroys a content webview calls
+`shell_core::web::content::close_content_webview` / `close_window_pages`.
 
-**Link escape policy — a followed link stays in the tab only if it's the tab's own site; the
-page's own navigation wanders freely.** Every followed link goes through one decision,
-`escape::route_link`: **in-app** (navigate the tab itself) when it's `escape::same_site` with the
-tab's configured `url`, so a provider sign-in popup completes in the tab's own login session;
-anything else is handed to the macOS opener. A `window.open` / `target="_blank"` request reaches it
-via `on_new_window`. A plain link click arrives natively only as a main-frame navigation —
-indistinguishable from a redirect or SSO bounce, which must be followed — so the escape-click shim
-catches clicks on links to another host and sends them through the escape sentinel with `r=1`
-(routed); cmd/middle-click go through the same sentinel unrouted (always the browser). Any
-navigation that isn't a click is allowed (`allow_same_tab_navigation`).
-- **`same_site` compares the tab's *own host*, not its registrable domain** (`www.`-insensitive),
-  because a shared provider domain hosts many unrelated services: `meet.google.com` and
-  `docs.google.com` are no more a Chat tab's own flow than an outside link is, so a
-  registrable-domain test navigated the Chat tab away to Meet instead of opening it in the browser.
-  The single carve-out is `escape::is_auth_host` — a bounded set of *auth* leading labels
-  (`accounts`, `login`, `sso`, …) on the same registrable domain, which is the sign-in popup the
-  same-site test exists for. **Don't widen that carve-out into a list of a provider's app hosts**
-  — that list has no end, and each entry silently re-imposes the bug above on one more service.
-- **Footgun: a same-registrable-domain URL can still be an "escape this app" intent — a link
-  redirector.** Google Chat and Gmail wrap every external link as
-  `https://www.google.com/url?q=<target>`, whose whole purpose is to *leave*.
-  `escape::redirector_target` unwraps such a wrapper **before** any routing decision, so the
-  decision is made on the real destination — which matters in both directions: an unwrapped
-  cross-site target escapes to the browser (and the browser gets the clean URL, not Google's
-  interstitial), while a wrapper pointing back at the tab's own host is in-app navigation only
-  the unwrap can reveal. Don't fold it into `same_site` or widen it to "any param holding an
-  absolute URL": an OAuth popup's `redirect_uri` is exactly that shape and must stay in-app, so
-  the match is pinned to the `/url` redirect endpoint.
-  **Both handlers unwrap it**, because whether a wrapped link arrives as a new-window request or
-  a plain same-tab navigation is the service's choice, not something curator can rely on: a
-  cross-site redirector reached in the same tab escapes to the browser even when it wasn't a
-  click, while one pointing back at the tab's own site is
-  ordinary in-app navigation and stays.
-
-**Content webviews present as Safari, with the version derived from the installed Safari**
-(`webviews.rs`'s `desktop_ua`). WKWebView's native UA carries no `Version/… Safari/…` token, which
-Google Workspace and others read as an unsupported browser, so a UA override is required. It
-presents as Safari rather than Chrome because the engine genuinely *is* WebKit — an honest UA gets
-the code path the renderer can run, where a Chrome UA invites Chrome-only paths that break here.
-The version is read once from `/Applications/Safari.app`'s `CFBundleShortVersionString` (via
-`NSBundle`) and trimmed to `major.minor`; `SAFARI_VERSION_FALLBACK` covers an absent or
-unparseable bundle. **Footgun: a hard-coded UA version decays silently** — nothing errors, the
-service just starts showing an "unsupported browser" banner years after someone pinned it. Don't
-re-pin the version; the
-`AppleWebKit`/`Safari` build token beside it (`SAFARI_WEBKIT_TOKEN`) is a frozen compatibility
-constant and genuinely doesn't move.
+**Curator's own sentinels** (`sentinels.rs`): the notification and badge shims navigate to
+`curator.notify.invalid` / `curator.badge.invalid`. shell-core verifies the per-webview key and
+hands the URL to the `on_app_sentinel` hook, which dispatches to `sentinels::{notify,badge}_sentinel`
+and ignores any other host. A new sentinel-emitting shim carries the `__SHELL_KEY__` placeholder.
 
 **Per-window events must be scoped on BOTH sides — the emit target alone does nothing.**
 `emit_to_focused_chrome` / `emit_to_all_chrome` (`lib.rs`) address a chrome by its webview label,
@@ -254,7 +213,7 @@ guest that probes `plugin:notification|is_permission_granted` over IPC, so conte
 no `tauri-guard` shim anymore (it was removed with the plugin).
 
 Banners are **click-routable**: `fire` takes the originating `(window_id, tab label)` (threaded
-from the `on_navigation` notify-sentinel handler in `webviews.rs`, which knows both) and stamps
+from the notify-sentinel hook in `webviews.rs`, which knows both) and stamps
 them into the request's `userInfo`; the same delegate's `didReceiveNotificationResponse` reads
 them back on a tap (the *default* action only — dismiss is ignored), raises that window
 (`set_focus`, which also activates curator from the background), and emits `focus-tab` to that
@@ -266,8 +225,8 @@ web page's `Notification.onclick` (the injected stub's JS handlers stay inert �
 `src/inject/notification.js`).
 
 **Loading is driven by per-tab `load_on_open`** — currently the only loading knob; there are no per-window mode flags today (a window-level default could be added if a need arises).
-Every content webview gets the full shim set (escape-click, visibility, notification, badge, and
-link-status — the hovered-link overlay, purely in-page), so any *loaded* tab can fire native banners and report unread.
+Every content webview gets the full shim set (shell-core's shared shims plus curator's notification and badge;
+the hovered-link overlay is shared and in-page), so any *loaded* tab can fire native banners and report unread.
 The notification shim covers **both** ways a page raises one — `new Notification(...)` and
 `ServiceWorkerRegistration.showNotification(...)` — because a service may use only the latter
 (Google Chat does, calling it straight from the page rather than a push handler).

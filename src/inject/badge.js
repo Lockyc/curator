@@ -1,4 +1,4 @@
-// Injected into every service webview (with escape-click + visibility + notification).
+// Injected into every service webview (with shell-core's shared shims + notification).
 // WebKit exposes the Badging API only to home-screen PWAs, so an embedded webview has no
 // working navigator.setAppBadge — chat apps feature-detect it as absent and never report a
 // count. This defines it (only if absent) to fire a curator badge-sentinel navigation,
@@ -8,7 +8,7 @@
   var SENTINEL = "https://curator.badge.invalid/?";
   // Per-webview secret, substituted in by Rust at injection (never exposed on window) so a page
   // can't forge an unread badge by navigating to the sentinel host directly.
-  var KEY = "__CURATOR_KEY__";
+  var KEY = "__SHELL_KEY__";
 
   function fire(qs) {
     try {

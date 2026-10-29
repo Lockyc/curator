@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::OnceLock;
 
 /// Pure bookkeeping for which content webviews have been created (lazy-load tracking)
 /// and which is active. Webview side-effects live in the Tauri-aware code below.
@@ -69,13 +68,14 @@ impl TabState {
     }
 }
 
-use crate::escape;
+use crate::sentinels;
 use curator_config::TabView;
-use tauri::{
-    webview::{DownloadEvent, NewWindowResponse, WebviewBuilder},
-    AppHandle, LogicalPosition, LogicalSize, Manager, TitleBarStyle, WebviewUrl, Window,
-    WindowEvent,
+use shell_core::web::{
+    self,
+    content::{ContentHooks, ContentSpec},
 };
+use std::sync::Arc;
+use tauri::{AppHandle, Manager, TitleBarStyle, WebviewUrl, Window, WindowEvent};
 
 /// The hole-punch compositing primitives — the content-hole rect type ([`HoleRect`]), its
 /// default-sidebar-width offset ([`CHROME_W`]), the launch-time best-guess hole ([`initial_hole`]),
@@ -88,87 +88,10 @@ pub use shell_core::compositing::{initial_hole, layout_webviews, HoleRect, CHROM
 /// role as [`CHROME_W`]: the chrome's reset/first-run default for the compact mode. Curator-only
 /// (lector has no compact mode), so it stays here rather than in the shared primitive.
 pub const COMPACT_CHROME_W: f64 = 200.0;
-/// The frozen `AppleWebKit`/`Safari` build token every modern Safari UA carries. Safari stopped
-/// advancing it years ago (it is a compatibility constant, not a real build number), so unlike the
-/// marketing version below it does not decay.
-const SAFARI_WEBKIT_TOKEN: &str = "605.1.15";
-
-/// Used when [`installed_safari_version`] can't read a version — Safari removed, an unreadable
-/// bundle, an unparseable string. Only a floor: a stale fallback behaves exactly like the old
-/// pinned UA did (an "unsupported browser" banner), which is the failure this derivation removes,
-/// so bump it when you notice, but the normal path never reads it.
-const SAFARI_VERSION_FALLBACK: &str = "27.0";
-
-/// Desktop UA for content webviews, derived once from the Safari installed on this machine.
-///
-/// WKWebView's native UA carries no `Version/… Safari/…` token, which Google Workspace (and
-/// others) read as an unsupported browser — hence a spoof. It presents as **Safari, not Chrome**:
-/// the engine genuinely is WebKit, so an honest UA gets the code path the renderer can actually
-/// run (a Chrome UA invites Chrome-only paths that break here), and — the reason this is derived
-/// rather than pinned — the version tracks macOS updates instead of decaying into that same
-/// unsupported-browser banner a couple of years after someone last hard-coded it.
-fn desktop_ua() -> &'static str {
-    static UA: OnceLock<String> = OnceLock::new();
-    UA.get_or_init(|| {
-        let version =
-            installed_safari_version().unwrap_or_else(|| SAFARI_VERSION_FALLBACK.to_string());
-        format!(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
-             AppleWebKit/{SAFARI_WEBKIT_TOKEN} (KHTML, like Gecko) \
-             Version/{version} Safari/{SAFARI_WEBKIT_TOKEN}"
-        )
-    })
-}
-
-/// The installed Safari's marketing version, in the `major.minor` shape Safari's own UA uses.
-/// `None` if Safari is absent or its version isn't plain numeric (see [`major_minor`]).
-fn installed_safari_version() -> Option<String> {
-    use objc2_foundation::{NSBundle, NSString};
-
-    let bundle = NSBundle::bundleWithPath(&NSString::from_str("/Applications/Safari.app"))?;
-    let value =
-        bundle.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?;
-    major_minor(&value.downcast::<NSString>().ok()?.to_string())
-}
-
-/// Trim a marketing version to the two components Safari's UA carries (`27.0.1` → `27.0`,
-/// `27` → `27.0`). `None` unless both components are plain digits — a garbage version spliced
-/// into the UA is worse than [`SAFARI_VERSION_FALLBACK`].
-fn major_minor(raw: &str) -> Option<String> {
-    let mut parts = raw.split('.');
-    let major = parts.next()?;
-    let minor = parts.next().unwrap_or("0");
-    let numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
-    (numeric(major) && numeric(minor)).then(|| format!("{major}.{minor}"))
-}
-
-/// Click-interceptor that reroutes cmd/middle-clicks through the escape sentinel.
-const ESCAPE_CLICK_JS: &str = include_str!("../../src/inject/escape-click.js");
-/// Drives WebKit's `visibilitychange`/`focus` so live services keep syncing while hidden.
-const VISIBILITY_SHIM_JS: &str = include_str!("../../src/inject/visibility.js");
 /// Reroutes web `Notification` calls through the notify sentinel for a native banner.
 const NOTIFICATION_JS: &str = include_str!("../../src/inject/notification.js");
 /// Reroutes the Badging API through the badge sentinel for unread pills + dock badge.
 const BADGE_JS: &str = include_str!("../../src/inject/badge.js");
-/// Shows a hovered link's destination in a status overlay at the bottom of the tab.
-const LINK_STATUS_JS: &str = include_str!("../../src/inject/link-status.js");
-
-/// A per-webview anti-forgery key, baked into that webview's injected shims as a function-local
-/// literal (never exposed on `window`, so page scripts can't read it) and required on every
-/// sentinel navigation. Drawn straight from the OS CSPRNG (`getrandom`) — 128 bits a page can't
-/// guess to forge a banner/badge/browser-escape by navigating to a sentinel host directly. (Using
-/// the CSPRNG directly, rather than hashing under `RandomState`, keeps the unforgeability property
-/// from resting on any assumption about SipHash-as-PRF.)
-fn random_nonce() -> String {
-    use std::fmt::Write as _;
-    let mut bytes = [0u8; 16];
-    getrandom::getrandom(&mut bytes).expect("OS CSPRNG (getrandom) must succeed on macOS");
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        let _ = write!(s, "{b:02x}");
-    }
-    s
-}
 
 /// Build a window and its chrome (sidebar) webview, and wire the user-close handler.
 /// `window_id` becomes the window label and namespaces the content webview labels.
@@ -247,11 +170,12 @@ pub fn build_window(
     Ok(window)
 }
 
-/// Create a content webview for `view` in the given window. Its login store is keyed on the
-/// resolved `view.session` (tabs sharing a session string share a login; the default is one
-/// shared app-wide store). Every tab gets the full shim set, so any loaded tab can fire native
-/// banners and report unread — whether it notifies in the background is purely a function of
-/// whether it's kept live, which is what `load_on_open` controls (see `apply_active`).
+/// Create a content webview for `view` in the given window, through shell-core's shared builder.
+/// Its login store is keyed on the resolved `view.session` (tabs sharing a session string share a
+/// login; the default is one shared app-wide store). Every tab gets the full shim set, so any
+/// loaded tab can fire native banners and report unread — whether it notifies in the background is
+/// purely a function of whether it's kept live, which is what `load_on_open` controls (see
+/// `apply_active`).
 ///
 /// `hole` is the window's current content-hole rect (the value stored on the runtime, seeded from
 /// [`initial_hole`] and updated by every `set_hole_rect`), so a newly-created tab lands exactly
@@ -266,144 +190,48 @@ pub fn create_content_webview(
 ) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
-    // Per-webview secret keying the sentinel handlers; substituted into the shims that emit
-    // sentinel navigations so only our own injected code can trigger them.
-    let nonce = random_nonce();
-    let escape_js = ESCAPE_CLICK_JS.replace("__CURATOR_KEY__", &nonce);
-    let notification_js = NOTIFICATION_JS.replace("__CURATOR_KEY__", &nonce);
-    let badge_js = BADGE_JS.replace("__CURATOR_KEY__", &nonce);
-    let init = format!("{escape_js}\n;\n{VISIBILITY_SHIM_JS}\n;\n{notification_js}\n;\n{badge_js}\n;\n{LINK_STATUS_JS}");
-
-    let nav_app = window.app_handle().clone();
-    let nav_label = view.label.clone();
     // The owning window's id (== label), so a notification can route a banner click back to this
     // window's chrome to surface the tab that fired it (see notification::fire / did_receive).
-    let nav_window_id = window.label().to_string();
-    let nav_nonce = nonce;
-    // The tab's configured URL — its "home base" for the same-site test. Both handlers classify
-    // against it (a link redirector can arrive as either a new-window request or a same-tab
-    // navigation, depending on how the service wires its links), so each gets its own clone.
-    let nav_home_url = view.url.clone();
-    // Captured separately for the new-window handler (the above are moved into on_navigation).
-    let open_app = window.app_handle().clone();
-    let open_label = view.label.clone();
-    let home_url = view.url.clone();
-    let dl_window_id = window.label().to_string();
-    let dl_label = view.label.clone();
-
-    let builder = WebviewBuilder::new(&view.label, WebviewUrl::External(url))
-        // Let WKWebView deliver native OS file drops to the page's own HTML5 drop targets
-        // (attach-to-compose, upload boxes, …). Tauri's default drag-drop handler consumes the
-        // drop (emits a `tauri://drag-drop` event and returns `true`), which stops WKWebView from
-        // ever seeing it — curator listens for no such event, so disabling it is pure gain. The
-        // drop lands on the active tab only: `apply_active` raises it to the front of the
-        // superview, occluding the live-but-background `load_on_open` tabs across the content rect.
-        .disable_drag_drop_handler()
-        .data_store_identifier(crate::session::data_store_id(&view.session))
-        .user_agent(desktop_ua())
-        .initialization_script(&init)
-        .on_new_window(move |url, _features| {
-            // The app's own popups/auth flows (same site as the tab) navigate the tab itself, so
-            // sign-in completes in the tab's own login session; anything else escapes.
-            match escape::route_link(&home_url, url) {
-                escape::LinkRoute::InApp(url) => {
-                    if let Some(wv) = open_app.get_webview(&open_label) {
-                        let _ = wv.navigate(url);
-                    }
-                }
-                escape::LinkRoute::Browser(url) => escape::escape_to_default_browser(url.as_str()),
-                escape::LinkRoute::Refuse => {}
+    let window_id = window.label().to_string();
+    let sentinel_window_id = window_id.clone();
+    let hooks = ContentHooks {
+        intercept: None,
+        // Every key-verified `.invalid` host but the escape one; shell-core has already refused
+        // the navigation, so an unknown host is simply ignored.
+        on_app_sentinel: Some(Arc::new(move |app, label, url| {
+            if let Some(sig) = sentinels::badge_sentinel(url) {
+                crate::awareness::on_badge_signal(app, label, sig);
+            } else if let Some(p) = sentinels::notify_sentinel(url) {
+                crate::notification::fire(&p.title, &p.body, &sentinel_window_id, label);
+                // The banner doubles as an unread source for services that report through
+                // neither the Badging API nor a title count (see awareness::displayed).
+                crate::awareness::on_notification(app, &sentinel_window_id, label);
             }
-            NewWindowResponse::Deny
-        })
-        .on_navigation(move |url| {
-            // Sentinel hosts drive native banners / unread badges / browser-escape. Honour them
-            // only when the navigation carries this webview's secret key — otherwise a page
-            // could forge one by navigating to the host directly. Forged or unrecognised
-            // sentinels are swallowed (never navigated to the dead host).
-            if escape::is_sentinel_host(url) {
-                if !escape::sentinel_key_ok(url, &nav_nonce) {
-                    return false;
-                }
-                if let Some(sig) = escape::badge_sentinel(url) {
-                    crate::awareness::on_badge_signal(&nav_app, &nav_label, sig);
-                } else if let Some(p) = escape::notify_sentinel(url) {
-                    crate::notification::fire(&p.title, &p.body, &nav_window_id, &nav_label);
-                    // The banner doubles as an unread source for services that report through
-                    // neither the Badging API nor a title count (see awareness::displayed).
-                    crate::awareness::on_notification(&nav_app, &nav_window_id, &nav_label);
-                } else if let Some(click) = escape::sentinel_target(url) {
-                    if !click.routed {
-                        escape::escape_to_default_browser(click.target.as_str());
-                    } else {
-                        match escape::route_link(&nav_home_url, click.target) {
-                            escape::LinkRoute::InApp(target) => {
-                                // Deferred off this navigation-policy callback rather than
-                                // navigating re-entrantly from inside it.
-                                let app = nav_app.clone();
-                                let label = nav_label.clone();
-                                let _ = nav_app.run_on_main_thread(move || {
-                                    if let Some(wv) = app.get_webview(&label) {
-                                        let _ = wv.navigate(target);
-                                    }
-                                });
-                            }
-                            escape::LinkRoute::Browser(target) => {
-                                escape::escape_to_default_browser(target.as_str())
-                            }
-                            escape::LinkRoute::Refuse => {}
-                        }
-                    }
-                }
-                return false;
-            }
-            // A link redirector reached in the *same* tab is still a leave-this-app intent, just
-            // one wearing the tab's own domain — a service that wires its links without
-            // `target="_blank"` lands here instead of `on_new_window`. Escape to the browser
-            // rather than letting the tab follow the bounce out to the external site. Only when
-            // the unwrapped destination is genuinely cross-site: a redirector pointing back at
-            // the tab's own site is in-app navigation and stays.
-            if let Some(target) = escape::redirector_target(url) {
-                if !escape::same_site(&nav_home_url, &target) {
-                    escape::escape_to_default_browser(target.as_str());
-                    return false;
-                }
-            }
-            escape::allow_same_tab_navigation(url.as_str())
-        })
-        .on_document_title_changed(|webview, title| {
-            crate::awareness::on_title_changed(&webview, &title);
-        })
-        // Registering a handler at all is what makes WebKit treat attachments as downloads: without
-        // one, wry cancels every `download`-attribute/blob link and *allows* an unrenderable
-        // `Content-Disposition: attachment` response as a navigation, which WebKit then abandons
-        // mid-load — the tab tries to navigate, nothing saves, and the loading bar strands. wry
-        // picks a de-duplicated path in `~/Downloads`; curator only accepts it and reports the end.
-        .on_download(move |_webview, event| {
-            if let DownloadEvent::Finished { url, path, success } = event {
-                let name = path
-                    .as_deref()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| url.to_string());
-                let (title, body) = if success {
-                    ("Downloaded", format!("{name} — saved to Downloads"))
-                } else {
-                    ("Download failed", name)
-                };
-                crate::notification::fire(title, &body, &dl_window_id, &dl_label);
-            }
-            true
-        });
-
-    let webview = window.add_child(
-        builder,
-        LogicalPosition::new(hole.x, hole.y),
-        LogicalSize::new(hole.width.max(0.0), hole.height.max(0.0)),
-    )?;
+        })),
+        on_title: Some(Arc::new(|webview, title| {
+            crate::awareness::on_title_changed(webview, title);
+        })),
+        on_download: Some(Arc::new(move |_app, label, name, success| {
+            let (title, body) = if success {
+                ("Downloaded", format!("{name} — saved to Downloads"))
+            } else {
+                ("Download failed", name.to_string())
+            };
+            crate::notification::fire(title, &body, &window_id, label);
+        })),
+    };
+    let spec = ContentSpec {
+        label: &view.label,
+        url: &url,
+        home_url: &view.url,
+        session: &view.session,
+        hole,
+        bar_rgba: accent_rgba(accent),
+        extra_init: &[NOTIFICATION_JS, BADGE_JS],
+    };
+    let webview = web::content::create_content_webview(window, &spec, hooks)?;
     #[cfg(target_os = "macos")]
     {
-        let _ = webview.with_webview(|pw| crate::insecure::ensure_patched(pw.inner()));
         // Catch an inspector attaching from WebKit's own context menu or dock buttons, which never
         // reach curator's ⌥⌘I handler — see `inspector`.
         let insp_app = window.app_handle().clone();
@@ -412,9 +240,9 @@ pub fn create_content_webview(
         // Report the pointer leaving the sidebar for this webview, which the chrome can't see.
         let ptr_app = window.app_handle().clone();
         let _ = webview.with_webview(move |pw| crate::pointer::watch_pointer(pw.inner(), &ptr_app));
-        // Thin determinate loading bar at the top of this content webview (shell-core-owned).
-        shell_core::progress_bar::install(&webview, accent_rgba(accent));
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = webview;
     Ok(())
 }
 
@@ -438,80 +266,8 @@ fn accent_rgba(colour: Option<&str>) -> (f64, f64, f64, f64) {
 /// Navigate a content webview back to its canonical URL (reset / periodic reload).
 /// No-op if the webview hasn't been created yet (a never-opened lazy tab is skipped).
 pub fn reload_canonical(window: &Window, label: &str, canonical_url: &str) -> tauri::Result<()> {
-    if let Some(wv) = window.get_webview(label) {
-        let url: url::Url = canonical_url.parse().expect("url validated at config load");
-        wv.navigate(url)?;
-    }
-    Ok(())
-}
-
-/// Tear down a content webview: end its page, then close it.
-///
-/// **Footgun: `Webview::close()` does not stop the page.** wry's `InnerWebView::drop`
-/// (`src/wkwebview/mod.rs`, 0.55.1) removes the `WKWebView` from its superview and then
-/// deliberately over-retains it — `self.webview.retain(); self.manager.retain();`, with no
-/// matching release — so the object is detached from the view hierarchy but never deallocated.
-/// Its document keeps running: timers fire, sockets stay open, and curator's own injected shims
-/// keep navigating the notify/badge sentinels into an `on_navigation` closure that is still alive
-/// too. A "closed" tab therefore goes on raising native banners, and since each close leaves
-/// another live copy behind, reopening the same tab stacks a second one — which is where
-/// duplicate notifications come from. Measured: a tab dropped from the config kept accumulating
-/// CPU in its own WebContent process long after its row left the sidebar.
-///
-/// **Ending the page must therefore be explicit, and it must be synchronous.** Navigating to
-/// `about:blank` first does stop a page — but not in front of a close: the close drops wry's
-/// navigation delegate mid-flight and the pending load is abandoned, leaving the original document
-/// running. `_close` is not cancellable that way; by the time the webview is dropped there is no
-/// page left to keep alive. Verified both ways against a tab whose page burns CPU on a timer: with
-/// the `_close`, its WebContent process exits on close; without it, the process outlives the tab
-/// and goes on accumulating CPU.
-///
-/// **Every path that destroys a content webview must come through here** — or, when a whole window
-/// is going away and its teardown will drop the webviews, [`close_window_pages`]. A bare `close()`
-/// silently reintroduces the leak.
-pub fn close_content_webview(wv: &tauri::Webview) {
-    close_page(wv);
-    let _ = wv.close();
-}
-
-/// End the page of every content webview in `window`, for the paths that close a *window* rather
-/// than a tab (user close, ⌘⇧W, a reload dropping the window, a detached window redocking). The
-/// window's teardown drops those webviews, which leaks them still running exactly as above — so
-/// their pages are ended first. The window's own main webview is its chrome (its label *is* the
-/// window's), which the window takes with it; only the content children need this.
-pub fn close_window_pages(window: &Window) {
-    for (label, wv) in window.app_handle().webviews() {
-        if label != window.label() && wv.window().label() == window.label() {
-            close_page(&wv);
-        }
-    }
-}
-
-/// End the page a content webview is running, synchronously, via `-[WKWebView _close]`.
-///
-/// WebKit SPI, guarded on `respondsToSelector:` in the same style as `inspector`'s `_inspector` /
-/// `detach`: a WebKit that renames it degrades to the leak above rather than aborting on an
-/// unrecognised selector. There is no public equivalent — every supported route to stopping a page
-/// is a navigation, and a navigation is exactly what the close cancels.
-fn close_page(wv: &tauri::Webview) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = wv.with_webview(|pw| {
-            use objc2::runtime::AnyObject;
-            use objc2::{msg_send, sel};
-            unsafe {
-                let Some(view) = (pw.inner() as *mut AnyObject).as_ref() else {
-                    return;
-                };
-                let can_close: bool = msg_send![view, respondsToSelector: sel!(_close)];
-                if can_close {
-                    let _: () = msg_send![view, _close];
-                }
-            }
-        });
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = wv;
+    let url: url::Url = canonical_url.parse().expect("url validated at config load");
+    web::content::navigate_to(window, label, &url)
 }
 
 /// `label`'s webview, only if it lives in `window`. `Window::get_webview` is `Manager::get_webview`,
@@ -721,33 +477,5 @@ mod tests {
         assert_eq!(s.active(), None); // was active → cleared, so content falls back to blank
         assert!(s.is_created("grafana")); // surviving tab untouched
         assert!(s.orphans(&keep).is_empty()); // nothing left to prune
-    }
-
-    #[test]
-    fn major_minor_trims_to_safaris_ua_shape() {
-        assert_eq!(major_minor("27.0"), Some("27.0".into()));
-        assert_eq!(major_minor("27.0.1"), Some("27.0".into()));
-        assert_eq!(major_minor("27"), Some("27.0".into()));
-    }
-
-    #[test]
-    fn major_minor_rejects_non_numeric() {
-        // Falling back beats splicing junk into the UA.
-        assert_eq!(major_minor("Technology Preview"), None);
-        assert_eq!(major_minor("27.x"), None);
-        assert_eq!(major_minor(""), None);
-    }
-
-    #[test]
-    fn desktop_ua_presents_as_safari() {
-        let ua = desktop_ua();
-        assert!(ua.starts_with("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "));
-        assert!(ua.contains(&format!(
-            "AppleWebKit/{SAFARI_WEBKIT_TOKEN} (KHTML, like Gecko)"
-        )));
-        assert!(ua.contains(&format!("Safari/{SAFARI_WEBKIT_TOKEN}")));
-        // The whole point: a real Version/ token, which WKWebView's native UA lacks.
-        assert!(ua.contains("Version/"));
-        assert!(!ua.contains("Chrome/"));
     }
 }
