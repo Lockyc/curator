@@ -448,6 +448,7 @@ webview label — so a re-popped tab reopens at the size and position it was las
 `title` changes its id/label, so it normally restores fresh default bounds. Sidebar width is separate
 (per-title `localStorage`, above).
 
+**Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
 Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across
 webview ops (`add_child`/show/hide/raise/navigate). That's deadlock-free *only* because sync Tauri
 commands run on the main thread, so those ops execute inline and the watcher thread (which always
