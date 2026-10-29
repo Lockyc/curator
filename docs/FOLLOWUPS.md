@@ -111,5 +111,5 @@ shell-core now owns the page-ending teardown (`shell_core::web::content::{close_
 close_window_pages}`: wry over-retains a dropped `WKWebView`, so a closed tab's page keeps running
 unless `-[WKWebView _close]` ends it first). **lector hosts remote content webviews and closes them
 with a bare `close()`, so its closed tabs keep running** — silent there, since it has no
-notification shims to make it audible. **Unlock:** re-pin lector past d8f3329 and route every
+notification shims to make it audible. **Unlock:** re-pin lector to a shell-core with `web::content` and route every
 teardown path through those two functions.
