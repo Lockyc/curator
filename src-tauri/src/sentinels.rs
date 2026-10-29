@@ -1,8 +1,8 @@
 //! Curator's own sentinel navigations: the notify and badge shims navigate to dead `.invalid`
-//! hosts, which shell-core verifies against the per-webview key and hands to the app hook.
+//! hosts. shell-core verifies the per-webview key and hands the URL to the `on_app_sentinel` hook.
 
 /// Sentinel host the injected Notification override navigates to so the native
-/// `on_navigation` handler can fire a real banner. Distinct from the cmd-click escape host.
+/// `on_app_sentinel` hook can fire a real banner. Distinct from shell-core's escape host.
 pub const NOTIFY_SENTINEL_HOST: &str = "curator.notify.invalid";
 
 /// Title + body parsed out of a notify-sentinel navigation.
@@ -30,8 +30,8 @@ pub fn notify_sentinel(nav_url: &url::Url) -> Option<NotifyPayload> {
     })
 }
 
-/// Sentinel host the injected Badging-API shim navigates to so the native `on_navigation`
-/// handler can update a service's unread badge. Distinct from the notify and escape hosts.
+/// Sentinel host the injected Badging-API shim navigates to so the `on_app_sentinel` hook can
+/// update a service's unread badge. Distinct from the notify and escape hosts.
 pub const BADGE_SENTINEL_HOST: &str = "curator.badge.invalid";
 
 /// An unread signal decoded from a badge sentinel: an explicit count (0 = clear) or a
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn non_notify_host_is_none() {
-        let u = url("https://curator.escape.invalid/?u=https%3A%2F%2Fx.test%2F");
+        let u = url("https://shell.escape.invalid/?u=https%3A%2F%2Fx.test%2F");
         assert!(notify_sentinel(&u).is_none());
     }
 

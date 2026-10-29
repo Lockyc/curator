@@ -550,7 +550,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         });
         // wire_return fires on `Destroyed`, by which point the window has already dropped this
         // tab's webview — and wry leaks a dropped webview still running (see
-        // `close_content_webview`). End its page while the window is only *asking* to close, so a
+        // `shell_core::web::content::close_content_webview`). End its page while the window is only *asking* to close, so a
         // popped-out tab stops when its window does.
         if let Some(win) = app.get_window(&detached_label) {
             let closing = win.clone();

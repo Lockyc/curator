@@ -1,15 +1,10 @@
-//! Vendored 64-bit FNV-1a. Used to derive the window id and webview labels, and — via
-//! `shell_core::web::session::data_store_id` — the WebKit `data_store_identifier` each tab's login lives in.
+//! Vendored 64-bit FNV-1a. Used to derive the window id and webview labels.
 //!
 //! Deliberately *not* `std`'s `DefaultHasher`: std does not guarantee that algorithm is stable
-//! across Rust releases. These hashes are baked into login-bearing identity and curator is
-//! rebuilt from source with whatever toolchain the user has. A `rustc` bump that reshuffled
-//! hashing would silently remap every service onto a fresh, empty store — logging the user out
-//! of everything. FNV-1a is frozen here; the test vectors lock it in place.
-//!
-//! Webview labels carry the same requirement for a smaller stake: a label is a popped-out tab's
-//! detach token, which shell-core's geometry module keys that window's remembered size and
-//! position on.
+//! across Rust releases, and curator is rebuilt from source with whatever toolchain the user has.
+//! A webview label is a popped-out tab's detach token, which shell-core's geometry module keys that
+//! window's remembered size and position on, so it must not shift under a `rustc` bump. FNV-1a is
+//! frozen here; the test vectors lock it in place.
 
 const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const PRIME: u64 = 0x0000_0100_0000_01b3;
