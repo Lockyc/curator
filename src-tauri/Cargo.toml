@@ -45,11 +45,8 @@ shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "7b496e6d2268
 # reaches those via `curator_config::{format_str, format_file, Colour}` — config-core is a transitive
 # dep through it, pinned in crates/curator-config/Cargo.toml (config-pin edits it there).
 curator-config = { path = "../crates/curator-config" }
-# The public-suffix list, compiled in: the registrable domain `escape::same_site`'s sign-in
-# carve-out compares. A crate bump refreshes the list.
 
-# For accepting allowlisted self-signed TLS certs via WKWebView's auth-challenge delegate, and
-# for posting native banners via UserNotifications (tauri-plugin-notification's NSUserNotification
+# For posting native banners via UserNotifications (tauri-plugin-notification's NSUserNotification
 # backend is a silent no-op on macOS 26 — see notification.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
