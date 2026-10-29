@@ -542,11 +542,9 @@ dependencies = [
  "chrome-core",
  "curator-config",
  "dirs 5.0.1",
- "getrandom 0.2.17",
  "objc2",
  "objc2-foundation",
  "objc2-user-notifications",
- "psl",
  "serde",
  "serde_json",
  "shell-core",
@@ -3280,18 +3278,21 @@ dependencies = [
 [[package]]
 name = "shell-core"
 version = "0.3.0"
-source = "git+https://github.com/Lockyc/shell-core?rev=d8f3329739b012dc0cce8384cc08e6d80fb1bcf4#d8f3329739b012dc0cce8384cc08e6d80fb1bcf4"
+source = "git+https://github.com/Lockyc/shell-core?rev=7b496e6d2268f71d8b4855180a46addf64feba88#7b496e6d2268f71d8b4855180a46addf64feba88"
 dependencies = [
  "block2",
+ "getrandom 0.2.17",
  "notify",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "psl",
  "serde",
  "serde_json",
  "tauri",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "url",
 ]
 
 [[package]]

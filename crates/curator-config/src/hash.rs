@@ -1,5 +1,5 @@
 //! Vendored 64-bit FNV-1a. Used to derive the window id and webview labels, and — via
-//! `session::data_store_id` — the WebKit `data_store_identifier` each tab's login lives in.
+//! `shell_core::web::session::data_store_id` — the WebKit `data_store_identifier` each tab's login lives in.
 //!
 //! Deliberately *not* `std`'s `DefaultHasher`: std does not guarantee that algorithm is stable
 //! across Rust releases. These hashes are baked into login-bearing identity and curator is

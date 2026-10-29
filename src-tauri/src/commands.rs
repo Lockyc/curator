@@ -383,7 +383,7 @@ pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     require_chrome(&webview)?;
     let (window, wid) = calling_window(&webview)?;
     if let Some(wv) = window.get_webview(&label) {
-        webviews::close_content_webview(&wv);
+        shell_core::web::content::close_content_webview(&wv);
     }
     // Mark unloaded. If this was the active tab, promote the nearest created neighbour to active
     // (`fallback_active`, shell-core's `pick_live_neighbour` policy) and relayout after the lock
@@ -456,7 +456,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
     // before the same tab is recreated on the detached window), drop its unread contribution, and
     // relayout the origin around the promoted neighbour if the popped tab was the active one.
     if let Some(wv) = origin_window.get_webview(&label) {
-        webviews::close_content_webview(&wv);
+        shell_core::web::content::close_content_webview(&wv);
     }
     crate::awareness::forget_tab(&app, &origin_wid, &label);
     if let Some((views, new_active)) = &relayout {
@@ -556,7 +556,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
             let closing = win.clone();
             win.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    webviews::close_window_pages(&closing);
+                    shell_core::web::content::close_window_pages(&closing);
                 }
             });
         }

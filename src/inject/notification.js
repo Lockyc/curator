@@ -1,4 +1,4 @@
-// Injected into every service webview (with escape-click + visibility). Embedded WKWebView has
+// Injected into every service webview (with shell-core's shared shims). Embedded WKWebView has
 // no working web Notification API, so both ways a page raises a desktop notification —
 // `new Notification(...)` and `ServiceWorkerRegistration.showNotification(...)` — are silent
 // no-ops. This overrides both to fire a curator notify-sentinel navigation, which the native
@@ -8,7 +8,7 @@
   var SENTINEL = "https://curator.notify.invalid/?";
   // Per-webview secret, substituted in by Rust at injection (never exposed on window) so a page
   // can't forge a native banner by navigating to the sentinel host directly.
-  var KEY = "__CURATOR_KEY__";
+  var KEY = "__SHELL_KEY__";
 
   function fire(title, body) {
     try {

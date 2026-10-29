@@ -1,14 +1,11 @@
 mod awareness;
 mod commands;
-mod escape;
-#[cfg(target_os = "macos")]
-mod insecure;
 #[cfg(target_os = "macos")]
 mod inspector;
 mod notification;
 #[cfg(target_os = "macos")]
 mod pointer;
-mod session;
+mod sentinels;
 mod watcher;
 mod webviews;
 #[cfg(target_os = "macos")]
@@ -369,7 +366,7 @@ fn cleanup_closed_window(app: &tauri::AppHandle, window_id: &str) {
     // their pages first, or every tab in a closed window goes on notifying (see
     // `close_content_webview`).
     if let Some(window) = app.get_window(window_id) {
-        webviews::close_window_pages(&window);
+        shell_core::web::content::close_window_pages(&window);
     }
     let state = app.state::<AppState>();
     {
@@ -433,7 +430,7 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
     // replacement), not trip last-window-quit and exit the app mid-reconcile.
     for id in &diff.removed {
         if let Some(win) = app.get_window(id) {
-            webviews::close_window_pages(&win);
+            shell_core::web::content::close_window_pages(&win);
             let _ = win.destroy();
         }
         if let Some(rt) = state.windows.lock().unwrap().remove(id) {
@@ -855,7 +852,7 @@ fn reconcile_window_tabs(
     // Webview side-effects, lock released.
     for label in &orphans {
         if let Some(wv) = window.get_webview(label) {
-            webviews::close_content_webview(&wv);
+            shell_core::web::content::close_content_webview(&wv);
         }
     }
     for v in &to_create {
@@ -1044,7 +1041,7 @@ pub fn run() {
                 }
             };
             #[cfg(target_os = "macos")]
-            insecure::set_allowlist(cfg.allow_insecure.clone());
+            shell_core::web::insecure::set_allowlist(cfg.allow_insecure.clone());
 
             let handle = app.handle().clone();
             let mut runtimes: HashMap<String, WindowRuntime> = HashMap::new();
