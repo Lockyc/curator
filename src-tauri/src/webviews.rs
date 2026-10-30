@@ -210,15 +210,7 @@ pub fn create_content_webview(
         bar_rgba: accent_rgba(accent),
         extra_init: &[NOTIFICATION_JS, BADGE_JS],
     };
-    let webview = web::content::create_content_webview(window, &spec, hooks)?;
-    #[cfg(target_os = "macos")]
-    {
-        // Report the pointer leaving the sidebar for this webview, which the chrome can't see.
-        let ptr_app = window.app_handle().clone();
-        let _ = webview.with_webview(move |pw| crate::pointer::watch_pointer(pw.inner(), &ptr_app));
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = webview;
+    web::content::create_content_webview(window, &spec, hooks)?;
     Ok(())
 }
 
