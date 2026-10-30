@@ -155,7 +155,7 @@ hands the URL to the `on_app_sentinel` hook, which dispatches to `sentinels::{no
 and ignores any other host. A new sentinel-emitting shim carries the `__SHELL_KEY__` placeholder.
 
 **Per-window events must be scoped on BOTH sides — the emit target alone does nothing.**
-`emit_to_focused_chrome` / `emit_to_all_chrome` (`lib.rs`) address a chrome by its webview label,
+`on_spine_action` / `emit_to_all_chrome` (`lib.rs`) address a chrome by its webview label,
 but a bare JS `listen()` registers `EventTarget::Any`, which receives every window's per-window
 events. **Footgun: it looks scoped and isn't.** A new per-window listener must use `src/chrome.js`'s
 local `listen` wrapper (the reason is at its definition), never the raw
@@ -331,28 +331,18 @@ window first if the user closed it while the tab was out.
   checks `WindowSet::is_quitting()` (set once from that event) first and no-ops — otherwise a detached
   window closing mid-quit would reopen its already-closing origin.
 
-**App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must be
-re-added by hand. **The App, Config, and Window submenus are the shared spine**
-(`shell_core::menu::build_spine`, called from `build_app_menu`) — About, Check for Updates…, Edit
-Config, Reveal Config in Finder, and the window list/reopen are identical across curator, warden,
-and lector and live in shell-core now; curator only supplies its name, config path, and window
-list. **Edit and Tabs stay curator's own** — genuinely not app-agnostic, so the spine doesn't touch
-them. The **Edit** submenu is load-bearing: its predefined items own the clipboard accelerators
-(⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content webviews. Keep Edit (and
-Window/Hide) when touching the menu.
+**App menu.** `lib.rs` fully replaces Tauri's default menu with shell-core's (`build_app_menu`):
+App, **Edit**, Tab, Config and Window from `shell_core::menu::build_spine` and `build_tab_menu`.
+curator supplies its name, its window list, and one Tab-menu group — Reload Tab / Reset All Tabs /
+Open Developer Tools. The **Edit** submenu is load-bearing: its predefined items own the clipboard
+accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content webviews.
 
-The **Tab** submenu also carries keyboard tab navigation, now built from **shell-core's**
-`shell_core::menu::build_tab_nav(manager, mode.is_cycle())` — the same block warden shares —
-which returns the `nav` items (**⌘⇧]** / **⌘⇧[** cycle next/previous, or, under
-`tab_digit_keys = "cycle"`, ⌘1 next / ⌘2 previous) and the `jumps` items (**⌘1–9**, or **⌘3–9**
-under `cycle`, once the first two digits become the cycle aliases). Only the submenu's
-*composition* — interleaving those with `Reload Tab` / `Reset All Tabs` / `Open Developer Tools`
-— stays curator's own (`build_app_menu`'s `tabs_menu`). The menu handler routes every nav id
-through `shell_core::menu::tab_nav_action`, which collapses both the ⌘1/⌘2 cycle aliases and the
-digit-shifted jumps onto one `TabNavAction::{Next,Prev,Jump(n)}`, so the handler itself is
-mode-blind: it just `emit_to_focused_chrome`s a `nav-tab` / `jump-tab` event exactly as before.
-The focused window's chrome resolves the target row and routes it through the normal `select()`
-path (so a jumped-to lazy tab still creates on demand). **Cycling walks loaded tabs only** —
+**Tab ▸ Cycle Tabs with ⌘1/⌘2** writes the flipped `tab_digit_keys` (`commands::write_tab_digit_keys`,
+seeding the starter config first). Every other spine command goes through
+`shell_core::menu::route`, which picks the window it acts on (a popped-out window's origin, for the
+sidebar commands) and collapses the cycle aliases onto plain Next/Prev; `on_spine_action` emits
+`nav-tab` (`{dir, from}`) / `jump-tab` to that window's chrome, which routes the target row through
+the normal `select()` path (so a jumped-to lazy tab still creates on demand). **Cycling walks loaded tabs only** —
 `chrome.js` passes `liveOnly: true` (the live dot = `TabItem.loaded`), warden's rule: cycling moves
 between the tabs you already *have* open and must never be the thing that loads a cold one, or
 holding ⌘1 through a mostly-cold window spawns a webview per step and pulls in every service you
@@ -537,8 +527,8 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
   so its isolated `preview.html` no-ops. `src/chrome.js` keeps only the wiring: `autoUpdate` in the
   mount config (curator's `auto_update` gate) and forwarding the menu event to
   `sb.checkForUpdateNow()`. curator still owns its updater *identity* — endpoint, pubkey, the Rust
-  plugin registration. The menu item emits `check-update` to the focused chrome — the same
-  `emit_to_focused_chrome` pattern as `nav-tab`/`jump-tab`.
+  plugin registration. The menu item emits `check-update` to the window `route` picks — the same
+  `on_spine_action` path as `nav-tab`/`jump-tab`.
 - **Capability:** the chrome is granted `updater:default` + `process:allow-restart` in
   `capabilities/default.json` — local-origin only (no `remote` block), so remote content tabs never
   receive them, exactly like `core:event`.
@@ -648,9 +638,8 @@ that is the same for curator, warden, lector, and any future sibling app.
 - **The build stamp comes from shell-core.** `build.rs` calls `shell_core::build_stamp()`, emitting
   the shared, un-prefixed `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`).
 - **The menu spine and the home surface come from shell-core** (`menu::build_spine`, and the home
-  surface driven by the `WindowSet`). `build_app_menu` calls `build_spine` for the App/Config/Window
-  submenus and interleaves curator's own Edit and Tabs (see *App menu* / *Window menu* above).
-  **The shared home surface is curator's only
+  surface driven by the `WindowSet`). `build_app_menu` builds every submenu from the spine (see
+  *App menu* / *Window menu* above). **The shared home surface is curator's only
   no-config/load-error surface — don't build a per-app error window alongside it.** It already covers
   both of those states plus a window-list state a per-app window can't express, and a second surface
   would drift from the shared one. The surface's "Create a starter config" button is curator's own
@@ -674,13 +663,9 @@ that is the same for curator, warden, lector, and any future sibling app.
   the chrome-caller command gate (`is_chrome_caller` is curator-only — but as *redundant*
   belt-and-braces, not because "only curator hosts untrusted content": lector hosts remote content
   too, and origin dispatch isolates it — see shell-core's command-isolation model), and the
-  **app-specific menu items** — curator's Edit (clipboard accelerators) and the Tab submenu's
-  own items (Reload Tab, Reset All Tabs, Open Developer Tools) genuinely aren't app-agnostic, unlike
-  the spine that now wraps them. **The Tab submenu's keyboard *navigation* items are shared**,
-  though: `shell_core::menu::build_tab_nav` + `tab_nav_action` own the ⌘⇧]/⌘⇧[/⌘1–9 block and the
-  `tab_digit_keys` cycle-alias behaviour (see *App menu* above) — curator only interleaves those
-  items into its own Tab submenu alongside its app-specific ones. See shell-core's CLAUDE.md for
-  the full dividing line.
+  **app-specific menu items** — the Tab submenu's own group (Reload Tab, Reset All Tabs, Open
+  Developer Tools), which `build_tab_menu` places but curator builds and handles. See shell-core's
+  CLAUDE.md for the full dividing line.
 - Dev loop: **`just shell-dev`** / **`just shell-pin`** (rev in `src-tauri/Cargo.toml`, scoped
   `#PATCH:shell#`), mirroring the chrome-/config- pairs.
 - A scriptable "open window by title" entry point belongs here (shared), not in curator — see

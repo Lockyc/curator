@@ -75,7 +75,7 @@ file-driven, everything else is ephemeral.
   out often reopens where you left it.
 - **Keyboard tab navigation** (the **Tab** menu) — **⌘⇧[** / **⌘⇧]** cycle the previous/next
   *loaded* tab (cold tabs are skipped, so cycling never loads one) and **⌘1–⌘9** jump to a
-  position; set `tab_digit_keys = "cycle"` to make **⌘1** / **⌘2** cycle instead (jumps shift to
+  position; **Tab ▸ Cycle Tabs with ⌘1/⌘2** (or `tab_digit_keys = "cycle"`) makes **⌘1** / **⌘2** cycle instead (jumps shift to
   **⌘3–⌘9**).
 
 ## Install
