@@ -563,6 +563,7 @@ version = "0.1.0"
 dependencies = [
  "config-core",
  "serde",
+ "shell-core",
  "toml 0.8.23",
  "url",
 ]
@@ -3279,7 +3280,7 @@ dependencies = [
 [[package]]
 name = "shell-core"
 version = "0.3.0"
-source = "git+https://github.com/Lockyc/shell-core?rev=5e6e8c9041f74c1b059f687aa47b8eb6726292e0#5e6e8c9041f74c1b059f687aa47b8eb6726292e0"
+source = "git+https://github.com/Lockyc/shell-core?rev=e625065a918d96c59c8110c3ba6c307703d2c9a1#e625065a918d96c59c8110c3ba6c307703d2c9a1"
 dependencies = [
  "block2",
  "getrandom 0.2.17",

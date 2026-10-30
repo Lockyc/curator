@@ -75,7 +75,7 @@ use shell_core::web::{
     content::{ContentHooks, ContentSpec},
 };
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, TitleBarStyle, WebviewUrl, Window, WindowEvent};
+use tauri::{AppHandle, Manager, TitleBarStyle, WebviewUrl, Window};
 
 /// The hole-punch compositing primitives — the content-hole rect type ([`HoleRect`]), its
 /// default-sidebar-width offset ([`CHROME_W`]), the launch-time best-guess hole ([`initial_hole`]),
@@ -122,7 +122,6 @@ pub fn build_window(
             .hidden_title(true)
             .title_bar_style(TitleBarStyle::Overlay)
             .build()?;
-    let window = webview_window.as_ref().window();
 
     // Saved bounds (size/position, in AppKit points) are restored by shell-core's geometry plugin's
     // own `on_window_ready` hook, which Tauri dispatches inside `run_on_main_thread` — so its
@@ -143,22 +142,12 @@ pub fn build_window(
     // than here — that hook fires from inside the main-thread dispatch a manual restore would have
     // to reproduce.
 
-    // Route every close (native red button, ⌘⇧W, or the WindowSet's) through the shared close logic
-    // so it ends the window's pages and can't strand the app (see lib.rs); the runtime is dropped
-    // when the WindowSet reports the window gone (`window_closed`). ⌘W unloads the active tab (the
-    // spine's Close Tab item), so it never reaches here. Content-webview repositioning is NOT wired
-    // here: the chrome's `#content-hole` is a flex child, so a window resize reflows it in the
-    // webview, the chrome's ResizeObserver fires `reportRect`, and the resulting `set_hole_rect`
-    // repositions the content — the same JS-reported path warden uses. (No Rust-side resize
-    // relayout means no Rust-side sidebar-width clamp to keep in sync.)
-    let close_app = app.clone();
-    let close_wid = window_id.to_string();
-    window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { .. } = event {
-            crate::on_real_window_close(&close_app, &close_wid);
-        }
-    });
-
+    // Closing is the WindowSet's (it ends the window's pages and quits on the last user close); the
+    // runtime is dropped when it reports the window gone (`window_closed`). Content-webview
+    // repositioning is NOT wired here: the chrome's `#content-hole` is a flex child, so a window
+    // resize reflows it in the webview, the chrome's ResizeObserver fires `reportRect`, and the
+    // resulting `set_hole_rect` repositions the content — the same JS-reported path warden uses.
+    // (No Rust-side resize relayout means no Rust-side sidebar-width clamp to keep in sync.)
     Ok(webview_window)
 }
 

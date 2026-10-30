@@ -702,11 +702,9 @@ pub fn shell_home_open_window(id: String, app: AppHandle) {
 #[tauri::command]
 pub fn window_menu(x: f64, y: f64, webview: Webview) -> Result<(), String> {
     require_chrome(&webview)?;
-    let window = webview.window();
-    let menu = crate::windows::banner_menu(webview.app_handle(), window.label())
-        .map_err(|e| e.to_string())?;
-    window
-        .popup_menu_at(&menu, tauri::LogicalPosition::new(x, y))
+    let app = webview.app_handle();
+    app.state::<shell_core::windows::WindowSet>()
+        .banner_menu(app, webview.window().label(), x, y)
         .map_err(|e| e.to_string())
 }
 
