@@ -177,7 +177,7 @@ underlying invoke channel) reaches *every* webview, remote content tabs included
 app-defined `#[tauri::command]`s are **not** ACL/capability-gated (the `core:event` capability in
 `capabilities/default.json` is a separate concern — see below; the commands work regardless).
 What actually stops a remote page from invoking the command surface (`get_tabs`, `select_tab`,
-`unload_tab`, `reset_all`, `set_hole_rect`) is **Tauri's origin dispatch**, not the
+`unload_tab`, `set_hole_rect`) is **Tauri's origin dispatch**, not the
 `require_chrome`/`is_chrome_caller` guard: curator ships no app-command ACL manifest (its
 `capabilities/default.json` grants only `core:*`/`updater`/`process`), so dispatch rejects every
 remote (`Origin::Remote`) invoke before the command body runs — verified against the pinned tauri

@@ -264,13 +264,6 @@ fn reset_window_tabs(app: &AppHandle, wid: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub fn reset_all(webview: Webview) -> Result<(), String> {
-    require_chrome(&webview)?;
-    let wid = calling_window_id(&webview);
-    reset_window_tabs(webview.app_handle(), &wid)
-}
-
 /// Refresh a single tab's current page in place (no-op if it hasn't been opened yet).
 #[tauri::command]
 pub fn reload_tab(label: String, webview: Webview) -> Result<(), String> {
