@@ -299,8 +299,8 @@ pub(crate) fn open_window(
 }
 
 /// [`WindowHost::closed`](shell_core::windows::WindowHost::closed): drop `label`'s runtime — its
-/// unread, its reload timers — and recompute the dock badge. Its pages were already ended in the
-/// window's `CloseRequested` ([`on_real_window_close`]).
+/// unread, its reload timers — and recompute the dock badge. The [`WindowSet`] already ended its
+/// pages in the window's `CloseRequested`.
 pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
     let state = app.state::<AppState>();
     if let Some(rt) = state.windows.lock().unwrap().remove(label) {
@@ -392,8 +392,8 @@ fn on_spine_action(app: &tauri::AppHandle, routed: shell_core::menu::Routed) {
         // ⌘W unloads the ACTIVE TAB — it does not close the window. The chrome owns which tab is
         // active and the dot repaint, so it drives unload_tab off this event.
         SpineAction::CloseTab => emit("close-tab"),
-        // `close()` flows through the same `CloseRequested` path as the red button
-        // (`on_real_window_close`); a pop-out's close docks its tab.
+        // `close()` flows through the same `CloseRequested` path as the red button (the
+        // `WindowSet`'s); a pop-out's close docks its tab.
         SpineAction::DockPoppedOut | SpineAction::CloseWindow => {
             if let Some(w) = app.get_window(target) {
                 let _ = w.close();
@@ -410,28 +410,6 @@ fn on_spine_action(app: &tauri::AppHandle, routed: shell_core::menu::Routed) {
         }
         // chrome-core owns self-update; forward to its checkForUpdateNow().
         SpineAction::CheckUpdates => emit("check-update"),
-    }
-}
-
-/// Every window's `CloseRequested` (the native red button, ⌘⇧W, or the [`WindowSet`] closing it);
-/// the close always proceeds. It first ends the window's pages: its teardown
-/// drops its content webviews, which wry leaks *still running*, so every tab in a closed window
-/// would go on notifying (see `shell_core::web::content::close_content_webview`). A **user** close
-/// of the **last** window quits curator (last-window-quit — matching warden), rather than lingering
-/// as a menu-bar-only app with no visible UI. A close the set made (a delete, a reload removing the
-/// window) has already dropped the window from the set's open windows, so it never quits: the home
-/// surface takes over.
-pub(crate) fn on_real_window_close(app: &tauri::AppHandle, label: &str) {
-    if let Some(window) = app.get_window(label) {
-        shell_core::web::content::close_window_pages(&window);
-    }
-    let user_close = app
-        .state::<WindowSet>()
-        .entries()
-        .iter()
-        .any(|e| e.id == label && e.open);
-    if user_close && app.windows().len() <= 1 {
-        app.exit(0);
     }
 }
 
@@ -908,12 +886,13 @@ pub fn run() {
             });
 
             // The window set opens the `open_on_start` windows, lists the rest, and shows the home
-            // surface whenever no window is open (a failed load, no `[[window]]`, all closed).
-            app.manage(WindowSet::new(
-                "curator",
-                path.clone(),
-                windows::CuratorHost,
-            ));
+            // surface whenever no window is open (a failed load, no `[[window]]`, all closed). The
+            // user closing the last window quits instead (matching warden), rather than lingering
+            // as a menu-bar-only app.
+            app.manage(
+                WindowSet::new("curator", path.clone(), windows::CuratorHost)
+                    .quit_on_last_close(true),
+            );
             let set = app.state::<WindowSet>();
             match load_err {
                 None => set.materialize(&handle, windows::decls(&cfg)),
@@ -1011,14 +990,9 @@ pub fn run() {
                         commands::open_active_devtools(app);
                         return;
                     }
-                    shell_core::menu::ids::NEW_WINDOW => {
-                        windows::new_window(app);
-                        return;
-                    }
                     _ => {}
                 }
-                if let Some(action) = windows::BannerAction::parse(id) {
-                    action.run(app);
+                if app.state::<WindowSet>().handle_menu(app, id) {
                     return;
                 }
                 if let Some(label) = shell_core::menu::selected_window(id) {

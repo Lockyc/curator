@@ -99,7 +99,7 @@ curator is a Cargo **workspace** (mirrors warden's shape):
 - **`crates/curator-config/`** — the config parser, extracted into its own **platform-neutral**
   crate (no Tauri/macOS deps) like warden's `warden-config`: the `window → group → tab` schema,
   `parse_and_validate` / `load_config`, `resolve_config_path` / `default_config_path`, the `TabView`
-  resolution (`tab_views`), plus the pure `identity` + `hash` label helpers. It **re-exports**
+  resolution (`tab_views`), plus the pure `hash` label helper. It **re-exports**
   config-core's shared house formatter + colour parsing, so the app reaches those as
   `curator_config::{format_str, format_file, Colour}`. Unit-tested standalone (no GUI); the app
   depends on it by path.
@@ -121,12 +121,12 @@ window's content (`open_window`, from `AppState.last_cfg`), drops its `WindowRun
 window is open. `reload_windows` = `WindowSet::apply` + `reconcile_window_tabs` for kept open windows.
 **The chrome sidebar is the window's main webview, so the window label (`wid`) is at once the Tauri
 window label and the chrome webview's label** (see *Hole-punch layout*) — the definitional fact the
-rest of this doc leans on. It also namespaces the content webviews' labels (`{wid}:{tab_hash}`) so
-they're collision-free across windows and distinct from the chrome's bare label (the basis of the
-`require_chrome` gate). A rename keeps the live label, so tabs stay loaded. **New Window…** (Window
-menu) and **Edit Window…** / **Delete Window…** (the banner's context menu, `window_menu`) open
-shell-core's form and write the config through config-core's `edit` (`windows.rs`); Edit writes
-first, then `WindowSet::rename`, so the reload echo keeps the window.
+rest of this doc leans on. It also namespaces the content webviews' labels
+(`shell_core::child_label`, `{wid}:{tab_hash}`) so they're collision-free across windows and
+distinct from the chrome's bare label (the basis of the `require_chrome` gate). A rename keeps the
+live label, so tabs stay loaded. **New Window…**, **Edit Window…** and **Delete Window…** (the
+banner's context menu, `window_menu`) are shell-core's flow (`WindowSet::handle_menu`); curator only
+writes the config through config-core's `edit` (`CuratorHost::write`).
 
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
 resolved `session` string via the full cascade
@@ -276,11 +276,10 @@ counts only, so an activity dot shows in the sidebar and contributes nothing to 
 
 **Window menu** — the shared spine's **Window** submenu (`shell_core::menu::build_spine`) carries
 **New Window…** (⌥⌘N), closes the focused window (**⌘⇧W**) and reopens any closed window from the
-`WindowSet`'s list (checked when open, `"{title}  (closed)"` when not). Every close flows through
-`on_real_window_close`, which ends the window's pages and **quits curator when the user closes the
-last window** (last-window-quit, matching warden). A close the `WindowSet` makes (Delete Window, a
-reload removing the window) has already dropped it from the set's open windows, so it never quits:
-the home surface takes over.
+`WindowSet`'s list (checked when open, `"{title}  (closed)"` when not). The set ends a closing
+window's pages and, opted in with `quit_on_last_close(true)`, **quits curator when the user closes
+the last window** (matching warden); a close the set makes (Delete Window, a reload) shows the home
+surface instead.
 
 **⌘W is Close Tab, not Close Window** — the family standard, shared with warden and lector. It
 unloads the active tab to cold (kill the webview → it respawns on next select) via the spine's

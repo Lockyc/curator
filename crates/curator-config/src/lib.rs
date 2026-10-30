@@ -7,10 +7,9 @@ pub use config_core::{
     ColourError, Density, Group, SeedError, TabDigitKeys, Warning, WindowError,
 };
 
-// Pure label-identity helpers (FNV-1a hash + window-label namespacing), used when resolving each
-// tab's webview label below. No Tauri/macOS deps, so the crate stays platform-neutral.
+// The FNV-1a hash behind each tab's webview label below (namespaced under its window by
+// `shell_core::child_label`). No Tauri/macOS deps, so the crate stays platform-neutral.
 pub mod hash;
-pub mod identity;
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -359,7 +358,7 @@ impl WindowTabs for WindowConfig {
                 .or_else(|| normalized_session(global_session))
                 .unwrap_or_else(|| DEFAULT_SESSION.to_string());
             views.push(TabView {
-                label: crate::identity::namespaced(window_label, &within),
+                label: shell_core::child_label(window_label, &within),
                 group,
                 title: tab.title.clone(),
                 url: tab.url.clone(),
