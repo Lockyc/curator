@@ -23,7 +23,7 @@ anywhere in the app.
 any future sibling inherit one implementation (the same shape as `register_plugins`). Either
 single-instance argv (`--window <title>`) or a `<scheme>://window/<title>` deep link, forwarded to
 the already-running instance and mapped title → open-or-focus. curator's side is then just the
-mapping onto `open_or_focus_window` (`lib.rs`), which already does open-or-focus by `window_id`.
+mapping title → label (`WindowSet::label_for_title`) → `open_or_focus_window` (`lib.rs`).
 
 **Concrete driver is on the warden side**, not curator's: warden's `work` window is
 `open_on_start = false`, so its `work_startup.sh` needs a command to open it on demand. curator has

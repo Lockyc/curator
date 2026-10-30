@@ -93,16 +93,16 @@ const NOTIFICATION_JS: &str = include_str!("../../src/inject/notification.js");
 /// Reroutes the Badging API through the badge sentinel for unread pills + dock badge.
 const BADGE_JS: &str = include_str!("../../src/inject/badge.js");
 
-/// Build a window and its chrome (sidebar) webview, and wire the user-close handler.
-/// `window_id` becomes the window label and namespaces the content webview labels.
-/// Returns the window; the caller seeds its runtime hole rect from [`initial_hole`].
+/// Build a window and its chrome (sidebar) webview, and wire the close handler.
+/// `window_id` (the `WindowSet` label) becomes the window label and namespaces the content webview
+/// labels. The caller seeds its runtime hole rect from [`initial_hole`].
 pub fn build_window(
     app: &AppHandle,
     window_id: &str,
     title: &str,
     win_w: f64,
     win_h: f64,
-) -> tauri::Result<Window> {
+) -> tauri::Result<tauri::WebviewWindow> {
     // The sidebar chrome is the window's MAIN webview (hole-punch, warden-style): built as the
     // window's content view, so `data-tauri-drag-region` in it moves the window natively — a child
     // (`add_child`) webview cannot. It spans the whole window (index.html renders the sidebar in a
@@ -143,31 +143,23 @@ pub fn build_window(
     // than here — that hook fires from inside the main-thread dispatch a manual restore would have
     // to reproduce.
 
-    // Route a user close (native red button or ⌘⇧W) through the shared close logic so it can't
-    // strand the app and doesn't leak the window's unread/timers (see lib.rs). ⌘W unloads the
-    // active tab (the spine's Close Tab item), so it never reaches here. Content-webview
-    // repositioning is NOT wired here: the chrome's `#content-hole` is a flex child, so a window
-    // resize reflows it in the webview, the chrome's ResizeObserver fires `reportRect`, and the
-    // resulting `set_hole_rect` repositions the content — the same JS-reported path warden uses.
-    // (No Rust-side resize relayout means no Rust-side sidebar-width clamp to keep in sync.)
+    // Route every close (native red button, ⌘⇧W, or the WindowSet's) through the shared close logic
+    // so it ends the window's pages and can't strand the app (see lib.rs); the runtime is dropped
+    // when the WindowSet reports the window gone (`window_closed`). ⌘W unloads the active tab (the
+    // spine's Close Tab item), so it never reaches here. Content-webview repositioning is NOT wired
+    // here: the chrome's `#content-hole` is a flex child, so a window resize reflows it in the
+    // webview, the chrome's ResizeObserver fires `reportRect`, and the resulting `set_hole_rect`
+    // repositions the content — the same JS-reported path warden uses. (No Rust-side resize
+    // relayout means no Rust-side sidebar-width clamp to keep in sync.)
     let close_app = app.clone();
     let close_wid = window_id.to_string();
-    window.on_window_event(move |event| match event {
-        WindowEvent::CloseRequested { api, .. }
-            if crate::on_real_window_close(&close_app, &close_wid) =>
-        {
-            api.prevent_close();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { .. } = event {
+            crate::on_real_window_close(&close_app, &close_wid);
         }
-        // The window is gone now (CloseRequested still counts it as open), so this is the moment
-        // the Window submenu's tick / "(closed)" label can be recomputed correctly. Skipped during
-        // ⌘Q, where every window is being destroyed and the menu dies with the app.
-        WindowEvent::Destroyed if !crate::is_quitting() => {
-            crate::refresh_window_menu(&close_app);
-        }
-        _ => {}
     });
 
-    Ok(window)
+    Ok(webview_window)
 }
 
 /// Create a content webview for `view` in the given window, through shell-core's shared builder.

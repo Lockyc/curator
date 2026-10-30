@@ -63,11 +63,12 @@ aligned by construction. Accent-colour validation delegates to `config_core::Col
 (shared with warden and lector). `tab_digit_keys` is menu-only — it never reaches the DTO/chrome —
 so `refresh_window_menu` reads it straight from `AppState` when it rebuilds the app menu.
 
-Validation (`parse_and_validate`, last-good-on-failure) **errors** on: empty window title, dup
-window title, zero window dimension, invalid colour, empty group name, dup group name within a
-window, empty tab title/url, unparseable url,
-zero `reload_every`, and any **unrecognized key** on `Config`/`WindowConfig`/`Group`/`Tab` (all
-`#[serde(deny_unknown_fields)]`) — so a removed/renamed key such as the old `always_load` (now
+`WindowConfig` is config-core's `Window<Tab, CuratorWindow>`: the shared keys (`title`, `width`,
+`height`, `colour`, `open_on_start`, `group`) plus curator's `CuratorWindow` extras (`session`,
+`open_on_launch`, loose `tab`). Validation (`parse_and_validate`, last-good-on-failure) **errors** on
+config-core's `validate_windows` (window title/size/colour, group names → `ConfigError::Window`),
+empty tab title/url, unparseable url, zero `reload_every`, and any **unrecognized key** on
+`Config`/`CuratorWindow`/`Group`/`Tab` — so a removed/renamed key such as the old `always_load` (now
 `load_on_open`) or a plain typo fails loudly rather than being silently ignored. It also returns a
 **warnings** channel (`Vec<Warning>`, non-fatal) — first
 producer: a URL repeated within a window (the URL-hash labels still disambiguate, so it loads but
@@ -82,17 +83,8 @@ plain `bool`** (per-window): unset/`false` makes the first `load_on_open` tab ac
 
 **Per-window `open_on_start` (bool, default true) is the launch materialization gate — not to be
 confused with `open_on_launch`.** `open_on_start` decides *whether the window opens at all* at
-launch; `open_on_launch` only decides *which tab* is active once a window is open. A window with
-`open_on_start = false` is configured-but-dormant: at setup it gets a registered `WindowRuntime`
-(via `dormant_runtime`) but **no window is built**, so it's listed in the Window menu / home surface
-and opened on demand (`open_or_focus_window` builds it fresh from the retained cfg). It is a
-**launch-only gate**: only the setup loop consults it — hot-reload reconcile deliberately ignores it
-(flipping it on a running window has no live effect; it applies at the next launch), matching
-warden's `open_on_start`, from which curator ports this. Because a window can now be
-configured-but-not-open at launch, `reconcile_home`'s "windows exist?" test gates on a window being
-live-**open** (`entries.iter().any(|e| e.open)`), not on the registry being non-empty — so an
-all-dormant config surfaces the home surface (listing the windows to open) instead of stranding the
-app invisible.
+launch; `open_on_launch` only decides *which tab* is active once a window is open. The gate and the
+listing of closed windows belong to shell-core's `WindowSet` (see *Multi-window*).
 **Footgun: don't reintroduce title-as-address** — an `open_on_launch = "<title>"` arm (or any
 title-keyed lookup) silently re-imposes title uniqueness and gives first-match on a duplicate;
 curator, warden, and lector all share this "title is display-only" rule, so a change here is a
@@ -120,27 +112,33 @@ chrome-core / config-core / shell-core `[patch]` overrides live in the **workspa
 
 ## Architecture
 
-**Multi-window.** curator opens one `NSWindow` per `[[window]]` block in `config.toml`.
-Each window has a `window_id` (derived from `title` via `curator_config::identity::window_id`).
-**The chrome sidebar is the window's main webview, so the `window_id` is at once the Tauri window
-label and the chrome webview's label** (see *Hole-punch layout*) — the definitional fact the rest of
-this doc leans on. It also namespaces the content webviews' labels (`{window_id}:{tab_hash}`) so
-they're collision-free across windows and distinct from the chrome's bare `window_id` label (the
-basis of the `require_chrome` gate). The window id is purely a run-ephemeral label key — nothing
-persistent tied to it — so renaming a window's `title` just changes the label (harmless, and it
-never logs you out since sessions key off `session`, not the window — see *Sessions*).
+**Multi-window.** curator declares one window per `[[window]]` block (`windows::decls`) to
+shell-core's managed `WindowSet`, which owns the lifecycle: labels (the sanitized title), opening
+the `open_on_start` ones, listing closed ones in the Window menu / home surface, reopen, in-place
+rename, delete, the home surface, and the quitting flag. curator's `windows::CuratorHost` builds a
+window's content (`open_window`, from `AppState.last_cfg`), drops its `WindowRuntime` when it goes
+(`window_closed`) and repaints a retitled banner (`window_retitled`); a runtime exists only while its
+window is open. `reload_windows` = `WindowSet::apply` + `reconcile_window_tabs` for kept open windows.
+**The chrome sidebar is the window's main webview, so the window label (`wid`) is at once the Tauri
+window label and the chrome webview's label** (see *Hole-punch layout*) — the definitional fact the
+rest of this doc leans on. It also namespaces the content webviews' labels (`{wid}:{tab_hash}`) so
+they're collision-free across windows and distinct from the chrome's bare label (the basis of the
+`require_chrome` gate). A rename keeps the live label, so tabs stay loaded. **New Window…** (Window
+menu) and **Edit Window…** / **Delete Window…** (the banner's context menu, `window_menu`) open
+shell-core's form and write the config through config-core's `edit` (`windows.rs`); Edit writes
+first, then `WindowSet::rename`, so the reload echo keeps the window.
 
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
 resolved `session` string via the full cascade
 `tab.session → window.session → top-level Config.session → DEFAULT_SESSION`
-(`curator-config`'s `tab_views(global_session)` builds `TabView::session`; `shell_core::web::session::data_store_id`
+(`curator-config`'s `tab_views(wid, global_session)` builds `TabView::session`; `shell_core::web::session::data_store_id`
 hashes it). An explicit `session = ""` at any level is treated as unset and falls through to the
 next. Tabs sharing a session string share a login (even across windows); distinct strings are
 isolated accounts. With no `session` set anywhere, all tabs share one app-wide store, so SSO
 across related services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not
 the window or URL — renaming a window or editing a tab's URL never logs you out. (The top-level
-`Config.session` is captured per window in `WindowRuntime.global_session` so commands and
-menu-reopen re-resolve the chain without the whole `Config`.)
+`Config.session` is captured per window in `WindowRuntime.global_session` so commands re-resolve
+the chain without the whole `Config`.)
 
 **The webview layer lives in `shell_core::web`** (`content`, `escape`, `session`, `insecure`): the
 shared content-webview builder, link routing, the key-gated escape sentinel, the Safari-derived UA,
@@ -276,16 +274,13 @@ that selecting the tab can't clear — title-derived state is retracted only by 
 **Dock badge** aggregates the unread count across every window's loaded tabs. It sums numeric
 counts only, so an activity dot shows in the sidebar and contributes nothing to the dock.
 
-**Window menu** — the shared spine's **Window** submenu (`shell_core::menu::build_spine`) lets the
-user close the focused window (**⌘⇧W**) and reopen any closed window from the list (checked when
-open, `"{title}  (closed)"` when not — warden's shape, adopted here). Configured windows open at
-launch **unless `open_on_start = false`** (dormant, see the schema section); a closed *or* dormant
-window can be opened from the Window menu (or the home surface) while the app is still running.
-Both ⌘⇧W and the native red button flow through `on_real_window_close`, which wipes the closed
-window's unread/timers while keeping its `WindowRuntime` registered so its cfg survives for reopen
-— and **quits curator when the last window closes** (last-window-quit, matching warden), rather
-than lingering as a menu-bar-only app. Config-reload window removal uses `destroy()` (not the
-user-close path), so a reload that drops a window doesn't trip last-window-quit mid-reconcile.
+**Window menu** — the shared spine's **Window** submenu (`shell_core::menu::build_spine`) carries
+**New Window…** (⌥⌘N), closes the focused window (**⌘⇧W**) and reopens any closed window from the
+`WindowSet`'s list (checked when open, `"{title}  (closed)"` when not). Every close flows through
+`on_real_window_close`, which ends the window's pages and **quits curator when the user closes the
+last window** (last-window-quit, matching warden). A close the `WindowSet` makes (Delete Window, a
+reload removing the window) has already dropped it from the set's open windows, so it never quits:
+the home surface takes over.
 
 **⌘W is Close Tab, not Close Window** — the family standard, shared with warden and lector. It
 unloads the active tab to cold (kill the webview → it respawns on next select) via the spine's
@@ -323,9 +318,8 @@ window first if the user closed it while the tab was out.
   `orphans()` all skip it — it's never recreated on the origin, never promoted active, while
   it's out. The row stays in the sidebar as a placeholder (`TabItem.detached` in the DTO) until it
   redocks.
-- **`reconcile_home` counts detached windows** (`lib.rs`: `has_windows` is true when a window is
-  live-open or a detached window exists) — a popped-out tab is a real surface on screen, so the
-  shared home surface must stay closed while one is open even if every configured window is closed.
+- **The `WindowSet` counts detached windows** (`sync_detached` after every pop-out and redock) — a
+  popped-out tab is a real surface on screen, so the home surface stays closed while one is open.
 - **`chrome.js`'s DTO mapping forwards `detached`**, and a detached row's click routes to
   `raise_popped_window` (bring its window forward) instead of `select_tab` — there is no local
   webview to select.
@@ -334,7 +328,7 @@ window first if the user closed it while the tab was out.
   released before the origin webview close, `shell_core::detach::open_detached`, and the
   return-wiring (same discipline as the rest of `commands.rs`'s *AppState.windows footgun* above).
 - **`⌘Q` teardown:** `RunEvent::ExitRequested` fires before every window's `Destroyed`, so `redock`
-  checks `crate::is_quitting()` (set once from that event) first and no-ops — otherwise a detached
+  checks `WindowSet::is_quitting()` (set once from that event) first and no-ops — otherwise a detached
   window closing mid-quit would reopen its already-closing origin.
 
 **App menu.** `lib.rs` fully replaces Tauri's default menu, so standard macOS menus must be
@@ -406,7 +400,7 @@ flips for its bottom-left native `NSView`). **chrome-core is the *only* sidebar-
 clamp to keep identical**. The window-shrink re-clamp lives in `chrome.js`'s
 `resize` handler (a shrink can push the sidebar past the 40% cap without a drag), which then
 re-reports the hole; there is **no Rust-side resize relayout** (`build_window` wires the
-user-close and `Destroyed` handlers only — JS drives resize, matching warden, which also drops
+close handler only — JS drives resize, matching warden, which also drops
 restore-on-window-grow).
 chrome-core owns the drag handle + `localStorage` persistence
 (`storageKey: "curator:sidebar-width:<title>"`). The active-tab highlight tints with the window's
@@ -425,7 +419,7 @@ zooms into a fullscreen space, which the fullscreen guard above already excludes
 The plugin's own `on_window_ready` hook restores geometry on the main event loop.
 **`build_window` must not restore geometry itself** — off the event loop the restore marshal
 deadlocks (FOOTGUN comment in `webviews.rs`'s `build_window`, pointer in `lib.rs`'s `run`). Geometry is
-keyed by Tauri label (== `window_id`, derived from the title, stable across launches) *within a
+keyed by Tauri label (the `WindowSet` label, from the title) *within a
 per-config store file* (shell-core's `geometry_filename` hashes the resolved config path — curator
 just hands it the path) so two configs that reuse a window title don't share bounds. The config
 `width`/`height` is only the first-run default — saved bounds override it once present. Only the
@@ -433,9 +427,9 @@ transient home surface (`shell_core::home::HOME_LABEL`) is excluded, structurall
 `is_excluded`, not a caller-supplied skip list). **A popped-out tab's window is persisted like any
 other**, keyed by its `shell-detach:` label — which `detach_window_token` makes the tab's own
 webview label — so a re-popped tab reopens at the size and position it was last left at rather than
-`DETACHED_DEFAULT_*`. Renaming a window's
-`title` changes its id/label, so it normally restores fresh default bounds. Sidebar width is separate
-(per-title `localStorage`, above).
+`DETACHED_DEFAULT_*`. Edit Window's rename carries the bounds to the new title's label
+(`WindowSet::rename`); a rename by hand-editing the config restores fresh default bounds. Sidebar
+width is separate (per-title `localStorage`, above).
 
 **Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
 Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across
@@ -653,11 +647,10 @@ that is the same for curator, warden, lector, and any future sibling app.
   the script's header carries the full footgun.
 - **The build stamp comes from shell-core.** `build.rs` calls `shell_core::build_stamp()`, emitting
   the shared, un-prefixed `BUILD_GIT_SHA`/`BUILD_DATE` (the About box reads them via `env!`).
-- **The menu spine and the home surface come from shell-core** (`menu::build_spine` /
-  `home::{home_state, show_home, close_home}`, both behind the `runtime` feature). `build_app_menu`
-  calls `build_spine` for the App/Config/Window submenus and interleaves curator's own Edit and Tabs
-  (see *App menu* / *Window menu* above). `reconcile_home` (`lib.rs`) calls `home_state` after every
-  load/reload and shows/closes the surface accordingly. **The shared home surface is curator's only
+- **The menu spine and the home surface come from shell-core** (`menu::build_spine`, and the home
+  surface driven by the `WindowSet`). `build_app_menu` calls `build_spine` for the App/Config/Window
+  submenus and interleaves curator's own Edit and Tabs (see *App menu* / *Window menu* above).
+  **The shared home surface is curator's only
   no-config/load-error surface — don't build a per-app error window alongside it.** It already covers
   both of those states plus a window-list state a per-app window can't express, and a second surface
   would drift from the shared one. The surface's "Create a starter config" button is curator's own
