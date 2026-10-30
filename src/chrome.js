@@ -264,17 +264,19 @@ listen("service-badge", (e) => {
 // warden's rule: cycling is for moving between the tabs you already have open, so it must never
 // be the thing that loads a cold one. Without the filter, holding ⌘1 through a mostly-cold window
 // spawns a webview per step and pulls in every service you weren't using. A cold tab is still one
-// click (or one ⌘1–9 jump) away — those are explicit, cycling isn't.
-listen("nav-tab", (e) => sb.selectByOffset(e.payload, { liveOnly: true }));
+// click (or one ⌘1–9 jump) away — those are explicit, cycling isn't. From a popped-out window,
+// `from` is that tab, which never holds the highlight.
+listen("nav-tab", (e) =>
+  sb.selectByOffset(e.payload.dir, { liveOnly: true, from: e.payload.from ?? undefined }));
 listen("jump-tab", (e) => sb.selectByIndex(e.payload));
 // The menu spine's ⌘W (Tab ▸ Close Tab): unloads whichever tab is active in THIS window. lib.rs
-// routes it via emit_to_focused_chrome; the webview-scoped `listen` above is what makes that
+// routes it via on_spine_action; the webview-scoped `listen` above is what makes that
 // targeting actually bind (see the footgun).
 listen("close-tab", () => {
   if (activeLabel) unloadTab(activeLabel);
 });
 // The menu spine's ⌘⇧O (Tab ▸ Pop Out Tab): pop THIS window's active tab out into its own window.
-// lib.rs routes it via emit_to_focused_chrome; scoped by the webview-bound `listen` above.
+// lib.rs routes it via on_spine_action; scoped by the webview-bound `listen` above.
 listen("pop-out-tab", () => {
   if (activeLabel) popOutTab(activeLabel);
 });
