@@ -260,9 +260,10 @@ pub fn on_title_changed(webview: &tauri::Webview, title: &str) {
 
 /// Badging-API sentinel handler: mark the service authoritative for its window and apply.
 pub fn on_badge_signal(app: &tauri::AppHandle, label: &str, signal: BadgeSignal) {
-    // The label is window-namespaced (`<wid>:tab-…`); recover the window id from its prefix.
+    // The label is window-namespaced (`<wid>:tab-…`); recover the window id from its prefix. The
+    // window label may itself hold `:` (a title's `:` survives label sanitizing); `tab-…` never does.
     let window_id = label
-        .split_once(':')
+        .rsplit_once(':')
         .map(|(w, _)| w.to_string())
         .unwrap_or_default();
     if let Some(state) = app.try_state::<AppState>() {

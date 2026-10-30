@@ -38,7 +38,9 @@ file-driven, everything else is ephemeral.
   configured but opened on demand from the **Window** menu. ⌘⇧W (or the red button) closes a
   window and the **Window** menu reopens it — ⌘W instead unloads the active tab. Closing the
   last open window quits curator. When no window opens at launch (every window dormant), a home
-  surface lists them all to open.
+  surface lists them all to open. **Window ▸ New Window…** (⌥⌘N) adds a `[[window]]`, and
+  right-clicking a window's banner offers **Edit Window…** (title, colour) and **Delete Window…**,
+  each written back to `config.toml`.
 - **Keeper tabs are home bases** — wander within a session, then snap any tab back to its
   canonical URL with the sidebar's ⌂ home button (or by re-clicking the active tab); every
   tab also resets on restart.

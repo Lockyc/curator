@@ -178,6 +178,10 @@ async function mountChrome() {
       onPopIn(tabId) {
         invoke("pop_in_tab", { label: tabId }).catch(() => {});
       },
+      // Right-click on the banner: Rust pops the native Edit Window… / Delete Window… menu.
+      onBannerMenu({ x, y }) {
+        invoke("window_menu", { x, y }).catch((err) => sb.setError(String(err)));
+      },
       onResize(width) {
         // The chrome is the window's full-size main webview: the sidebar's visible width is CSS
         // (set here); the flex #content-hole follows, and reportRect tells Rust where to put the

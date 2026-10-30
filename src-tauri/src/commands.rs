@@ -145,8 +145,7 @@ pub fn get_tabs(webview: Webview, state: State<AppState>) -> Vec<TabItem> {
         return Vec::new();
     };
     let active = rt.tabs.active().map(str::to_string);
-    rt.cfg
-        .tab_views(rt.global_session.as_deref())
+    rt.views()
         .into_iter()
         .map(|view| {
             let loaded = rt.tabs.is_created(&view.label);
@@ -168,7 +167,7 @@ pub fn select_tab(label: String, webview: Webview, state: State<AppState>) -> Re
     let (window, wid) = calling_window(&webview)?;
     let mut windows = state.windows.lock().unwrap();
     let rt = windows.get_mut(&wid).ok_or("no such window")?;
-    let views = rt.cfg.tab_views(rt.global_session.as_deref());
+    let views = rt.views();
     let target = views
         .iter()
         .find(|v| v.label == label)
@@ -256,7 +255,7 @@ fn reset_window_tabs(app: &AppHandle, wid: &str) -> Result<(), String> {
     let window = app.get_window(wid).ok_or("no such window")?;
     let windows = state.windows.lock().unwrap();
     let rt = windows.get(wid).ok_or("no such window")?;
-    for v in &rt.cfg.tab_views(rt.global_session.as_deref()) {
+    for v in &rt.views() {
         if rt.tabs.is_created(&v.label) {
             webviews::reload_canonical(&window, &v.label, &v.url).map_err(|e| e.to_string())?;
         }
@@ -285,8 +284,7 @@ pub fn home_tab(label: String, webview: Webview, state: State<AppState>) -> Resu
     let url = {
         let windows = state.windows.lock().unwrap();
         let rt = windows.get(&wid).ok_or("no such window")?;
-        rt.cfg
-            .tab_views(rt.global_session.as_deref())
+        rt.views()
             .into_iter()
             .find(|v| v.label == label)
             .ok_or("unknown tab")?
@@ -346,7 +344,7 @@ fn promote_after_removal(
     if !was_active {
         return None;
     }
-    let views = rt.cfg.tab_views(rt.global_session.as_deref());
+    let views = rt.views();
     let created: Vec<bool> = views.iter().map(|v| rt.tabs.is_created(&v.label)).collect();
     let new_active = fallback_active(&views, label, &created);
     if let Some(a) = &new_active {
@@ -429,7 +427,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         if rt.tabs.is_detached(&label) {
             return Err(format!("{label} is already popped out"));
         }
-        let views = rt.cfg.tab_views(rt.global_session.as_deref());
+        let views = rt.views();
         let view = views
             .iter()
             .find(|v| v.label == label)
@@ -499,7 +497,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
                     rt.tabs.clear_detached(&label);
                     rt.tabs.mark_created(&label);
                     rt.tabs.set_active(&label);
-                    rt.cfg.tab_views(rt.global_session.as_deref())
+                    rt.views()
                 })
             };
             let _ = webviews::create_content_webview(
@@ -535,6 +533,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
             shell_core::web::content::wire_close_pages(&win);
         }
     }
+    crate::sync_detached(&app);
     Ok(())
 }
 
@@ -647,10 +646,9 @@ pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
 /// rule as its other re-exported house helpers) — shell-core owns the surface but never touches
 /// config-core (the cores stay independent).
 ///
-/// Routes through the exact same [`crate::reload_windows`] the config-file watcher uses (not a
-/// bespoke "build windows from scratch" path): `reload_windows` diffs against `AppState.last_cfg`,
-/// which is still `Config::default()` here (this button only shows when no config existed at all),
-/// so the diff naturally treats every window the fresh config defines as newly added.
+/// Routes through the exact same [`crate::reload_windows`] the config-file watcher uses: the
+/// window set is empty here (this button only shows when no config existed at all), so it opens
+/// every window the fresh config defines.
 #[tauri::command]
 pub fn shell_home_create_config(app: AppHandle) -> Result<(), String> {
     let path = curator_config::resolve_config_path();
@@ -686,6 +684,19 @@ pub fn shell_home_edit_config() {
 #[tauri::command]
 pub fn shell_home_open_window(id: String, app: AppHandle) {
     crate::open_or_focus_window(&app, &id);
+}
+
+/// The banner's context menu (chrome-core's `onBannerMenu`) at the chrome's `(x, y)`: Edit
+/// Window… and Delete Window… for the calling window. Its items arrive as menu events.
+#[tauri::command]
+pub fn window_menu(x: f64, y: f64, webview: Webview) -> Result<(), String> {
+    require_chrome(&webview)?;
+    let window = webview.window();
+    let menu = crate::windows::banner_menu(webview.app_handle(), window.label())
+        .map_err(|e| e.to_string())?;
+    window
+        .popup_menu_at(&menu, tauri::LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
