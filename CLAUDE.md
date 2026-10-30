@@ -336,7 +336,7 @@ curator supplies its name, its window list, and one Tab-menu group — Reload Ta
 Open Developer Tools. The **Edit** submenu is load-bearing: its predefined items own the clipboard
 accelerators (⌘C/⌘V/⌘X/⌘A/⌘Z), so dropping it silently breaks paste in content webviews.
 
-**Tab ▸ Cycle Tabs with ⌘1/⌘2** writes the flipped `tab_digit_keys` (`commands::write_tab_digit_keys`,
+**Tab ▸ Cycle Tabs with ⌘1/⌘2** flips `tab_digit_keys` in the file (`commands::toggle_tab_digit_keys`,
 seeding the starter config first). Every other spine command goes through
 `shell_core::menu::route`, which picks the window it acts on (a popped-out window's origin, for the
 sidebar commands) and collapses the cycle aliases onto plain Next/Prev; `on_spine_action` emits
