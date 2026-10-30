@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "config-core"
 version = "0.1.0"
-source = "git+https://github.com/Lockyc/config-core?rev=544c83fcb92c303fcbe1933be284b2cb2822b11a#544c83fcb92c303fcbe1933be284b2cb2822b11a"
+source = "git+https://github.com/Lockyc/config-core?rev=811168cf870a843f5c9067403158032ab18af520#811168cf870a843f5c9067403158032ab18af520"
 dependencies = [
  "dirs 6.0.0",
  "serde",
@@ -3279,7 +3279,7 @@ dependencies = [
 [[package]]
 name = "shell-core"
 version = "0.3.0"
-source = "git+https://github.com/Lockyc/shell-core?rev=4a942dd70b3287ed5d96c9b838dc9a878d93cc67#4a942dd70b3287ed5d96c9b838dc9a878d93cc67"
+source = "git+https://github.com/Lockyc/shell-core?rev=5e6e8c9041f74c1b059f687aa47b8eb6726292e0#5e6e8c9041f74c1b059f687aa47b8eb6726292e0"
 dependencies = [
  "block2",
  "getrandom 0.2.17",
