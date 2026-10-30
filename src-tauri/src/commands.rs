@@ -486,17 +486,11 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         // tab's remembered size during `build()`, so those are stale for any tab popped out
         // before, and a birth hole cut from them would sit visibly wrong until `detach.html`'s
         // `set_hole_rect` lands.
-        let birth_hole = webviews::HoleRect {
-            x: 0.0,
-            y: crate::DETACH_BANNER_H,
-            width: size.width,
-            height: (size.height - crate::DETACH_BANNER_H).max(0.0),
-        };
         let w = win.as_ref().window();
         webviews::create_content_webview(
             &w,
             &view_for_birth,
-            birth_hole,
+            shell_core::detach::birth_hole(size),
             colour_for_birth.as_deref(),
         )
     });
