@@ -314,9 +314,17 @@ pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
 }
 
 /// [`WindowHost::retitled`](shell_core::windows::WindowHost::retitled): `label`'s title or colour
-/// changed in place; repaint its banner.
+/// changed in place; carry it into `last_cfg` (so [`open_window`] finds a renamed window before the
+/// reload echo) and repaint its banner.
 pub(crate) fn window_retitled(app: &tauri::AppHandle, label: &str, decl: &WindowDecl) {
     let state = app.state::<AppState>();
+    let set = app.state::<WindowSet>();
+    curator_config::retitle_window(
+        &mut state.last_cfg.lock().unwrap().windows,
+        &decl.title,
+        decl.colour.clone(),
+        |t| set.label_for_title(t).is_some(),
+    );
     if let Some(rt) = state.windows.lock().unwrap().get_mut(label) {
         rt.cfg.title = decl.title.clone();
         rt.cfg.colour = decl.colour.clone();
@@ -1049,6 +1057,24 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rename_patches_last_cfg_title() {
+        // What `window_retitled` does to `last_cfg` after the set renamed "Work" to "Job": the
+        // window `open_window` looks up by its new title is found before the reload echo.
+        let src = "[[window]]\ntitle = \"Work\"\n[[window.tab]]\ntitle = \"A\"\nurl = \"https://a.test/\"\n[[window]]\ntitle = \"Side\"\n";
+        let mut cfg = curator_config::parse_and_validate(src).unwrap().0;
+        curator_config::retitle_window(&mut cfg.windows, "Job", Some("#f00".into()), |t| {
+            ["Job", "Side"].contains(&t.trim())
+        });
+        let w = cfg
+            .windows
+            .iter()
+            .find(|w| w.title.trim() == "Job")
+            .unwrap();
+        assert_eq!(w.colour.as_deref(), Some("#f00"));
+        assert!(cfg.windows.iter().all(|w| w.title != "Work"));
+    }
 
     #[test]
     fn detach_token_round_trips_through_the_detached_label() {

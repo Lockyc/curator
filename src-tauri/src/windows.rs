@@ -3,7 +3,6 @@
 //! [`WindowDecl`] mapping.
 
 use curator_config::edit::{self, At};
-use curator_config::toml_edit::Value;
 use shell_core::windows::plan::{Slot, WindowDecl};
 use shell_core::windows::{WindowHost, WindowWrite};
 use tauri::{AppHandle, WebviewWindow};
@@ -42,7 +41,29 @@ impl WindowHost for CuratorHost {
     }
 
     fn write(&self, _app: &AppHandle, write: &WindowWrite) -> Result<(), String> {
-        write_window(&curator_config::resolve_config_path(), write).map_err(|e| e.to_string())
+        let path = curator_config::resolve_config_path();
+        match write {
+            WindowWrite::Add { title, colour } => edit::add_window(&path, title, colour.as_deref()),
+            WindowWrite::Set {
+                title,
+                new_title,
+                colour,
+            } => edit::edit_window(
+                &path,
+                title,
+                new_title.as_deref(),
+                colour.as_ref().map(Option::as_deref),
+            ),
+            WindowWrite::Remove { title } => edit::remove(
+                &path,
+                At {
+                    window: title,
+                    group: None,
+                    tab: None,
+                },
+            ),
+        }
+        .map_err(|e| e.to_string())
     }
 
     fn edit_failed(&self, app: &AppHandle, message: &str) {
@@ -52,38 +73,6 @@ impl WindowHost for CuratorHost {
 
     fn changed(&self, app: &AppHandle) {
         crate::refresh_window_menu(app);
-    }
-}
-
-/// Apply `write` to the config at `path` through config-core's edits.
-fn write_window(path: &std::path::Path, write: &WindowWrite) -> Result<(), edit::EditError> {
-    let at = |window| At {
-        window,
-        group: None,
-        tab: None,
-    };
-    match write {
-        WindowWrite::Add { title, colour } => {
-            let mut fields = vec![("title", Value::from(title.as_str()))];
-            fields.extend(colour.as_deref().map(|c| ("colour", Value::from(c))));
-            edit::add_window(path, &fields)
-        }
-        WindowWrite::Set {
-            title,
-            new_title,
-            colour,
-        } => {
-            if let Some(colour) = colour {
-                let value = colour.as_deref().map(Value::from);
-                edit::set_field(path, at(title), "colour", value)?;
-            }
-            if let Some(new_title) = new_title {
-                let value = Some(Value::from(new_title.as_str()));
-                edit::set_field(path, at(title), "title", value)?;
-            }
-            Ok(())
-        }
-        WindowWrite::Remove { title } => edit::remove(path, at(title)),
     }
 }
 
@@ -117,41 +106,5 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn window_writes_land_in_the_config() {
-        let dir = std::env::temp_dir().join(format!("curator-winwrite-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("config.toml");
-        std::fs::write(&path, "[[window]]\ntitle = \"Work\"\ncolour = \"#abc\"\n").unwrap();
-        let read = || cfg(&std::fs::read_to_string(&path).unwrap());
-
-        let add = WindowWrite::Add {
-            title: "Side".into(),
-            colour: Some("#f00".into()),
-        };
-        write_window(&path, &add).unwrap();
-        assert_eq!(read().windows[1].colour.as_deref(), Some("#f00"));
-
-        let set = WindowWrite::Set {
-            title: "Work".into(),
-            new_title: Some("Job".into()),
-            colour: Some(None),
-        };
-        write_window(&path, &set).unwrap();
-        let c = read();
-        assert_eq!(
-            (c.windows[0].title.as_str(), c.windows[0].colour.as_deref()),
-            ("Job", None)
-        );
-
-        let remove = WindowWrite::Remove {
-            title: "Side".into(),
-        };
-        write_window(&path, &remove).unwrap();
-        assert_eq!(read().windows.len(), 1);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
