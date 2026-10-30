@@ -3,8 +3,8 @@
 //! The house-style TOML formatter + colour parsing are shared with warden via the config-core crate,
 //! re-exported here so the app (`src-tauri`) uses `curator_config::{Colour, format_file, format_str}`.
 pub use config_core::{
-    fmt_cli, format_file, format_str, write_default_config, Colour, ColourError, Density, Group,
-    SeedError, TabDigitKeys, Warning,
+    fmt_cli, format_file, format_str, set_key, write_default_config, Colour, ColourError, Density,
+    Group, SeedError, TabDigitKeys, Warning,
 };
 
 // Pure label-identity helpers (FNV-1a hash + window-label namespacing), used when resolving each

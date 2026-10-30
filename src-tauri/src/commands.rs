@@ -651,6 +651,17 @@ pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
 /// bespoke "build windows from scratch" path): `reload_windows` diffs against `AppState.last_cfg`,
 /// which is still `Config::default()` here (this button only shows when no config existed at all),
 /// so the diff naturally treats every window the fresh config defines as newly added.
+/// Saves `tab_digit_keys` (the Tab menu's Cycle Tabs toggle), seeding the starter config first
+/// when there is no file. The watcher's reload then applies it.
+pub fn write_tab_digit_keys(
+    path: &std::path::Path,
+    mode: curator_config::TabDigitKeys,
+) -> Result<(), String> {
+    curator_config::write_default_config(path, DEFAULT_CONFIG).map_err(|e| e.to_string())?;
+    curator_config::set_key(path, "tab_digit_keys", mode.as_str().into())
+        .map_err(|e| format!("config: {e}"))
+}
+
 #[tauri::command]
 pub fn shell_home_create_config(app: AppHandle) -> Result<(), String> {
     let path = curator_config::resolve_config_path();
@@ -690,8 +701,28 @@ pub fn shell_home_open_window(id: String, app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{label_is_chrome, TabItem};
-    use curator_config::TabView;
+    use super::{label_is_chrome, write_tab_digit_keys, TabItem, DEFAULT_CONFIG};
+    use curator_config::{TabDigitKeys, TabView};
+
+    #[test]
+    fn writing_the_digit_mode_seeds_a_missing_config_first() {
+        let dir = std::env::temp_dir().join(format!("curator-digit-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        let _ = std::fs::remove_dir_all(&dir);
+        write_tab_digit_keys(&path, TabDigitKeys::Cycle).unwrap();
+        let src = std::fs::read_to_string(&path).unwrap();
+        // The starter's documentation survives; only the value changed.
+        assert!(
+            src.starts_with(DEFAULT_CONFIG.lines().next().unwrap()),
+            "{src}"
+        );
+        let (cfg, _) = curator_config::parse_and_validate(&src).unwrap();
+        assert_eq!(cfg.tab_digit_keys, TabDigitKeys::Cycle);
+        write_tab_digit_keys(&path, TabDigitKeys::Jump).unwrap();
+        let (cfg, _) = curator_config::load_config(&path).unwrap();
+        assert_eq!(cfg.tab_digit_keys, TabDigitKeys::Jump);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn tab_item_serializes_the_detached_flag() {
