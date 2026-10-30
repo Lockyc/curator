@@ -233,12 +233,9 @@ pub fn set_hole_rect(
     };
     // A detached (popped-out) window reports its own hole via this same command (shell-core's
     // `detach.html`, whose primary webview label == the detached window label, so `require_chrome`
-    // passes). It's NOT in `AppState.windows` — its bookkeeping lives in `AppState.detached`, so
-    // the hole is stored there — then its recreated content webview is positioned under the banner.
+    // passes). It's NOT in `AppState.windows`, so its recreated content webview is just positioned
+    // under the banner.
     if shell_core::detach::is_detached_label(&wid) {
-        if let Some(det) = state.detached.lock().unwrap().get_mut(&wid) {
-            det.hole = Some(hole);
-        }
         webviews::layout_webviews(&window, hole);
         return Ok(());
     }
@@ -531,7 +528,6 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         crate::CuratorDetached {
             origin_wid: origin_wid.clone(),
             tab_label: label.clone(),
-            hole: None,
         },
     );
     {
@@ -637,8 +633,8 @@ pub fn reload_active_tab(app: &AppHandle) {
 /// `devtools` Cargo feature, so the inspector is available in deployed builds too.
 ///
 /// The inspector opens attached, which would reframe the inspected tab across the whole window and
-/// bury the sidebar under it. Nothing is corrected here on purpose: [`crate::inspector`]'s frame
-/// watcher owns that, because WebKit's context menu and dock buttons attach without reaching this
+/// bury the sidebar under it. Nothing is corrected here on purpose: shell-core's
+/// `web::inspector` frame watcher owns that, because WebKit's context menu and dock buttons attach without reaching this
 /// function — and because detaching inline, straight after `open_devtools`, is a mid-transaction
 /// detach, which hangs the app.
 pub fn open_active_devtools(app: &AppHandle) {

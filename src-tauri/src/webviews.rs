@@ -232,11 +232,6 @@ pub fn create_content_webview(
     let webview = web::content::create_content_webview(window, &spec, hooks)?;
     #[cfg(target_os = "macos")]
     {
-        // Catch an inspector attaching from WebKit's own context menu or dock buttons, which never
-        // reach curator's ⌥⌘I handler — see `inspector`.
-        let insp_app = window.app_handle().clone();
-        let _ =
-            webview.with_webview(move |pw| crate::inspector::watch_frame(pw.inner(), &insp_app));
         // Report the pointer leaving the sidebar for this webview, which the chrome can't see.
         let ptr_app = window.app_handle().clone();
         let _ = webview.with_webview(move |pw| crate::pointer::watch_pointer(pw.inner(), &ptr_app));

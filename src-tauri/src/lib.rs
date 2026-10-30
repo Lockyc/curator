@@ -1,7 +1,5 @@
 mod awareness;
 mod commands;
-#[cfg(target_os = "macos")]
-mod inspector;
 mod notification;
 #[cfg(target_os = "macos")]
 mod pointer;
@@ -72,10 +70,6 @@ impl WindowRuntime {
 pub struct CuratorDetached {
     pub origin_wid: String,
     pub tab_label: String,
-    /// The content hole `detach.html` last reported via `set_hole_rect` (`None` until its first
-    /// report), so a pass that re-lays out every window — [`inspector`]'s restore — can put this
-    /// window's webview back under its banner.
-    pub hole: Option<webviews::HoleRect>,
 }
 
 /// Set once on `RunEvent::ExitRequested` (see [`run`]), which fires before every window's
