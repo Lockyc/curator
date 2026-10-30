@@ -296,8 +296,8 @@ listen("focus-tab", (e) => {
   const label = e.payload && e.payload.label;
   if (label && label !== activeLabel) sb.select(label);
 });
-// The pointer moved onto a content webview (pointer.rs): this page never sees its own exit, since
-// the content composites above it, so chrome-core's `:hover` state would freeze without this.
+// The pointer moved onto a content webview (shell-core's web::pointer): this page never sees its
+// own exit, since the content composites above it, so chrome-core's `:hover` would freeze.
 listen("pointer-away", () => sb && sb.pointerAway());
 // Menu "Check for Updates…" → chrome-core checks now + announces (up-to-date / error / a banner).
 listen("check-update", () => sb && sb.checkForUpdateNow());

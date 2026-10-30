@@ -1,8 +1,6 @@
 mod awareness;
 mod commands;
 mod notification;
-#[cfg(target_os = "macos")]
-mod pointer;
 mod sentinels;
 mod watcher;
 mod webviews;
