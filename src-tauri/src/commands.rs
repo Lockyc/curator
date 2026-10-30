@@ -414,7 +414,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
 
     // Phase 1 — under the lock: resolve the TabView + accent + size + hole, mark the tab detached
     // (drops it from created/active), and if it was active pick the neighbour to promote.
-    let (view, colour, width, height, origin_hole, relayout) = {
+    let (view, colour, width, height, origin_hole, relayout, origin_title) = {
         let mut windows = state.windows.lock().unwrap();
         let rt = windows.get_mut(&origin_wid).ok_or("no such window")?;
         // Defensive: the chrome already suppresses the pop-out control on a row it knows is
@@ -437,7 +437,16 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         let (width, height) = (rt.cfg.width as f64, rt.cfg.height as f64);
         let origin_hole = rt.hole;
         let relayout = promote_after_removal(rt, &label, webviews::TabState::mark_detached);
-        (view, colour, width, height, origin_hole, relayout)
+        let origin_title = rt.cfg.title.trim().to_string();
+        (
+            view,
+            colour,
+            width,
+            height,
+            origin_hole,
+            relayout,
+            origin_title,
+        )
     };
 
     // Phase 2 — lock released: close the origin's content webview (its app-global label must be free
@@ -518,6 +527,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         detached_label.clone(),
         crate::CuratorDetached {
             origin_wid: origin_wid.clone(),
+            origin_title,
             tab_label: label.clone(),
         },
     );
