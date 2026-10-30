@@ -641,14 +641,12 @@ pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
     reset_window_tabs(app, &wid)
 }
 
-/// Saves `tab_digit_keys` (the Tab menu's Cycle Tabs toggle), seeding the starter config first
-/// when there is no file. The watcher's reload then applies it.
-pub fn write_tab_digit_keys(
-    path: &std::path::Path,
-    mode: curator_config::TabDigitKeys,
-) -> Result<(), String> {
+/// Flips `tab_digit_keys` in the file (the Tab menu's Cycle Tabs toggle), seeding the starter
+/// config first when there is none. The watcher's reload then applies it.
+pub fn toggle_tab_digit_keys(path: &std::path::Path) -> Result<(), String> {
     curator_config::write_default_config(path, DEFAULT_CONFIG).map_err(|e| e.to_string())?;
-    curator_config::set_key(path, "tab_digit_keys", mode.as_str().into())
+    curator_config::toggle_tab_digit_keys(path)
+        .map(|_| ())
         .map_err(|e| format!("config: {e}"))
 }
 
@@ -710,15 +708,15 @@ pub fn window_menu(x: f64, y: f64, webview: Webview) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{label_is_chrome, write_tab_digit_keys, TabItem, DEFAULT_CONFIG};
+    use super::{label_is_chrome, toggle_tab_digit_keys, TabItem, DEFAULT_CONFIG};
     use curator_config::{TabDigitKeys, TabView};
 
     #[test]
-    fn writing_the_digit_mode_seeds_a_missing_config_first() {
+    fn toggling_the_digit_mode_seeds_a_missing_config_first() {
         let dir = std::env::temp_dir().join(format!("curator-digit-{}", std::process::id()));
         let path = dir.join("config.toml");
         let _ = std::fs::remove_dir_all(&dir);
-        write_tab_digit_keys(&path, TabDigitKeys::Cycle).unwrap();
+        toggle_tab_digit_keys(&path).unwrap();
         let src = std::fs::read_to_string(&path).unwrap();
         // The starter's documentation survives; only the value changed.
         assert!(
@@ -727,7 +725,7 @@ mod tests {
         );
         let (cfg, _) = curator_config::parse_and_validate(&src).unwrap();
         assert_eq!(cfg.tab_digit_keys, TabDigitKeys::Cycle);
-        write_tab_digit_keys(&path, TabDigitKeys::Jump).unwrap();
+        toggle_tab_digit_keys(&path).unwrap();
         let (cfg, _) = curator_config::load_config(&path).unwrap();
         assert_eq!(cfg.tab_digit_keys, TabDigitKeys::Jump);
         let _ = std::fs::remove_dir_all(&dir);

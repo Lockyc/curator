@@ -3,7 +3,7 @@
 //! The house-style TOML formatter + colour parsing are shared with warden via the config-core crate,
 //! re-exported here so the app (`src-tauri`) uses `curator_config::{Colour, format_file, format_str}`.
 pub use config_core::{
-    edit, fmt_cli, format_file, format_str, retitle_window, set_key, toml_edit,
+    edit, fmt_cli, format_file, format_str, retitle_window, toggle_tab_digit_keys, toml_edit,
     write_default_config, Colour, ColourError, Density, Group, SeedError, TabDigitKeys, Warning,
     WindowError,
 };
