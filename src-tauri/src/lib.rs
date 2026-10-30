@@ -78,9 +78,89 @@ impl WindowRuntime {
 /// A curator tab is a webview that is *recreated* on redock from the origin's current config (login
 /// survives via the session-keyed data store), so, unlike warden, there is no live native surface
 /// to hold here.
+///
+/// The origin is known by its **title**, patched on an in-place rename ([`retitle_origins`]):
+/// a window renamed in place and then closed comes back under a label made from its new title, and
+/// another window may take the label it left. `origin_wid` and `tab_label` follow the window it
+/// resolves to ([`CuratorDetached::rehome`]).
 pub struct CuratorDetached {
     pub origin_wid: String,
+    pub origin_title: String,
     pub tab_label: String,
+}
+
+impl CuratorDetached {
+    /// Point the bookkeeping at the origin's label `wid`: the tab's label is namespaced under it.
+    pub(crate) fn rehome(&mut self, wid: &str) {
+        if self.origin_wid == wid {
+            return;
+        }
+        let within = self
+            .tab_label
+            .rsplit_once(':')
+            .map_or(self.tab_label.as_str(), |(_, w)| w);
+        self.tab_label = shell_core::label::child_label(wid, within);
+        self.origin_wid = wid.to_string();
+    }
+}
+
+/// Where a popped-out tab returns: the configured window titled `origin_title` — its current label
+/// and whether it is open. `None`: no window has that title, so the origin left the config.
+pub(crate) fn origin_home(
+    origin_title: &str,
+    entries: &[shell_core::menu::WindowEntry],
+) -> Option<(String, bool)> {
+    entries
+        .iter()
+        .find(|e| e.title.trim() == origin_title.trim())
+        .map(|e| (e.id.clone(), e.open))
+}
+
+/// The tabs popped out of the window `wid` titled `title`, which is being built: matched by title
+/// and rehomed onto `wid`, since a reopened origin may hold another label than the one it left.
+pub(crate) fn popped_out_of(
+    detached: &mut HashMap<String, CuratorDetached>,
+    wid: &str,
+    title: &str,
+) -> HashSet<String> {
+    detached
+        .values_mut()
+        .filter(|d| d.origin_title.trim() == title.trim())
+        .map(|d| {
+            d.rehome(wid);
+            d.tab_label.clone()
+        })
+        .collect()
+}
+
+/// Carry a window's in-place rename from `old` to `new` into the popped-out tabs' origin titles.
+pub(crate) fn retitle_origins(
+    detached: &mut HashMap<String, CuratorDetached>,
+    old: &str,
+    new: &str,
+) {
+    for d in detached
+        .values_mut()
+        .filter(|d| d.origin_title.trim() == old.trim())
+    {
+        d.origin_title = new.to_string();
+    }
+}
+
+/// Resolve the popped-out tab `detached_label`'s origin by title and rehome its bookkeeping there:
+/// the origin's label and whether it is open. `None` when the tab isn't popped out or its origin
+/// left the config.
+pub(crate) fn resolve_origin(
+    app: &tauri::AppHandle,
+    detached_label: &str,
+) -> Option<(String, bool)> {
+    let entries = app.state::<WindowSet>().entries();
+    let state = app.state::<AppState>();
+    let mut detached = state.detached.lock().unwrap();
+    let d = detached.get_mut(detached_label)?;
+    let home = origin_home(&d.origin_title, &entries)?;
+    d.rehome(&home.0);
+    Some(home)
 }
 
 /// The opaque token identifying a popped-out tab's detached window
@@ -221,14 +301,7 @@ pub(crate) fn open_window(
     let global_session = global_session.as_deref();
     // Tabs of this window currently popped out (a reopen while one is out): their webviews live on
     // the detached window, so they stay popped-out placeholders until they redock.
-    let detached_tabs: HashSet<String> = state
-        .detached
-        .lock()
-        .unwrap()
-        .values()
-        .filter(|d| d.origin_wid == wid)
-        .map(|d| d.tab_label.clone())
-        .collect();
+    let detached_tabs = popped_out_of(&mut state.detached.lock().unwrap(), wid, &slot.decl.title);
     let webview_window = webviews::build_window(
         app,
         wid,
@@ -315,10 +388,29 @@ pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
 
 /// [`WindowHost::retitled`](shell_core::windows::WindowHost::retitled): `label`'s title or colour
 /// changed in place; carry it into `last_cfg` (so [`open_window`] finds a renamed window before the
-/// reload echo) and repaint its banner.
+/// reload echo) and into the origin titles of the tabs popped out of it, and repaint its banner.
 pub(crate) fn window_retitled(app: &tauri::AppHandle, label: &str, decl: &WindowDecl) {
     let state = app.state::<AppState>();
     let set = app.state::<WindowSet>();
+    // The set's entries and `last_cfg` list the same windows in the same order; `label` is the
+    // pre-rename one, which a closed window has already lost.
+    let title = decl.title.trim();
+    let old = set
+        .entries()
+        .iter()
+        .position(|e| e.title.trim() == title)
+        .and_then(|i| {
+            state
+                .last_cfg
+                .lock()
+                .unwrap()
+                .windows
+                .get(i)
+                .map(|w| w.title.clone())
+        });
+    if let Some(old) = old {
+        retitle_origins(&mut state.detached.lock().unwrap(), old.trim(), title);
+    }
     curator_config::retitle_window(
         &mut state.last_cfg.lock().unwrap().windows,
         &decl.title,
@@ -538,7 +630,9 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
     }
     let state = app.state::<AppState>();
 
-    // Peek the origin + tab without removing (see the doc comment's ordering rationale).
+    // Find the origin by title and point the bookkeeping at its current label, then peek the
+    // origin + tab without removing (see the doc comment's ordering rationale).
+    let home = resolve_origin(app, detached_label);
     let Some((origin_wid, tab_label)) = state
         .detached
         .lock()
@@ -549,10 +643,18 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
         return; // already redocked (double-close) — nothing to do
     };
 
-    // Reopen the origin if the user closed it while the tab was popped out (case: another window or
-    // the detached window itself kept the app alive past last-window-quit).
-    if app.get_window(&origin_wid).is_none() {
-        open_or_focus_window(app, &origin_wid);
+    match home {
+        // Reopen the origin if the user closed it while the tab was popped out (case: another
+        // window or the detached window itself kept the app alive past last-window-quit).
+        Some((_, false)) => open_or_focus_window(app, &origin_wid),
+        Some(_) => {}
+        // The origin left the config: the tab has no home, and the label it left may be another
+        // window's now.
+        None => {
+            state.detached.lock().unwrap().remove(detached_label);
+            sync_detached(app);
+            return;
+        }
     }
 
     // Now take the bookkeeping and recreate the tab on the origin.
@@ -1014,11 +1116,7 @@ pub fn run() {
                 let Some(focused) = app.get_focused_window() else {
                     return;
                 };
-                let origin_of = |l: &str| {
-                    let state = app.state::<AppState>();
-                    let detached = state.detached.lock().unwrap();
-                    detached.get(l).map(|d| d.origin_wid.clone())
-                };
+                let origin_of = |l: &str| resolve_origin(app, l).map(|(wid, _)| wid);
                 if let Some(routed) = shell_core::menu::route(id, focused.label(), origin_of) {
                     on_spine_action(app, routed);
                 }
@@ -1061,6 +1159,76 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use shell_core::menu::WindowEntry;
+
+    fn entry(id: &str, title: &str, open: bool) -> WindowEntry {
+        WindowEntry {
+            id: id.into(),
+            title: title.into(),
+            open,
+            colour: None,
+        }
+    }
+
+    /// A tab popped out of the window first labelled "work", since renamed in place to "job".
+    fn out_of_renamed() -> HashMap<String, CuratorDetached> {
+        HashMap::from([(
+            "shell-detach:work:tab-1".to_string(),
+            CuratorDetached {
+                origin_wid: "work".into(),
+                origin_title: "job".into(),
+                tab_label: "work:tab-1".into(),
+            },
+        )])
+    }
+
+    #[test]
+    fn a_renamed_and_closed_origin_is_found_by_its_title() {
+        // The closed slot is relabelled from its new title: the tab returns to "job", under it.
+        let mut out = out_of_renamed();
+        let d = out.values_mut().next().unwrap();
+        assert_eq!(
+            origin_home(&d.origin_title, &[entry("job", "job", false)]),
+            Some(("job".to_string(), false))
+        );
+        d.rehome("job");
+        assert_eq!(
+            (d.origin_wid.as_str(), d.tab_label.as_str()),
+            ("job", "job:tab-1")
+        );
+        // Still open under its old label: that label.
+        assert_eq!(
+            origin_home("job", &[entry("work", "job", true)]),
+            Some(("work".to_string(), true))
+        );
+    }
+
+    #[test]
+    fn an_origin_reopened_first_keeps_its_tab_popped_out() {
+        let mut out = out_of_renamed();
+        assert_eq!(
+            popped_out_of(&mut out, "job", "job"),
+            HashSet::from(["job:tab-1".to_string()])
+        );
+        let d = out.values().next().unwrap();
+        assert_eq!(d.origin_wid, "job", "the bookkeeping follows the window");
+    }
+
+    #[test]
+    fn a_new_window_on_the_freed_label_is_not_the_origin() {
+        let mut out = out_of_renamed();
+        assert!(popped_out_of(&mut out, "work", "work").is_empty());
+        assert_eq!(out.values().next().unwrap().origin_wid, "work");
+        assert_eq!(origin_home("job", &[entry("work", "work", false)]), None);
+    }
+
+    #[test]
+    fn a_rename_carries_into_the_popped_out_origin_titles() {
+        let mut out = out_of_renamed();
+        retitle_origins(&mut out, "job", "gig");
+        retitle_origins(&mut out, "other", "x");
+        assert_eq!(out.values().next().unwrap().origin_title, "gig");
+    }
 
     #[test]
     fn rename_patches_last_cfg_title() {
