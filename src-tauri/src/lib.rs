@@ -958,9 +958,11 @@ pub fn run() {
     let config_path = curator_config::resolve_config_path();
     shell_core::register_plugins(tauri::Builder::default(), Some(&config_path), &[])
         .setup(move |app| {
-            // A clicked banner's window is already raised; its chrome selects the tab.
-            shell_core::banner::init(app.handle(), |app, window, tab| {
-                let _ = app.emit_to(window, "focus-tab", serde_json::json!({ "label": tab }));
+            // A clicked banner raises its window, whose chrome selects the tab.
+            shell_core::banner::init(app.handle(), |app, click| {
+                shell_core::banner::raise(app, &click.window);
+                let tab = serde_json::json!({ "label": click.tab });
+                let _ = app.emit_to(click.window.as_str(), "focus-tab", tab);
             });
 
             // Native mouse side-button (back/forward) navigation — the shared shell-core NSEvent monitor

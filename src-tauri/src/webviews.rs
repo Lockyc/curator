@@ -182,7 +182,13 @@ pub fn create_content_webview(
             if let Some(sig) = sentinels::badge_sentinel(url) {
                 crate::awareness::on_badge_signal(app, label, sig);
             } else if let Some(p) = sentinels::notify_sentinel(url) {
-                shell_core::banner::fire(&p.title, &p.body, &sentinel_window_id, label);
+                shell_core::banner::fire(&shell_core::banner::Banner {
+                    title: &p.title,
+                    body: &p.body,
+                    window: &sentinel_window_id,
+                    tab: label,
+                    context: None,
+                });
                 // The banner doubles as an unread source for services that report through
                 // neither the Badging API nor a title count (see awareness::displayed).
                 crate::awareness::on_notification(app, &sentinel_window_id, label);
