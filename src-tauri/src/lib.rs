@@ -522,6 +522,9 @@ fn on_spine_action(app: &tauri::AppHandle, routed: shell_core::menu::Routed) {
 /// config" command.
 pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::Config) {
     let state = app.state::<AppState>();
+    // A host taken off allow_insecure stops being trusted now, not at the next launch.
+    #[cfg(target_os = "macos")]
+    shell_core::web::insecure::set_allowlist(new_cfg.allow_insecure.clone());
     // Keep the live dark_mode current so a later Window-menu reopen themes to match.
     state.dark_mode.store(new_cfg.dark_mode, Ordering::Relaxed);
     // Keep the live density current so each kept window's chrome, re-calling window_identity on

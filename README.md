@@ -183,7 +183,7 @@ title = "Comms"
 | Key | Default | What it does |
 |---|---|---|
 | `dark_mode` | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark. |
-| `allow_insecure` | `[]` | Hosts whose self-signed/invalid TLS certs are accepted. Applied at launch (restart to change). |
+| `allow_insecure` | `[]` | Hosts whose self-signed/invalid TLS certs are accepted. Hot-reloads like the rest of the config. |
 | `session` | none | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). **Cascades.** |
 | `density` | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down for denser tab lists). Hot-reloads. |
 | `sidebar_drag` | `true` | Whether the sidebar chrome is a window-move drag handle (drag the banner/empty list area). Hot-reloads. |
