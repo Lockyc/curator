@@ -599,12 +599,11 @@ fn focused_window_id(app: &AppHandle) -> Option<String> {
 /// shell-core's shared mouse side-button navigation.
 pub(crate) fn focused_active_webview(app: &AppHandle) -> Option<Webview> {
     let wid = focused_window_id(app)?;
-    // A popped-out window isn't in `windows`; its one content webview keeps the tab's
-    // (app-global) label, so ⌘R, devtools and side-button navigation reach it too.
-    if shell_core::detach::is_detached_label(&wid) {
-        let state = app.state::<AppState>();
-        let tab_label = state.detached.lock().unwrap().get(&wid)?.tab_label.clone();
-        return app.get_webview(&tab_label);
+    // A popped-out window isn't in `windows`; its one content webview keeps the label it was
+    // born with — the window's detach token (`detach_window_token`) — not the bookkeeping's
+    // `tab_label`, which a rehome rewrites. So ⌘R, devtools and side-button navigation reach it.
+    if let Some(token) = shell_core::detach::detach_token(&wid) {
+        return app.get_webview(token);
     }
     let label = {
         let state = app.state::<AppState>();

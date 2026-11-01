@@ -180,7 +180,7 @@ pub fn create_content_webview(
         // the navigation, so an unknown host is simply ignored.
         on_app_sentinel: Some(Arc::new(move |app, label, url| {
             if let Some(sig) = sentinels::badge_sentinel(url) {
-                crate::awareness::on_badge_signal(app, label, sig);
+                crate::awareness::on_badge_signal(app, &sentinel_window_id, label, sig);
             } else if let Some(p) = sentinels::notify_sentinel(url) {
                 shell_core::banner::fire(&shell_core::banner::Banner {
                     title: &p.title,

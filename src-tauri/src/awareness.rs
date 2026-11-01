@@ -5,6 +5,7 @@ use crate::sentinels::BadgeSignal;
 use crate::AppState;
 use curator_config::UnreadMode;
 use serde::Serialize;
+use std::collections::HashMap;
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -130,17 +131,27 @@ struct BadgeEvent {
     text: String,
 }
 
-/// The window id whose runtime owns the unread state of a tab whose webview lives in the window
-/// labelled `window_label`. A popped-out tab's webview lives on a `shell-detach:` window that has no
-/// runtime of its own, so its state stays with the window it was popped out of — which is also
-/// whose sidebar row and dock contribution it drives.
-fn owning_window_id(state: &AppState, window_label: &str) -> String {
+/// The `(window id, tab label)` under which unread state is kept for webview `label`, living in the
+/// window labelled `window_label` — the one rule for which window owns a tab. A popped-out tab's
+/// webview lives on a `shell-detach:` window that has no runtime of its own, so its state stays with
+/// the window it was popped out of — which is also whose sidebar row and dock contribution it
+/// drives — under the bookkeeping's tab label, which `CuratorDetached::rehome` may have moved off
+/// the label the webview was born with.
+fn owner(state: &AppState, window_label: &str, label: &str) -> (String, String) {
+    owner_in(&state.detached.lock().unwrap(), window_label, label)
+}
+
+fn owner_in(
+    detached: &HashMap<String, crate::CuratorDetached>,
+    window_label: &str,
+    label: &str,
+) -> (String, String) {
     if shell_core::detach::is_detached_label(window_label) {
-        if let Some(d) = state.detached.lock().unwrap().get(window_label) {
-            return d.origin_wid.clone();
+        if let Some(d) = detached.get(window_label) {
+            return (d.origin_wid.clone(), d.tab_label.clone());
         }
     }
-    window_label.to_string()
+    (window_label.to_string(), label.to_string())
 }
 
 /// Update `label`'s unread state within its window, push the per-window `service-badge`, and
@@ -245,8 +256,7 @@ pub fn on_title_changed(webview: &tauri::Webview, title: &str) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
-    let label = webview.label().to_string();
-    let window_id = owning_window_id(&state, webview.window().label());
+    let (window_id, label) = owner(&state, webview.window().label(), webview.label());
     {
         let windows = state.windows.lock().unwrap();
         if let Some(rt) = windows.get(&window_id) {
@@ -259,17 +269,25 @@ pub fn on_title_changed(webview: &tauri::Webview, title: &str) {
 }
 
 /// Badging-API sentinel handler: mark the service authoritative for its window and apply.
-pub fn on_badge_signal(app: &tauri::AppHandle, label: &str, signal: BadgeSignal) {
-    let window_id = shell_core::window_of(label).unwrap_or_default().to_string();
-    if let Some(state) = app.try_state::<AppState>() {
+pub fn on_badge_signal(
+    app: &tauri::AppHandle,
+    window_label: &str,
+    label: &str,
+    signal: BadgeSignal,
+) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let (window_id, label) = owner(&state, window_label, label);
+    {
         let mut windows = state.windows.lock().unwrap();
         if let Some(rt) = windows.get_mut(&window_id) {
-            if badge_is_authoritative(rt.unread_mode(label), signal) {
-                rt.badge_authoritative.insert(label.to_string());
+            if badge_is_authoritative(rt.unread_mode(&label), signal) {
+                rt.badge_authoritative.insert(label.clone());
             }
         }
     }
-    apply_unread(app, &window_id, label.to_string(), badge_unread(signal));
+    apply_unread(app, &window_id, label, badge_unread(signal));
 }
 
 /// Notify-sentinel handler: raise a notification-derived activity dot on the tab that fired the
@@ -281,8 +299,8 @@ pub fn on_notification(app: &tauri::AppHandle, window_label: &str, label: &str) 
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
-    let window_id = owning_window_id(&state, window_label);
-    let window_id = window_id.as_str();
+    let (window_id, label) = owner(&state, window_label, label);
+    let (window_id, label) = (window_id.as_str(), label.as_str());
     let shown = {
         let mut windows = state.windows.lock().unwrap();
         let Some(rt) = windows.get_mut(window_id) else {
@@ -325,6 +343,34 @@ pub fn mark_read(app: &tauri::AppHandle, window_id: &str, label: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rehomed_pop_out_reports_under_its_origin_and_rehomed_label() {
+        // Popped out of "work", which was renamed in place to "job", closed and reopened: the
+        // bookkeeping moves to "job:…" while the webview keeps its birth label "work:…".
+        let detached_wid = shell_core::detach::detached_label("work:tab-x");
+        let mut d = crate::CuratorDetached {
+            origin_wid: "work".into(),
+            origin_title: "job".into(),
+            tab_label: "work:tab-x".into(),
+        };
+        d.rehome("job");
+        let detached = HashMap::from([(detached_wid.clone(), d)]);
+        assert_eq!(
+            owner_in(&detached, &detached_wid, "work:tab-x"),
+            ("job".to_string(), "job:tab-x".to_string())
+        );
+        assert_eq!(
+            shell_core::detach::detach_token(&detached_wid),
+            Some("work:tab-x"),
+            "the webview is still found by its birth label"
+        );
+        // A tab in a real window reports as itself.
+        assert_eq!(
+            owner_in(&detached, "work", "work:tab-y"),
+            ("work".to_string(), "work:tab-y".to_string())
+        );
+    }
 
     #[test]
     fn no_unread_for_plain_title() {
