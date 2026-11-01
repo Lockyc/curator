@@ -53,7 +53,7 @@ fn label_is_chrome(label: &str, window_label: &str) -> bool {
 /// shell-core's command-isolation security doc for the single-sourced model). The label check passes
 /// every main-webview surface (chrome, home, detach) and rejects only child content webviews — the
 /// callers origin dispatch already rejects — so it screens no local surface. Whether to keep,
-/// narrow or drop it is a maintainer call (CLAUDE.md, *Commands are chrome-gated*).
+/// narrow or drop it is a maintainer call (`docs/FOLLOWUPS.md`).
 fn require_chrome(webview: &Webview) -> Result<(), String> {
     if is_chrome_caller(webview) {
         Ok(())

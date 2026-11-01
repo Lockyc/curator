@@ -183,7 +183,7 @@ remote (`Origin::Remote`) invoke before the command body runs — verified again
 reasoning. So `require_chrome` is **redundant belt-and-braces against remote pages**, and it screens no
 local surface either: every main webview passes it (chrome, the home surface, `detach.html` —
 `set_hole_rect` relies on that), so it rejects only child content webviews, which origin dispatch
-already blocks. It is retained defense-in-depth for now; whether to narrow or drop it is a security-sensitive maintainer call (see the lift-plan). While
+already blocks. It is retained defense-in-depth for now; whether to narrow or drop it is a security-sensitive maintainer call (`docs/FOLLOWUPS.md`). While
 it exists, the guard is `label == webview.window().label()` (`label_is_chrome`; the same check
 `layout_webviews` uses to skip the chrome), and a new `#[tauri::command]` taking a `Webview` should
 keep calling it — but it is a second layer, not the sole defense the origin dispatch already provides.
@@ -201,7 +201,7 @@ notify-sentinel hook in `webviews.rs` fires one per page notification, and shell
 per finished download. A click raises the window, then curator's callback (the setup hook in
 `lib.rs`) emits `focus-tab` to that window's chrome, which reaches only that window **because
 `chrome.js` binds its listeners to that webview** — an emit-side target alone does not scope
-anything (see *Per-window events* below). This surfaces curator's *own* tab; it does **not**
+anything (see *Per-window events* above). This surfaces curator's *own* tab; it does **not**
 invoke the web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
 `src/inject/notification.js`).
 
@@ -373,8 +373,8 @@ flips for its bottom-left native `NSView`). **chrome-core is the *only* sidebar-
 160–520px, ≤40% of the window); because Rust just applies the reported hole there is **no Rust-side
 clamp to keep identical**. The window-shrink re-clamp lives in `chrome.js`'s
 `resize` handler (a shrink can push the sidebar past the 40% cap without a drag), which then
-re-reports the hole; there is **no Rust-side resize relayout** (`build_window` wires the
-close handler only — JS drives resize, matching warden, which also drops
+re-reports the hole; there is **no Rust-side resize relayout** (`build_window` wires no
+handlers — closing is the `WindowSet`'s; JS drives resize, matching warden, which also drops
 restore-on-window-grow).
 chrome-core owns the drag handle + `localStorage` persistence
 (`storageKey: "curator:sidebar-width:<title>"`). The active-tab highlight tints with the window's
@@ -610,8 +610,7 @@ that is the same for curator, warden, lector, and any future sibling app.
   `shell_core::materialize_scripts("../scripts")`, writing the shared scripts (listed in
   `.gitignore`) **git-ignored** from the pinned rev. The generic scripts read the tracked
   `scripts/tooling.env`; everything else derives. **Edit them in shell-core**, never
-  here — the local copy is overwritten on the next build. curator's `scripts/test-install-app.sh` is
-  curator-specific and stays tracked.
+  here — the local copy is overwritten on the next build.
 - **`just install` launches via `scripts/launch-app.sh`, never a bare `open`.** `open` forwards the
   *caller's* whole environment to the launched app (process parentage is clean — launchd — the
   environment is not), so installing from a terminal runs curator with that terminal's `TERM*`,

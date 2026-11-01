@@ -104,12 +104,9 @@ way `normalized_session` resolves the session chain — the resolution point is 
 this is a schema + one-cascade change, not new machinery. Worth doing once a real config wants
 the same mode on a whole window; until then the per-tab key is the honest surface.
 
+## Narrow or drop the `require_chrome` label gate
 
-## Route lector's content-webview teardown through shell-core — it still leaks
-
-shell-core now owns the page-ending teardown (`shell_core::web::content::{close_content_webview,
-close_window_pages}`: wry over-retains a dropped `WKWebView`, so a closed tab's page keeps running
-unless `-[WKWebView _close]` ends it first). **lector hosts remote content webviews and closes them
-with a bare `close()`, so its closed tabs keep running** — silent there, since it has no
-notification shims to make it audible. **Unlock:** re-pin lector to a shell-core with `web::content` and route every
-teardown path through those two functions.
+`require_chrome` (`commands.rs`) rejects only child content webviews, which origin dispatch already
+blocks, and every main webview passes it — so it is redundant against remote pages and screens no
+local surface. It is kept as belt-and-braces until decided. **Unlock:** a maintainer security call
+on narrowing it or removing it.
