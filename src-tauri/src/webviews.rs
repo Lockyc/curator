@@ -171,10 +171,9 @@ pub fn create_content_webview(
 ) -> tauri::Result<()> {
     let url: url::Url = view.url.parse().expect("url validated at config load");
 
-    // The owning window's id (== label), so a notification can route a banner click back to this
-    // window's chrome to surface the tab that fired it (see notification::fire / did_receive).
-    let window_id = window.label().to_string();
-    let sentinel_window_id = window_id.clone();
+    // The owning window's id (== label), so a banner click routes back to this window's chrome to
+    // surface the tab that fired it.
+    let sentinel_window_id = window.label().to_string();
     let hooks = ContentHooks {
         intercept: None,
         // Every key-verified `.invalid` host but the escape one; shell-core has already refused
@@ -183,7 +182,7 @@ pub fn create_content_webview(
             if let Some(sig) = sentinels::badge_sentinel(url) {
                 crate::awareness::on_badge_signal(app, label, sig);
             } else if let Some(p) = sentinels::notify_sentinel(url) {
-                crate::notification::fire(&p.title, &p.body, &sentinel_window_id, label);
+                shell_core::banner::fire(&p.title, &p.body, &sentinel_window_id, label);
                 // The banner doubles as an unread source for services that report through
                 // neither the Badging API nor a title count (see awareness::displayed).
                 crate::awareness::on_notification(app, &sentinel_window_id, label);
@@ -191,14 +190,6 @@ pub fn create_content_webview(
         })),
         on_title: Some(Arc::new(|webview, title| {
             crate::awareness::on_title_changed(webview, title);
-        })),
-        on_download: Some(Arc::new(move |_app, label, name, success| {
-            let (title, body) = if success {
-                ("Downloaded", format!("{name} — saved to Downloads"))
-            } else {
-                ("Download failed", name.to_string())
-            };
-            crate::notification::fire(title, &body, &window_id, label);
         })),
     };
     let spec = ContentSpec {

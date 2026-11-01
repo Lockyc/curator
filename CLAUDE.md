@@ -196,30 +196,13 @@ so the chrome (an App URL) gets these while content tabs (`External`/remote URLs
 regardless of label. That local/remote origin scoping — not a label glob — is what keeps these
 permissions off remote pages now that the chrome's label is the bare window id.
 
-**Native banners go through `UNUserNotificationCenter`, not `tauri-plugin-notification`**
-(`notification.rs`, objc2). The plugin's desktop backend (`notify-rust` → `mac-notification-sys`)
-posts via the deprecated `NSUserNotification` API, which is a **silent no-op on macOS 26** —
-`show()` returns `Ok`, nothing is delivered, and the app never registers in Notification Center.
-`notification::init` (called once in the Tauri setup hook) requests authorization and installs a
-`UNUserNotificationCenterDelegate` whose `willPresentNotification` returns `.banner | .sound`, so
-a banner (with sound) shows even while curator is the frontmost app (the hidden-tab-in-focused-window
-case). It's
-gated on `!tauri::is_dev()` — `currentNotificationCenter` throws on a nil bundle id, so native
-banners only fire from the packaged `curator.app` (dev still badges). Because the plugin is gone,
-`withGlobalTauri` no longer injects a notification
-guest that probes `plugin:notification|is_permission_granted` over IPC, so content webviews need
-no `tauri-guard` shim anymore (it was removed with the plugin).
-
-Banners are **click-routable**: `fire` takes the originating `(window_id, tab label)` (threaded
-from the notify-sentinel hook in `webviews.rs`, which knows both) and stamps
-them into the request's `userInfo`; the same delegate's `didReceiveNotificationResponse` reads
-them back on a tap (the *default* action only — dismiss is ignored), raises that window
-(`set_focus`, which also activates curator from the background), and emits `focus-tab` to that
-window's chrome so the sidebar selects the tab. `init` captures the `AppHandle` the delegate needs. The event targets the
-precise chrome webview label, which reaches only the originating window **because `chrome.js`
-binds its listeners to that webview** — an emit-side target alone does not scope anything (see
-*Per-window events* below). This surfaces curator's *own* tab; it does **not** invoke the
-web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
+**Native banners are shell-core's `banner`** (packaged app only; dev still badges). The
+notify-sentinel hook in `webviews.rs` fires one per page notification, and shell-core fires one
+per finished download. A click raises the window, then curator's callback (the setup hook in
+`lib.rs`) emits `focus-tab` to that window's chrome, which reaches only that window **because
+`chrome.js` binds its listeners to that webview** — an emit-side target alone does not scope
+anything (see *Per-window events* below). This surfaces curator's *own* tab; it does **not**
+invoke the web page's `Notification.onclick` (the injected stub's JS handlers stay inert — see
 `src/inject/notification.js`).
 
 **Loading is driven by per-tab `load_on_open`** — currently the only loading knob; there are no per-window mode flags today (a window-level default could be added if a need arises).

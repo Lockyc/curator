@@ -28,8 +28,8 @@
     fire(title, opts.body);
     // Return a stub so callers that use the instance API — `n.close()`,
     // `n.addEventListener(...)`, `n.onclick = …` (Element, Slack, Discord all do) — don't
-    // throw. Clicking the native banner surfaces the originating tab (handled natively in
-    // notification.rs), but the page's own `onclick`/event handlers on this stub are not invoked.
+    // throw. Clicking the native banner surfaces the originating tab (handled natively by
+    // shell-core's banner), but the page's own `onclick`/event handlers on this stub are not invoked.
     return {
       title: title,
       body: opts.body || "",

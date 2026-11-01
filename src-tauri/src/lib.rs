@@ -1,6 +1,5 @@
 mod awareness;
 mod commands;
-mod notification;
 mod sentinels;
 mod watcher;
 mod webviews;
@@ -959,10 +958,10 @@ pub fn run() {
     let config_path = curator_config::resolve_config_path();
     shell_core::register_plugins(tauri::Builder::default(), Some(&config_path), &[])
         .setup(move |app| {
-            // Prime native banner notifications (authorization + presentation/click delegate) and
-            // capture the app handle the click delegate uses to surface a tab. The banner path is a
-            // no-op in dev / off the packaged app; the badge/sentinel path is independent of this.
-            notification::init(app.handle().clone());
+            // A clicked banner's window is already raised; its chrome selects the tab.
+            shell_core::banner::init(app.handle(), |app, window, tab| {
+                let _ = app.emit_to(window, "focus-tab", serde_json::json!({ "label": tab }));
+            });
 
             // Native mouse side-button (back/forward) navigation — the shared shell-core NSEvent monitor
             // (WKWebView never delivers these to the DOM, so it can't be done in the page). curator
