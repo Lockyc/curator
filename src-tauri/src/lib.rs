@@ -968,6 +968,11 @@ pub fn run() {
                 let _ = app.emit_to(click.window.as_str(), "focus-tab", tab);
             });
 
+            // Every chrome's downloads button follows the one download list.
+            shell_core::downloads::init(app.handle(), |app, s| {
+                let _ = app.emit("downloads-state", s);
+            });
+
             // Native mouse side-button (back/forward) navigation — the shared shell-core NSEvent monitor
             // (WKWebView never delivers these to the DOM, so it can't be done in the page). curator
             // supplies only the focused-active-webview resolver; shell-core owns the monitor + the
@@ -1134,6 +1139,8 @@ pub fn run() {
             commands::nav_back,
             commands::nav_forward,
             commands::set_hole_rect,
+            commands::downloads_toggle,
+            commands::downloads_state,
             commands::pop_out_tab,
             commands::raise_popped_window,
             commands::pop_in_tab,

@@ -1,7 +1,6 @@
 // curator's chrome controller: binds the shared chrome-core ChromeSidebar (the view) to curator's
 // Tauri backend. The sidebar rendering, rows, dots, groups, kill-confirm, resize, and error bar all
-// live in chrome-core; this file only maps callbacks → commands and events → setters, and keeps the
-// curator-only nav pill (browser navigation), which mounts into the component's header slot.
+// live in chrome-core; this file only maps callbacks → commands and events → setters.
 
 const { invoke } = window.__TAURI__.core;
 // **Footgun: a bare `listen()` is app-wide, not window-scoped.** The JS API registers a listener
@@ -17,46 +16,16 @@ const listen = (event, handler) => chromeWebview.listen(event, handler);
 // (autoUpdate in the mount config) and forwards the menu event to sb.checkForUpdateNow(). curator
 // keeps its own updater identity — endpoint, pubkey, plugin registration — in tauri.conf.json / Rust.
 
-// ── Nav pill (curator-only) ─────────────────────────────────────────────────
-// SVGs: exact geometry so icons align. Handlers act on the active tab (mirrored in `activeLabel`).
-const BACK_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>`;
-const FWD_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`;
-const RELOAD_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.36"/><path d="M21 3v6h-6"/></svg>`;
-const HOME_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>`;
-
-let activeLabel = null; // controller mirror of the component's active tab (the nav pill acts on it)
-let navBtns = [];
+// The header's back / forward / reload / home act on the active tab (mirrored in `activeLabel`).
+const NAV_COMMANDS = { back: "nav_back", forward: "nav_forward", reload: "reload_tab", home: "home_tab" };
+let activeLabel = null; // controller mirror of the component's active tab
 // Labels currently popped out into their own detached window (from the DTO). A click on a detached
 // row means "raise its window" (raise_popped_window), not "select" — so onSelect consults this.
 const detachedLabels = new Set();
 
-function buildNavPill() {
-  const pill = document.createElement("div");
-  pill.className = "nav-pill";
-  const wire = (id, icon, cmd) => {
-    const btn = document.createElement("button");
-    btn.className = "nav-btn";
-    btn.id = id;
-    btn.innerHTML = icon;
-    btn.disabled = true;
-    btn.addEventListener("click", () => {
-      if (activeLabel) invoke(cmd, { label: activeLabel }).catch(() => {});
-    });
-    pill.appendChild(btn);
-    return btn;
-  };
-  navBtns = [
-    wire("nav-back", BACK_SVG, "nav_back"),
-    wire("nav-forward", FWD_SVG, "nav_forward"),
-    wire("nav-reload", RELOAD_SVG, "reload_tab"),
-    wire("nav-home", HOME_SVG, "home_tab"),
-  ];
-  return pill;
-}
-
 function setActiveLabel(label) {
   activeLabel = label;
-  for (const b of navBtns) b.disabled = !label;
+  if (sb) sb.setNavEnabled(!!label);
 }
 
 // ── DTO mapping ─────────────────────────────────────────────────────────────
@@ -190,10 +159,17 @@ async function mountChrome() {
         setSidebarWidth(width);
         reportRect();
       },
+      onNav(action) {
+        if (activeLabel) invoke(NAV_COMMANDS[action], { label: activeLabel }).catch(() => {});
+      },
+      onDownloads(rect) {
+        invoke("downloads_toggle", { rect }).catch((err) => sb.setError(String(err)));
+      },
       // onSuspend/onDestroy: unused — curator sets neither killable nor suspendable, so no row arms.
     },
     {
-      header: buildNavPill(),
+      nav: ["back", "forward", "reload", "home"],
+      downloads: true,
       appName: "curator",
       storageKey: "curator:sidebar-width:" + title,
       defaultWidth,
@@ -209,6 +185,7 @@ async function mountChrome() {
   );
 
   await refresh();
+  sb.setDownloads(await invoke("downloads_state"));
 
   // First-run width: chrome-core restores a saved width itself (firing onResize → CSS + reportRect);
   // if none is saved, apply the density-aware default. Setting the sidebar CSS width reflows the flex
@@ -299,6 +276,7 @@ listen("focus-tab", (e) => {
 // The pointer moved onto a content webview (shell-core's web::pointer): this page never sees its
 // own exit, since the content composites above it, so chrome-core's `:hover` would freeze.
 listen("pointer-away", () => sb && sb.pointerAway());
+listen("downloads-state", (e) => sb && sb.setDownloads(e.payload));
 // Menu "Check for Updates…" → chrome-core checks now + announces (up-to-date / error / a banner).
 listen("check-update", () => sb && sb.checkForUpdateNow());
 

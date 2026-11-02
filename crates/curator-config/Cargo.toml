@@ -15,4 +15,4 @@ url = "2"
 config-core = { git = "https://github.com/Lockyc/config-core", rev = "69b38586661ff44df21f01d715484792014cdd82" }
 # shell-core's zero-dep surface only (the `{window}:{within}` child-label scheme); same rev as
 # src-tauri's two entries.
-shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "b8beebbdb24b20c297b5a1990dc5cb37ccd270dd", default-features = false }
+shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "014c87b2704ed7cb729371529b29cddcc8d5823e", default-features = false }

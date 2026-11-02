@@ -64,6 +64,8 @@ file-driven, everything else is ephemeral.
 - **Sidebar search** — the field above the tab list narrows it as you type, matching tab titles,
   folder paths and group names. **⌘⇧F** jumps into it; **↑**/**↓** pick a match, **Enter** opens
   it, **Esc** clears the search.
+- **Downloads** — a download from any tab saves to `~/Downloads`; the downloads button beside
+  the back/forward buttons lists recent downloads: click one to open it, or **Show in Finder**.
 - **Link destinations on hover** — hovering a link shows where it goes in a small status overlay at
   the bottom of the tab, as a browser does.
 - **Pop a tab out** — pop the active tab into its own window (just the name banner, no sidebar) with **⌘⇧O** (or hover
@@ -199,7 +201,7 @@ title = "Comms"
 | `width` / `height` | `1500` / `1000` | First-run size in logical pixels; after that curator remembers each window's size and position. |
 | `open_on_start` | `true` | `false` registers the window **dormant** — opened on demand from the **Window** menu / home surface. Read at launch. |
 | `open_on_launch` | unset | Unset/`false` opens the first `load_on_open` tab, else a blank screen; `true` opens the first tab even if it isn't loaded. |
-| `colour` | none | `#rgb` / `#rrggbb` accent for the title bar (nav pill + window name). |
+| `colour` | none | `#rgb` / `#rrggbb` accent for the window-name banner at the top of the sidebar. |
 | `session` | inherited from global | Default login store for this window's tabs. **Cascades.** |
 
 ### `[[window.tab]]` / `[[window.group.tab]]`

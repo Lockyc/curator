@@ -1,6 +1,5 @@
 /* Page shell only — the sidebar interior (rows, dots, groups, banner, error bar, resize) lives in
-   chrome-core (chrome-core.css). This file keeps what's curator-specific: the dark page base and the
-   nav pill (browser navigation), which chrome-core mounts into its banner via the header slot. */
+   chrome-core (chrome-core.css). This file keeps what's curator-specific: the dark page base. */
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100vh; overflow: hidden; background: #1e1e1e; } /* opaque base */
@@ -30,33 +29,3 @@ html, body { margin: 0; height: 100vh; overflow: hidden; background: #1e1e1e; } 
   -webkit-user-select: none;
 }
 #empty-state svg { width: 220px; height: 220px; opacity: 0.9; }
-
-/* Nav pill (back/forward/reload/home) — curator-only browser nav, mounted in chrome-core's banner. */
-.nav-pill {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: #2a2a2a;
-  border-radius: 8px;
-  padding: 2px;
-}
-.nav-btn {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 26px;
-  background: none;
-  border: none;
-  padding: 0;
-  color: #ddd;
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0.85;
-  transition: opacity 0.12s ease, background 0.12s ease;
-}
-.nav-btn svg { display: block; }
-.nav-btn:hover:not(:disabled) { background: #353a42; opacity: 1; }
-.nav-btn:disabled { opacity: 0.25; cursor: default; }

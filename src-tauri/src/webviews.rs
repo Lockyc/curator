@@ -245,8 +245,11 @@ fn own_webview(window: &Window, label: &str) -> Option<tauri::Webview> {
 }
 
 /// Raise `label` to the front without hiding others (hiding throttles their sync). Live
-/// windows switch tabs with this. No-op if the webview doesn't exist in `window`.
+/// windows switch tabs with this. No-op if the webview doesn't exist in `window`. Closes the
+/// window's downloads popup first: the raise reorders the content to the top of the window's
+/// subviews, which would otherwise stack it over the open popup.
 pub fn raise(window: &Window, label: &str) -> tauri::Result<()> {
+    shell_core::downloads::popup::close(window);
     if let Some(_wv) = own_webview(window, label) {
         #[cfg(target_os = "macos")]
         {
