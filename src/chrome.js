@@ -79,13 +79,6 @@ async function buildDto() {
 // ── Mount + refresh ─────────────────────────────────────────────────────────
 let sb = null;
 
-// The empty-state (muted curator mark) shows only when no tab is active — otherwise a content
-// webview covers the hole. It's composited BEHIND the content webviews, so this is occluded
-// whenever a tab is shown; toggling on `active` keeps it from peeking during transitions.
-function paintEmptyState(active) {
-  document.getElementById("empty-state").style.display = active ? "none" : "flex";
-}
-
 // Report the #content-hole's CSS rect so Rust positions the content webviews to match. This is the
 // single source of truth for content placement (warden's model): chrome-core owns the sidebar
 // width and clamp, the flex hole follows from CSS, and Rust just applies what's measured here.
@@ -98,7 +91,6 @@ async function refresh() {
   const dto = await buildDto();
   sb.update(dto);
   setActiveLabel(dto.active);
-  paintEmptyState(dto.active);
   reportRect();
 }
 
@@ -171,6 +163,7 @@ async function mountChrome() {
       nav: ["back", "forward", "reload", "home"],
       downloads: true,
       appName: "curator",
+      emptyState: document.getElementById("empty-state"),
       storageKey: "curator:sidebar-width:" + title,
       defaultWidth,
       minWidth: MIN_W,

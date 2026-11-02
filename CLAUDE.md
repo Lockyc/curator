@@ -352,7 +352,7 @@ This mirrors **warden's hole-punch**: `index.html` is a flex row of a fixed-widt
 chrome-core mount) and a `#content-hole`; the Rust-positioned content webviews are `add_child`
 siblings that composite **above** the main chrome webview over the hole (guaranteed by add-order +
 `zorder::raise_to_front` on the active tab). When no content webview covers the hole, the opaque
-`#empty-state` (muted curator mark, in `index.html`) shows; `chrome.js` toggles it on `active`. No
+`#empty-state` (muted curator mark, in `index.html`) shows; it is chrome-core's `emptyState`, toggled on `active`. No
 transparency needed (content is opaque; unlike warden's native surfaces). The traffic-light inset is
 owned by chrome-core's own `#cc-titlebar` strip now (the `appName: "curator"` mount-config field,
 which also names the app beside the lights) — curator's `#sidebar` carries no `padding-top` of its

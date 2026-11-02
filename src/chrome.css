@@ -18,14 +18,3 @@ html, body { margin: 0; height: 100vh; overflow: hidden; background: #1e1e1e; } 
 
 /* The content hole the content webviews cover; visible only where none does (→ #empty-state). */
 #content-hole { flex: 1; position: relative; background: #1e1e1e; }
-#empty-state {
-  position: absolute;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: #1e1e1e;
-  user-select: none;
-  -webkit-user-select: none;
-}
-#empty-state svg { width: 220px; height: 220px; opacity: 0.9; }

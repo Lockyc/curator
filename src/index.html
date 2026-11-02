@@ -18,7 +18,7 @@
            sidebar BODY drag is stamped by chrome-core per the windowDrag DTO flag. -->
       <aside id="sidebar" data-tauri-drag-region></aside>
       <div id="content-hole" data-tauri-drag-region>
-        <!-- Muted curator mark — shown by the controller when no tab is selected. Composited BEHIND
+        <!-- Muted curator mark — chrome-core's `emptyState`, shown while no tab is active. Composited BEHIND
              the content webviews (a live tab occludes it). Opaque. -->
         <div id="empty-state">
           <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="no tab selected">
