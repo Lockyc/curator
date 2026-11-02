@@ -238,9 +238,9 @@ The app binary doubles as a config tool — `/Applications/curator.app/Contents/
 
 Tabs are lazy by default: a tab loads when you first open it and stays loaded for the
 session. Each row shows a green dot when its tab is loaded — click it to **unload** (free
-its memory); the tab reloads on next click. A navigation pill at the top of the
-sidebar drives the active tab: **◀ back** and **▶ forward** through in-page history, and
-**⌂ home** to snap back to its canonical URL. The mouse's side buttons drive the same
+its memory); the tab reloads on next click. The buttons on the sidebar's title row
+drive the active tab: **◀ back** and **▶ forward** through in-page history, **⟳ reload**,
+and **⌂ home** to snap back to its canonical URL. The mouse's side buttons drive the same
 back/forward, and a determinate progress bar tracks each tab's page load.
 
 ### Unread badges
