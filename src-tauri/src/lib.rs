@@ -511,6 +511,8 @@ fn on_spine_action(app: &tauri::AppHandle, routed: shell_core::menu::Routed) {
             }
             emit("find-in-sidebar");
         }
+        // Not offered: the spine is built with `toggle_sidebar: false`.
+        SpineAction::ToggleSidebar => {}
         // chrome-core owns self-update; forward to its checkForUpdateNow().
         SpineAction::CheckUpdates => emit("check-update"),
     }
@@ -871,6 +873,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
         shell_core::menu::SpineConfig {
             app_name: "curator",
             windows: window_entries,
+            toggle_sidebar: false,
         },
         env!("CARGO_PKG_VERSION"),
         env!("BUILD_GIT_SHA"),
