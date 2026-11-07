@@ -64,9 +64,10 @@ file-driven, everything else is ephemeral.
 - **Sidebar search** — the field above the tab list narrows it as you type, matching tab titles,
   folder paths and group names. **⌘⇧F** jumps into it; **↑**/**↓** pick a match, **Enter** opens
   it, **Esc** clears the search.
-- **Collapse the sidebar** — the button beside the traffic lights (or **⌃⌘S**) hides it, leaving
-  a thin strip with the tab's title. Rest the pointer on the window's left edge to slide it in;
-  moving onto the page hides it again. Each window remembers its own choice.
+- **Collapse the sidebar** — the button beside the traffic lights (or **Tab ▸ Toggle Sidebar**,
+  **⌃⌘S**) hides it, leaving a thin strip with the tab's title. Rest the pointer on the window's
+  left edge to slide it in; moving onto the page hides it again. While it's collapsed, a dot on the
+  toggle stands in for the hidden update and error bars. Each window remembers its own choice.
 - **Downloads** — a download from any tab saves to `~/Downloads`; the downloads button beside
   the back/forward buttons lists recent downloads: click one to open it, or **Show in Finder**.
 - **Link destinations on hover** — hovering a link shows where it goes in a small status overlay at
