@@ -1162,6 +1162,11 @@ pub fn run() {
                     set.mark_quitting();
                 }
             }
+            // Unload every tab's page before the process goes, so a page's `pagehide` cleanup
+            // (Element's session lock) lands instead of surviving the quit.
+            if let tauri::RunEvent::Exit = event {
+                shell_core::web::content::end_pages_for_exit(app);
+            }
         });
 }
 
