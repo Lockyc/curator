@@ -880,7 +880,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
     )?;
 
     let reload_tab = MenuItemBuilder::with_id("reload_active", "Reload Tab")
-        .accelerator("CmdOrCtrl+R")
+        .accelerator(shell_core::menu::ACCEL_RELOAD_TAB)
         .build(manager)?;
     let reset = MenuItemBuilder::with_id("reset_all", "Reset All Tabs").build(manager)?;
     let devtools = MenuItemBuilder::with_id("open_devtools", "Open Developer Tools")
