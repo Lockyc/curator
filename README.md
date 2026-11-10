@@ -90,7 +90,7 @@ file-driven, everything else is ephemeral.
 [latest release](https://github.com/Lockyc/curator/releases/latest), unzip, and move
 `curator.app` to `/Applications`. macOS only.
 
-In **Claude Code**, run `/curator:install` — it checks prerequisites (offering to install
+In **Claude Code**, from a clone of this repo, run `/curator:install` — it checks prerequisites (offering to install
 any that are missing), builds curator from source into `~/.curator`, installs `curator.app`
 to `/Applications`, and seeds your config.
 
@@ -384,14 +384,15 @@ curator is built on three shared library crates; a source build fetches them aut
 
 - **[chrome-core](https://github.com/Lockyc/chrome-core)** — the sidebar chrome (banner,
   grouped tab rows, resize drag, density tokens).
-- **[config-core](https://github.com/Lockyc/config-core)** — the TOML config engine (parse,
-  validate, format, hot-reload diff) behind curator's config and `curator fmt`.
+- **[config-core](https://github.com/Lockyc/config-core)** — the shared TOML config primitives
+  (window/group shape, validation, in-place edits, formatting) behind curator's config and `curator fmt`.
 - **[shell-core](https://github.com/Lockyc/shell-core)** — shared release tooling and app-shell
   runtime (window geometry, updater, mouse side-button navigation, load progress bar).
 
-Two **sibling apps** share the same cores: [warden](https://github.com/Lockyc/warden) curates
-**terminals** and [lector](https://github.com/Lockyc/lector) curates **local documentation
-sites**, the way curator curates **browser tabs**.
+Three **sibling apps** share the same cores: [warden](https://github.com/Lockyc/warden) curates
+**terminals**, [lector](https://github.com/Lockyc/lector) curates **local documentation
+sites** and [flotilla](https://github.com/Lockyc/flotilla) curates **document workspaces**, the
+way curator curates **browser tabs**.
 
 If you want to iterate on a shared core, `just chrome-dev` builds curator against a sibling
 `../chrome-core` checkout (including uncommitted edits) and `just chrome-pin` re-pins to its
