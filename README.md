@@ -90,17 +90,14 @@ file-driven, everything else is ephemeral.
 [latest release](https://github.com/Lockyc/curator/releases/latest), unzip, and move
 `curator.app` to `/Applications`. macOS only.
 
-In **Claude Code**, from a clone of this repo, run `/curator:install` — it checks prerequisites (offering to install
-any that are missing), builds curator from source into `~/.curator`, installs `curator.app`
-to `/Applications`, and seeds your config.
-
-Or install from a terminal:
+Or build from source into `~/.curator` (needs Rust and Xcode Command Line Tools), which
+installs `curator.app` to `/Applications` and seeds your config:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Lockyc/curator/main/install.sh | bash
 ```
 
-Re-running either path rebuilds curator from the latest source; a downloaded or installed
+Re-running it rebuilds curator from the latest source; a downloaded or installed
 curator also updates itself (below).
 
 ## Updates

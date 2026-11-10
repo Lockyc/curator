@@ -526,7 +526,7 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
 
 ## Installer & the public repo
 
-`install.sh` and the `/curator:install` command install curator by `git clone`-ing
+`install.sh` installs curator by `git clone`-ing
 `~/.curator` from `https://github.com/Lockyc/curator` and building from source; the
 README's `curl` one-liner fetches `install.sh` over `raw.githubusercontent.com`. The repo
 is public, so the raw fetch and the unauthenticated `git clone` both work.
