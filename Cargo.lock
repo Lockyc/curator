@@ -359,7 +359,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chrome-core"
 version = "0.1.0"
-source = "git+https://github.com/Lockyc/chrome-core?rev=a00a86ec4fee3ef7db42ae1a0e004a9ec3492e04#a00a86ec4fee3ef7db42ae1a0e004a9ec3492e04"
+source = "git+https://github.com/Lockyc/chrome-core?rev=23d7a1cc6c1e1c3b7aa909413a2b94b74cb9fb13#23d7a1cc6c1e1c3b7aa909413a2b94b74cb9fb13"
 
 [[package]]
 name = "chrono"
