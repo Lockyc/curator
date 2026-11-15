@@ -494,8 +494,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
         colour: colour.clone(),
         width,
         height,
-        panes: vec![],
-        pane_band: None,
+        page: None,
     };
     let token = crate::detach_window_token(&label);
     let view_for_birth = view.clone();
