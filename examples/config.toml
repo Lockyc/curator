@@ -16,9 +16,9 @@
 # Logins: by default every tab shares one app-wide store, so signing into a provider covers
 # its related services (Gmail + Calendar share your Google login). To give a tab its own
 # account, set `session = "name"` on the tab; reuse the same name on other tabs (in any
-# window) to share that login. A window-level `session` is the default for its tabs, and a
-# top-level `session` (below) is the app-wide default. Resolution is
-# tab.session → window.session → top-level session → built-in "default"; an empty `session = ""`
+# window) to share that login. A group- or window-level `session` is the default for its tabs,
+# and a top-level `session` (below) is the app-wide default. Resolution is
+# tab → group → window → top-level → built-in "default"; an empty `session = ""`
 # at any level opts out and falls through. Logins follow the session name, so renaming a window
 # or editing a URL never signs you out.
 #
@@ -32,7 +32,7 @@
 # Applied at launch — restart to change.
 # allow_insecure = ["192.168.1.1"]
 
-# App-wide default login store (bottom of the session chain). Omit → built-in "default".
+# App-wide default login store (last configured level of the session chain). Omit → built-in "default".
 # session = "personal"
 
 # Chrome sizing: "comfortable" (default) or "compact" (type + spacing condensed). Hot-reloads.

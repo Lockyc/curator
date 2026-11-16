@@ -10,11 +10,11 @@
   #   url          = "https://mail.google.com/"
   #   load_on_open = true
 
-  # Every tab shares one login store by default. Give a tab its own account with `session`;
-  # reuse the same name elsewhere to share that login.
+  # Every tab shares one login store by default. Give a tab, group or window its own account
+  # with `session`; reuse the same name elsewhere to share that login.
   # [[window.group]]
-  #   name = "Work"
+  #   name    = "Work"
+  #   session = "work"
   #   [[window.group.tab]]
-  #     title   = "Calendar"
-  #     url     = "https://calendar.google.com/"
-  #     session = "work"
+  #     title = "Calendar"
+  #     url   = "https://calendar.google.com/"

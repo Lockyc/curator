@@ -114,7 +114,7 @@ title = "Comms"
 |---|---|---|
 | `dark_mode` | `false` | Force dark appearance so sites honouring `prefers-color-scheme` render dark. |
 | `allow_insecure` | `[]` | Hosts whose self-signed/invalid TLS certs are accepted. Hot-reloads like the rest of the config. |
-| `session` | none | App-wide default login store — the bottom of the session chain (`tab → window → this → built-in default`). **Cascades.** |
+| `session` | none | App-wide default login store — the last configured level of the session chain (`tab → group → window → this → built-in default`). **Cascades.** |
 | `density` | `comfortable` | Chrome sizing: `comfortable` or `compact` (type + spacing scaled down for denser tab lists). Hot-reloads. |
 | `sidebar_drag` | `true` | Whether the sidebar chrome is a window-move drag handle (drag the banner/empty list area). Hot-reloads. |
 | `auto_update` | `true` | Check for a new release on launch and every 6 hours. `false` suppresses the automatic checks; **Check for Updates…** still works. Applies to windows opened after the change. |
@@ -141,13 +141,14 @@ title = "Comms"
 | `load_on_open` | `false` | Load when the window opens and stay live in the background, so it fires banners and reports unread while inactive. |
 | `reload_every` | none | Auto-refresh the canonical URL every N minutes (positive integer). |
 | `unread` | `all` | Which unread signals badge the row: `all` — every signal, including a countless marker; `count` — only a real number (a delivered notification still dots the row); `off` — never. |
-| `session` | inherited from window | Login store. Tabs sharing a value share a login, even across windows. Blank falls through the chain. |
+| `session` | inherited from group, else window | Login store. Tabs sharing a value share a login, even across windows. Blank falls through the chain. |
 
 **`[[window.group]]`**
 
 | Key | Default | What it does |
 |---|---|---|
 | `name` | *required* | Section header in the sidebar; unique within its window. Holds `[[window.group.tab]]`s. |
+| `session` | inherited from window | Default login store for this group's tabs. **Cascades.** |
 
 The app binary, `/Applications/curator.app/Contents/MacOS/curator`, doubles as a config tool:
 `curator validate [path]` prints the resolved windows and tabs, each tab's session and any

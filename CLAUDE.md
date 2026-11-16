@@ -63,9 +63,9 @@ aligned by construction. Accent-colour validation delegates to `config_core::Col
 (shared with warden and lector). `tab_digit_keys` is menu-only — it never reaches the DTO/chrome —
 so `refresh_window_menu` reads it straight from `AppState` when it rebuilds the app menu.
 
-`WindowConfig` is config-core's `Window<Tab, CuratorWindow>`: the shared keys (`title`, `width`,
+`WindowConfig` is config-core's `Window<Tab, CuratorWindow, CuratorGroup>`: the shared keys (`title`, `width`,
 `height`, `colour`, `open_on_start`, `group`) plus curator's `CuratorWindow` extras (`session`,
-`open_on_launch`, loose `tab`). Validation (`parse_and_validate`, last-good-on-failure) **errors** on
+`open_on_launch`, loose `tab`) and `CuratorGroup` extras (`session`). Validation (`parse_and_validate`, last-good-on-failure) **errors** on
 config-core's `validate_windows` (window title/size/colour, group names → `ConfigError::Window`),
 empty tab title/url, unparseable url, zero `reload_every`, and any **unrecognized key** on
 `Config`/`CuratorWindow`/`Group`/`Tab` — so a removed/renamed key such as the old `always_load` (now
@@ -129,11 +129,10 @@ banner's context menu, `window_menu`) are shell-core's flow (`WindowSet::handle_
 writes the config through config-core's `edit` (`CuratorHost::write`).
 
 **Sessions (logins) are decoupled from windows.** A tab's WebKit data store is keyed on a
-resolved `session` string via the full cascade
-`tab.session → window.session → top-level Config.session → DEFAULT_SESSION`
-(`curator-config`'s `tab_views(wid, global_session)` builds `TabView::session`; `shell_core::web::session::data_store_id`
-hashes it). An explicit `session = ""` at any level is treated as unset and falls through to the
-next. Tabs sharing a session string share a login (even across windows); distinct strings are
+resolved `session` string via the cascade tab → group (none for a loose tab) → window →
+top-level `Config.session` → `DEFAULT_SESSION`, most specific wins and blank falls through
+(`curator-config`'s `tab_views(wid, global_session)` passes the levels to
+`config_core::session::resolve`; `shell_core::web::session::data_store_id` hashes it). Tabs sharing a session string share a login (even across windows); distinct strings are
 isolated accounts. With no `session` set anywhere, all tabs share one app-wide store, so SSO
 across related services (e.g. Gmail + Calendar) works. Because sessions key off `session` — not
 the window or URL — renaming a window or editing a tab's URL never logs you out. (The top-level

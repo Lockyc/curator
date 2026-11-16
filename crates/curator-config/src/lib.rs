@@ -3,9 +3,9 @@
 //! The house-style TOML formatter + colour parsing are shared with warden via the config-core crate,
 //! re-exported here so the app (`src-tauri`) uses `curator_config::{Colour, format_file, format_str}`.
 pub use config_core::{
-    edit, fmt_cli, format_file, format_str, retitle_window, toggle_tab_digit_keys, toml_edit,
-    write_default_config, Colour, ColourError, Density, Group, SeedError, TabDigitKeys, Warning,
-    WindowError,
+    edit, fmt_cli, format_file, format_str, retitle_window, session::DEFAULT_SESSION,
+    toggle_tab_digit_keys, toml_edit, write_default_config, Colour, ColourError, Density,
+    SeedError, TabDigitKeys, Warning, WindowError,
 };
 
 // The FNV-1a hash behind each tab's webview label below (namespaced under its window by
@@ -17,7 +17,7 @@ use std::path::Path;
 
 // The `[[window]]` / `Group<Tab>` containers, their shared validation, `Density`, `Warning`, and the
 // `default_*` serde helpers live in config-core and are re-exported above. curator layers its own
-// leaf `Tab` and window extras (`CuratorWindow`) on top.
+// leaf `Tab`, window extras (`CuratorWindow`) and group extras (`CuratorGroup`) on top.
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -33,10 +33,9 @@ pub struct Config {
     /// Hosts whose self-signed/invalid TLS curator accepts. Process-wide (WebKit-global).
     #[serde(default)]
     pub allow_insecure: Vec<String>,
-    /// App-wide default login store — the bottom of the session chain
-    /// (`tab.session → window.session → this → DEFAULT_SESSION`). Set it to make every tab that
-    /// doesn't override share one store. Omit → the built-in `DEFAULT_SESSION`. An explicit
-    /// `session = ""` is treated as unset and falls through to `DEFAULT_SESSION`.
+    /// App-wide default login store — the last configured level of the session chain
+    /// (tab → group → window → this → `DEFAULT_SESSION`). Set it to make every tab that
+    /// doesn't override share one store.
     #[serde(default)]
     pub session: Option<String>,
     /// Chrome sizing mode (whole-app). Default comfortable; `compact` proportionally condenses
@@ -83,15 +82,27 @@ impl Default for Config {
 
 /// One `[[window]]`: config-core's shared keys (`title`, `width`, `height`, `colour`,
 /// `open_on_start`, `group`) plus curator's [`CuratorWindow`] extras.
-pub type WindowConfig = config_core::Window<Tab, CuratorWindow>;
+pub type WindowConfig = config_core::Window<Tab, CuratorWindow, CuratorGroup>;
+
+/// One `[[window.group]]`: config-core's `name` and tabs plus curator's [`CuratorGroup`] extras.
+pub type Group = config_core::Group<Tab, CuratorGroup>;
+
+/// curator's own `[[window.group]]` keys, beside config-core's shared ones.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CuratorGroup {
+    /// Default login store for this group's tabs, between the tab's own and the window's in the
+    /// session chain. Set it to make one group a separate account within its window.
+    #[serde(default)]
+    pub session: Option<String>,
+}
 
 /// curator's own `[[window]]` keys, beside config-core's shared ones.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CuratorWindow {
-    /// Default login store for this window's tabs (the middle link of the session chain
-    /// `tab.session → window.session → app-wide default`). Set it to make the whole window one
-    /// profile. Omit → tabs fall back to the shared app-wide store unless they set their own.
+    /// Default login store for this window's tabs, between the group's and the app-wide one in
+    /// the session chain. Set it to make the whole window one profile.
     #[serde(default)]
     pub session: Option<String>,
     /// Which tab is active when this window launches. `false`/unset opens the first `load_on_open`
@@ -107,10 +118,6 @@ pub struct CuratorWindow {
     #[serde(default, rename = "tab")]
     pub tabs: Vec<Tab>,
 }
-
-/// The shared app-wide login store used by any tab that sets no `session` (and whose window
-/// sets none either). One store → tabs share cookies, so SSO across related services works.
-pub const DEFAULT_SESSION: &str = "default";
 
 /// How much of a service's unread reporting a tab is badged from. Some services mark "unread
 /// exists" with a countless marker that is, for a heavily-subscribed account, permanently on —
@@ -154,9 +161,9 @@ pub struct Tab {
     /// Which of this service's unread signals badge the row. Omit → [`UnreadMode::All`].
     #[serde(default)]
     pub unread: UnreadMode,
-    /// This tab's login store (top link of the session chain). Tabs sharing a `session` string
-    /// share a login (even across windows); a distinct string gives a separate account. Omit →
-    /// inherit the window's `session`, else the app-wide default.
+    /// This tab's login store (the most specific level of the session chain). Tabs sharing a
+    /// `session` string share a login (even across windows); a distinct string gives a separate
+    /// account. Omit → inherit the group's, window's or app-wide `session`.
     #[serde(default)]
     pub session: Option<String>,
 }
@@ -282,9 +289,9 @@ pub struct TabView {
     /// text is resolved in Rust, so the sidebar never sees the mode.
     #[serde(skip)]
     pub unread: UnreadMode,
-    /// Resolved login store: `tab.session → window.session → Config.session → DEFAULT_SESSION`.
-    /// Tabs with the
-    /// same value share a WebKit data store (one login); distinct values are isolated. Not
+    /// Resolved login store: the first `session` set on the tab, its group, its window or
+    /// `Config`, else `DEFAULT_SESSION` ([`config_core::session::resolve`]). Tabs with the same
+    /// value share a WebKit data store (one login); distinct values are isolated. Not
     /// serialized to the chrome sidebar — it's a backend concern, not UI.
     #[serde(skip)]
     pub session: String,
@@ -300,16 +307,6 @@ pub struct TabView {
 /// would silently forget every pop-out's geometry and orphan its entry.
 fn url_label(url: &str) -> String {
     format!("tab-{:016x}", crate::hash::fnv1a_64(url.as_bytes()))
-}
-
-/// A configured `session` value, treating blank/whitespace-only as unset so an empty
-/// `session = ""` falls through the chain rather than keying a store on "". Takes `Option<&str>`
-/// so all three cascade links (tab/window `Option<String>` via `as_deref`, and the already-`&str`
-/// global) share the one blank-is-unset rule.
-fn normalized_session(s: Option<&str>) -> Option<String> {
-    s.map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
 }
 
 /// curator's reading of a [`WindowConfig`]'s tabs.
@@ -333,16 +330,11 @@ impl WindowTabs for WindowConfig {
         // Loose tabs (group `None`) first, then each group's tabs (group `Some(name)`), all in
         // file order, sharing one url-label dedup map so duplicate URLs across the window still
         // get distinct labels.
-        let entries = self
-            .extra
-            .tabs
-            .iter()
-            .map(|t| (t, Option::<String>::None))
-            .chain(
-                self.groups
-                    .iter()
-                    .flat_map(|g| g.tabs.iter().map(move |t| (t, Some(g.name.clone())))),
-            );
+        let entries = self.extra.tabs.iter().map(|t| (t, None)).chain(
+            self.groups
+                .iter()
+                .flat_map(|g| g.tabs.iter().map(move |t| (t, Some(g)))),
+        );
         for (tab, group) in entries {
             let base = url_label(&tab.url);
             let n = seen.entry(base.clone()).or_insert(0);
@@ -352,15 +344,16 @@ impl WindowTabs for WindowConfig {
                 format!("{base}-{n}")
             };
             *n += 1;
-            // Session chain: the tab's own store, else the window's, else the app-wide global,
-            // else the shared default (blank values are treated as unset and fall through).
-            let session = normalized_session(tab.session.as_deref())
-                .or_else(|| normalized_session(self.extra.session.as_deref()))
-                .or_else(|| normalized_session(global_session))
-                .unwrap_or_else(|| DEFAULT_SESSION.to_string());
+            // A loose tab has no group level.
+            let session = config_core::session::resolve([
+                tab.session.as_deref(),
+                group.and_then(|g| g.extra.session.as_deref()),
+                self.extra.session.as_deref(),
+                global_session,
+            ]);
             views.push(TabView {
                 label: shell_core::child_label(window_label, &within),
-                group,
+                group: group.map(|g| g.name.clone()),
                 title: tab.title.clone(),
                 url: tab.url.clone(),
                 load_on_open: tab.load_on_open,
@@ -734,6 +727,58 @@ reload_every = 15
             parse_and_validate(blank).unwrap().0.windows[0].tab_views("w", None)[0].session,
             DEFAULT_SESSION
         );
+    }
+
+    #[test]
+    fn group_session_sits_between_tab_and_window() {
+        let src = r#"
+[[window]]
+title = "W"
+session = "win"
+  [[window.tab]]
+  title = "Loose"
+  url = "https://loose.test/"
+  [[window.group]]
+  name = "Work"
+  session = "work"
+    [[window.group.tab]]
+    title = "Inherits"
+    url = "https://a.test/"
+    [[window.group.tab]]
+    title = "Own"
+    url = "https://b.test/"
+    session = "tabown"
+  [[window.group]]
+  name = "Blank"
+  session = " "
+    [[window.group.tab]]
+    title = "Through"
+    url = "https://c.test/"
+"#;
+        let views = parse_and_validate(src).unwrap().0.windows[0].tab_views("w", None);
+        let session = |title: &str| {
+            views
+                .iter()
+                .find(|v| v.title == title)
+                .unwrap()
+                .session
+                .clone()
+        };
+        // A loose tab has no group level: window.
+        assert_eq!(session("Loose"), "win");
+        // The group beats the window.
+        assert_eq!(session("Inherits"), "work");
+        // The tab beats the group.
+        assert_eq!(session("Own"), "tabown");
+        // A blank group session falls through to the window.
+        assert_eq!(session("Through"), "win");
+    }
+
+    #[test]
+    fn unknown_group_key_is_rejected() {
+        let src = "[[window]]\ntitle = \"W\"\n[[window.group]]\nname = \"G\"\nsesion = \"x\"\n";
+        let err = parse_and_validate(src).unwrap_err().to_string();
+        assert!(err.contains("sesion"), "{err}");
     }
 
     #[test]

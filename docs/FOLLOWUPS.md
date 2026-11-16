@@ -98,9 +98,9 @@ instead (`class_addMethod`) and short-circuit for instances that aren't the chro
 `reload_every`, since the modes are a property of *how a given service reports*, not of a window.
 A window whose tabs are all one noisy service still has to repeat the key per tab.
 
-**To add it**, give `unread` the cascade `session` already has (`tab → window → Config →
-default`): `WindowConfig`/`Config` grow an `Option<UnreadMode>` and `tab_views` resolves it the
-way `normalized_session` resolves the session chain — the resolution point is already there, so
+**To add it**, give `unread` the cascade `session` already has (`tab → group → window → Config →
+default`): the group/window extras and `Config` grow an `Option<UnreadMode>` and `tab_views`
+resolves it where it resolves the session chain — the resolution point is already there, so
 this is a schema + one-cascade change, not new machinery. Worth doing once a real config wants
 the same mode on a whole window; until then the per-tab key is the honest surface.
 
