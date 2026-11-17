@@ -12,7 +12,7 @@ url = "2"
 # the shared formatter must format identically in all three apps, so an unpinned dep floating forward
 # in only one repo would silently diverge `curator fmt` from its siblings. Bump in lockstep with
 # warden, lector, and config-core.
-config-core = { git = "https://github.com/Lockyc/config-core", rev = "20865a472871ef938b69aa5c7da86e28a24c39e9" }
+config-core = { git = "https://github.com/Lockyc/config-core", rev = "551c3187cd30fa585c5e1f879bc864edb2578306" }
 # shell-core's zero-dep surface only (the `{window}:{within}` child-label scheme); same rev as
 # src-tauri's two entries.
-shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "bbe1fc76201f0c7ccc6637f98739fca4a9b4ec70", default-features = false }
+shell-core = { git = "https://github.com/Lockyc/shell-core", rev = "b32aa2fa150949795fa63e4fe338887e1921b905", default-features = false }
