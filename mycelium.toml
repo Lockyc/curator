@@ -1,13 +1,13 @@
-name    = "curator"
+name = "curator"
 summary = "Curated browser keeper-tabs - a macOS console of grouped webview tabs, useful for dashboards, chat, and other persistent webview surfaces."
-kind    = "app"
-status  = "active"
-tags    = ["browser", "webviews", "keeper-tabs", "macos"]
-stack   = ["rust", "tauri", "typescript"]
+status = "active"
+tags = ["browser", "webviews", "keeper-tabs", "macos"]
 
 [github]
 topics_extra = ["desktop-app", "tab-management", "tabs", "tauri-app", "webview", "wkwebview", "productivity"]
+description = "Curated browser keeper-tabs - a macOS console of grouped webview tabs, useful for dashboards, chat, and other persistent webview surfaces."
+topics = ["browser", "desktop-app", "macos", "productivity", "rust", "tab-management", "tabs", "tauri", "tauri-app", "webview", "wkwebview", "typescript", "webviews", "keeper-tabs"]
 
 [[provides]]
-name    = "keeper-tabs"
+name = "keeper-tabs"
 summary = "A macOS console of grouped, persistent browser keeper-tabs (webview surfaces) in a shared sidebar"
