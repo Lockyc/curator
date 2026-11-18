@@ -446,7 +446,7 @@ dependencies = [
 [[package]]
 name = "chrome-core"
 version = "0.1.0"
-source = "git+https://github.com/Lockyc/chrome-core?rev=d33c3f75e61f16593f38c1729065ee9bde071fdd#d33c3f75e61f16593f38c1729065ee9bde071fdd"
+source = "git+https://github.com/Lockyc/chrome-core?rev=6028d8acf414b40e0ae39486e03ed7e17fdff0f5#6028d8acf414b40e0ae39486e03ed7e17fdff0f5"
 
 [[package]]
 name = "chrono"
@@ -473,7 +473,7 @@ dependencies = [
 [[package]]
 name = "config-core"
 version = "0.1.0"
-source = "git+https://github.com/Lockyc/config-core?rev=22feffa59ab66525ea061b5053beeea30d6f27eb#22feffa59ab66525ea061b5053beeea30d6f27eb"
+source = "git+https://github.com/Lockyc/config-core?rev=37df5f286f4f10a6f3da661563d89a53420e8dc7#37df5f286f4f10a6f3da661563d89a53420e8dc7"
 dependencies = [
  "dirs 6.0.0",
  "serde",
@@ -646,7 +646,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.118",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -3623,7 +3623,7 @@ dependencies = [
 [[package]]
 name = "shell-core"
 version = "0.6.0"
-source = "git+https://github.com/Lockyc/shell-core?rev=57205825bec11276152dbd4f621133f26cd88bed#57205825bec11276152dbd4f621133f26cd88bed"
+source = "git+https://github.com/Lockyc/shell-core?rev=62eb1109d752c1dbad3f46a1aa005b25375c5a9b#62eb1109d752c1dbad3f46a1aa005b25375c5a9b"
 dependencies = [
  "block2",
  "getrandom 0.2.17",
