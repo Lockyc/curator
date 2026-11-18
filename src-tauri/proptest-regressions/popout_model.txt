@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d3ad280813393dcc6506570ae0590c781fd1d6ed0b344f96d615d196a33d77d1 # shrinks to (initial_state, transitions, seen_counter) = ((), [PopOut { win: 1, tab: 1 }, Delete { win: 0 }, Close { win: 0, label: 0 }, Reopen { win: 0, label: 0 }], None)
+cc 8b69e3fc84c6ef6bc819647b817964b80b70fa1e323e6b97d374b82922f230a9 # shrinks to (initial_state, transitions, seen_counter) = ((), [PopOut { win: 0, tab: 0 }, Rename { win: 0, title: 4 }, Delete { win: 1 }, Close { win: 0, label: 0 }, Delete { win: 0 }, NewWindow { title: 0, label: 0 }, Rename { win: 0, title: 4 }], None)

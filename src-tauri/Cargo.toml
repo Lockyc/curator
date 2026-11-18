@@ -49,6 +49,10 @@ curator-config = { path = "../crates/curator-config" }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 
+[dev-dependencies]
+proptest = "=1.12.0"
+proptest-state-machine = "=0.9.0"
+
 # The chrome-core / config-core [patch] local-dev overrides live in the workspace-root Cargo.toml
 # (../Cargo.toml), scoped #PATCH:chrome# / #PATCH:config# — managed by `just chrome-dev`/`chrome-pin`
 # + `config-dev`/`config-pin`. A [patch] must sit in the workspace root, not a member manifest.

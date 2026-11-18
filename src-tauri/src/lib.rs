@@ -1,5 +1,7 @@
 mod awareness;
 mod commands;
+#[cfg(test)]
+mod popout_model;
 mod sentinels;
 mod watcher;
 mod webviews;
@@ -392,8 +394,22 @@ pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
     if let Some(rt) = state.windows.lock().unwrap().remove(label) {
         rt.reload_cancel.cancel();
     }
+    settle_pop_outs(app);
+    awareness::refresh_dock_badge(app, &state, Some(label));
+    // During ⌘Q every window is being destroyed and the menu dies with the app.
+    if !app.state::<WindowSet>().is_quitting() {
+        refresh_window_menu(app);
+    }
+}
+
+/// Settle the popped-out tabs against the [`WindowSet`]'s entries ([`settle_detached`]), destroying
+/// the detached window of each tab whose origin left the config.
+fn settle_pop_outs(app: &tauri::AppHandle) {
     let entries = app.state::<WindowSet>().entries();
-    let orphans = settle_detached(&mut state.detached.lock().unwrap(), &entries);
+    let orphans = settle_detached(
+        &mut app.state::<AppState>().detached.lock().unwrap(),
+        &entries,
+    );
     if !orphans.is_empty() {
         for detached in orphans {
             if let Some(w) = app.get_window(&detached) {
@@ -401,11 +417,6 @@ pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
             }
         }
         sync_detached(app);
-    }
-    awareness::refresh_dock_badge(app, &state, Some(label));
-    // During ⌘Q every window is being destroyed and the menu dies with the app.
-    if !app.state::<WindowSet>().is_quitting() {
-        refresh_window_menu(app);
     }
 }
 
@@ -562,6 +573,8 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
             _ => None,
         })
         .collect();
+    // A closed window the reload dropped never reaches `window_closed`.
+    settle_pop_outs(app);
 
     // Kept open windows: reconcile tabs against the new config.
     for entry in set.entries() {
