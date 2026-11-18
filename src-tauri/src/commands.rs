@@ -582,8 +582,7 @@ pub fn raise_popped_window(label: String, webview: Webview, state: State<AppStat
     let app = webview.app_handle();
     if let Some(l) = detached_window_for(&state, &origin_wid, &label) {
         if let Some(win) = app.get_window(&l) {
-            let _ = win.unminimize();
-            let _ = win.set_focus();
+            shell_core::focus::bring_forward(&win);
         }
         // Raising the popped-out window is how its row is "looked at" — the same act that clears
         // a docked tab's notification dot in `select_tab`.

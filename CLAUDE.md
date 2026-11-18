@@ -12,7 +12,8 @@ Built as the operator-side console for a self-hosted homelab.
 **What's next:** `docs/FOLLOWUPS.md` — the durable record of intentionally-deferred work. Start
 there before planning new work; add to it rather than leaving a deferral in a session or a plan.
 
-Dev: `just run`. Build a release `.app`: `just build`. Install/replace it in
+Dev: `just run`; an agent runs `SHELL_CORE_UNFOCUSED=1 just run`, which never takes the operator's
+focus. Build a release `.app`: `just build`. Install/replace it in
 `/Applications` and relaunch: `just install`. Tests: `just test` (`cargo test --workspace`).
 No CI: curator ships on macOS only, so the local `just gate` (format check, clippy, tests,
 example-config format check) is the check — run it per change and green before tagging a release.

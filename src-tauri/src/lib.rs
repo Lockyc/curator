@@ -463,9 +463,7 @@ fn on_spine_action(app: &tauri::AppHandle, routed: shell_core::menu::Routed) {
     let target = routed.target.as_str();
     if routed.from_detached.is_some() {
         match app.get_window(target) {
-            Some(w) => {
-                let _ = w.set_focus();
-            }
+            Some(w) => shell_core::focus::bring_forward(&w),
             // The pop-out's origin was closed: bring it back. Its chrome mounts fresh, with nothing
             // listening yet for this command, so the command ends there.
             None => {

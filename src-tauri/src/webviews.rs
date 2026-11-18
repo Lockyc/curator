@@ -121,6 +121,7 @@ pub fn build_window(
             .inner_size(win_w, win_h)
             .hidden_title(true)
             .title_bar_style(TitleBarStyle::Overlay)
+            .focused(shell_core::focus::focused())
             .build()?;
 
     // Saved bounds (size/position, in AppKit points) are restored by shell-core's geometry plugin's
