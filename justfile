@@ -42,11 +42,12 @@ clippy:
     cargo clippy --workspace -- -D warnings
 
 # Occasional, not in gate: it rebuilds per mutant. Triage what survives into example tests; never aim
-# for zero missed. Extra args pass through (e.g. `-f src-tauri/src/awareness.rs` to narrow it).
+# for zero missed. Args replace the default file set (`-f` globs add up, so they can't narrow it):
+# `just mutants -f src-tauri/src/awareness.rs`.
 # Mutation-test the pure helpers: which mutants the suite lets through
 [group("check")]
 mutants *args:
-    cargo mutants --workspace -f src-tauri/src/awareness.rs -f src-tauri/src/webviews.rs -f src-tauri/src/lib.rs -f src-tauri/src/commands.rs -f 'crates/curator-config/src/*.rs' {{args}}
+    cargo mutants --workspace {{ if args == "" { "-f src-tauri/src/awareness.rs -f src-tauri/src/webviews.rs -f src-tauri/src/lib.rs -f src-tauri/src/commands.rs -f 'crates/curator-config/src/*.rs'" } else { args } }}
 
 # Mutation-test only the lines changed since `base` (after an agent's change)
 [group("check")]
