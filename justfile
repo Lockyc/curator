@@ -41,6 +41,20 @@ fmt:
 clippy:
     cargo clippy --workspace -- -D warnings
 
+# Occasional, not in gate: it rebuilds per mutant. Triage what survives into example tests; never aim
+# for zero missed. Extra args pass through (e.g. `-f src-tauri/src/awareness.rs` to narrow it).
+# Mutation-test the pure helpers: which mutants the suite lets through
+[group("check")]
+mutants *args:
+    cargo mutants --workspace -f src-tauri/src/awareness.rs -f src-tauri/src/webviews.rs -f src-tauri/src/lib.rs -f src-tauri/src/commands.rs -f 'crates/curator-config/src/*.rs' {{args}}
+
+# Mutation-test only the lines changed since `base` (after an agent's change)
+[group("check")]
+mutants-diff base="origin/dev":
+    @mkdir -p target
+    git diff {{base}} > target/mutants.diff
+    cargo mutants --workspace --in-diff target/mutants.diff
+
 # The active-[patch] guard also runs via .githooks/pre-commit (opt-in per clone via core.hooksPath);
 # fmt/clippy/tests have no hook/CI yet, so run this manually before committing/merging.
 # Full pre-merge gate: fmt-check, clippy, tests, config fmt-check, active-[patch] guard
