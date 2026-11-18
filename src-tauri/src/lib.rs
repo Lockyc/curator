@@ -542,24 +542,33 @@ fn on_spine_action(app: &tauri::AppHandle, routed: shell_core::menu::Routed) {
 /// config" command.
 pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::Config) {
     let state = app.state::<AppState>();
+    // Every key is named, so a new one fails to compile until reload decides what it does with it.
+    let curator_config::Config {
+        dark_mode,
+        // Applied by the watcher before this runs: it formats the file on a clean reload.
+        format_on_save: _,
+        allow_insecure,
+        session,
+        density,
+        sidebar_drag,
+        auto_update,
+        tab_digit_keys,
+        windows,
+    } = new_cfg;
     // A host taken off allow_insecure stops being trusted now, not at the next launch.
     #[cfg(target_os = "macos")]
-    shell_core::web::insecure::set_allowlist(new_cfg.allow_insecure.clone());
+    shell_core::web::insecure::set_allowlist(allow_insecure.clone());
     // Keep the live dark_mode current so a later Window-menu reopen themes to match.
-    state.dark_mode.store(new_cfg.dark_mode, Ordering::Relaxed);
+    state.dark_mode.store(*dark_mode, Ordering::Relaxed);
     // Keep the live density current so each kept window's chrome, re-calling window_identity on
     // `config-reloaded` below, picks up a density change without a relaunch.
-    *state.density.lock().unwrap() = new_cfg.density;
+    *state.density.lock().unwrap() = *density;
     // Same for sidebar_drag — the chrome re-reads it via window_identity and re-applies windowDrag.
-    state
-        .sidebar_drag
-        .store(new_cfg.sidebar_drag, Ordering::Relaxed);
+    state.sidebar_drag.store(*sidebar_drag, Ordering::Relaxed);
     // Same for auto_update — a reload can flip whether launch checks run (menu check is unaffected).
-    state
-        .auto_update
-        .store(new_cfg.auto_update, Ordering::Relaxed);
+    state.auto_update.store(*auto_update, Ordering::Relaxed);
     // Same for tab_digit_keys — the menu rebuild below reads this, so a flip applies live.
-    *state.tab_digit_keys.lock().unwrap() = new_cfg.tab_digit_keys;
+    *state.tab_digit_keys.lock().unwrap() = *tab_digit_keys;
 
     // `open_window` builds from `last_cfg`, so it must be the new config before the set opens any.
     *state.last_cfg.lock().unwrap() = new_cfg.clone();
@@ -581,8 +590,7 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
         if !entry.open || opened.contains(&entry.id) {
             continue;
         }
-        let Some(win_cfg) = new_cfg
-            .windows
+        let Some(win_cfg) = windows
             .iter()
             .find(|w| w.title.trim() == entry.title.trim())
         else {
@@ -591,14 +599,8 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
         let Some(window) = app.get_window(&entry.id) else {
             continue;
         };
-        let _ = window.set_theme(theme_for(new_cfg.dark_mode));
-        reconcile_window_tabs(
-            &state,
-            &window,
-            &entry.id,
-            new_cfg.session.as_deref(),
-            win_cfg,
-        );
+        let _ = window.set_theme(theme_for(*dark_mode));
+        reconcile_window_tabs(&state, &window, &entry.id, session.as_deref(), win_cfg);
     }
 
     // The Window submenu tracks windows that came or went.
@@ -738,20 +740,41 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
     let _ = app.emit_to(origin_wid.as_str(), "config-reloaded", ());
 }
 
-/// Labels present in both `old` and `new` whose resolved login `session` differs. A tab's label
-/// hashes its URL alone, so a session edit keeps the label — but a live webview's data store is
-/// fixed at creation, so such a tab must be rebuilt to pick the new session up.
-fn session_changed(
+/// Labels present in both `old` and `new` whose live webview must be rebuilt ([`stale_webview`]).
+fn needs_rebuild(
     old: &[curator_config::TabView],
     new: &[curator_config::TabView],
 ) -> HashSet<String> {
     new.iter()
         .filter(|n| {
             old.iter()
-                .any(|o| o.label == n.label && o.session != n.session)
+                .any(|o| o.label == n.label && stale_webview(o, n))
         })
         .map(|n| n.label.clone())
         .collect()
+}
+
+/// Whether a webview built from `old` is stale once its tab reads `new`: a field fixed when the
+/// webview is built changed. Every field is named, so a new one fails to compile until it is
+/// decided here. A tab's label hashes its URL alone, so a session edit keeps the label.
+fn stale_webview(old: &curator_config::TabView, new: &curator_config::TabView) -> bool {
+    let curator_config::TabView {
+        // The identity the caller matched on.
+        label: _,
+        // Sidebar display: the chrome re-reads it on `config-reloaded`.
+        group: _,
+        title: _,
+        // Decides eager creation and visibility; reconcile and apply_active act on the new value.
+        load_on_open: _,
+        // Reload timers are respawned on every reconcile.
+        reload_every: _,
+        // Read from the config on each unread event (`WindowRuntime::unread_mode`).
+        unread: _,
+        // The webview's home URL and its data store are fixed when it is built.
+        url,
+        session,
+    } = new;
+    *url != old.url || *session != old.session
 }
 
 /// Reconcile one kept window's content webviews to its new config: eager-create newly-added
@@ -845,7 +868,7 @@ pub(crate) fn plan_reconcile(
     win_cfg: &curator_config::WindowConfig,
     global_session: Option<&str>,
 ) -> ReconcilePlan {
-    let rebuild = session_changed(&rt.views(), views);
+    let rebuild = needs_rebuild(&rt.views(), views);
     let keep: HashSet<String> = views
         .iter()
         .map(|v| v.label.clone())
@@ -1504,14 +1527,45 @@ mod tests {
     }
 
     #[test]
-    fn session_changed_flags_only_kept_labels_with_a_new_session() {
+    fn needs_rebuild_flags_only_kept_labels_with_a_new_session() {
         let old = vec![
             view("a", "default"),
             view("b", "default"),
             view("gone", "x"),
         ];
         let new = vec![view("a", "work"), view("b", "default"), view("added", "y")];
-        let changed = session_changed(&old, &new);
+        let changed = needs_rebuild(&old, &new);
         assert_eq!(changed, HashSet::from(["a".to_string()]));
+    }
+
+    /// One case per `TabView` field, with the verdict reload gives an edit to it alone.
+    #[test]
+    fn each_tab_field_has_a_rebuild_verdict() {
+        type Edit = fn(&mut curator_config::TabView);
+        let cases: [(&str, Edit, bool); 7] = [
+            ("session", |v| v.session = "work".into(), true),
+            ("url", |v| v.url = "https://moved.example".into(), true),
+            ("title", |v| v.title = "Renamed".into(), false),
+            ("group", |v| v.group = Some("Grouped".into()), false),
+            ("load_on_open", |v| v.load_on_open = !v.load_on_open, false),
+            ("reload_every", |v| v.reload_every = Some(5), false),
+            (
+                "unread",
+                |v| v.unread = curator_config::UnreadMode::Off,
+                false,
+            ),
+        ];
+        let old = view("a", "default");
+        for (field, edit, rebuild) in cases {
+            let mut new = old.clone();
+            edit(&mut new);
+            assert_ne!(new, old, "{field}: the edit changed nothing");
+            assert_eq!(stale_webview(&old, &new), rebuild, "{field}");
+            assert_eq!(
+                needs_rebuild(std::slice::from_ref(&old), &[new]).contains("a"),
+                rebuild,
+                "{field}"
+            );
+        }
     }
 }
