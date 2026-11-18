@@ -148,18 +148,18 @@ pub(crate) fn opening_tabs(
 ) -> (webviews::TabState, Vec<curator_config::TabView>) {
     let mut tabs = webviews::TabState::default();
     let mut to_create = Vec::new();
-    for v in views.iter().filter(|v| v.load_on_open) {
-        if detached_tabs.contains(&v.label) {
-            tabs.mark_detached(&v.label);
-            continue;
-        }
+    for v in views.iter().filter(|v| detached_tabs.contains(&v.label)) {
+        tabs.mark_detached(&v.label);
+    }
+    for v in views
+        .iter()
+        .filter(|v| v.load_on_open && !detached_tabs.contains(&v.label))
+    {
         tabs.mark_created(&v.label);
         to_create.push(v.clone());
     }
-    if let Some(label) = startup {
-        if detached_tabs.contains(label) {
-            tabs.mark_detached(label);
-        } else if let Some(v) = views.iter().find(|v| v.label == label) {
+    if let Some(label) = startup.filter(|l| !detached_tabs.contains(*l)) {
+        if let Some(v) = views.iter().find(|v| v.label == label) {
             if !tabs.is_created(label) {
                 tabs.mark_created(label);
                 to_create.push(v.clone());
@@ -1273,6 +1273,25 @@ mod tests {
         assert!(popped_out_of(&mut out, "work", "work").is_empty());
         assert_eq!(out.values().next().unwrap().origin_wid, "work");
         assert_eq!(origin_home("job", &[entry("work", "work", false)]), None);
+    }
+
+    #[test]
+    fn a_reopened_origin_keeps_every_popped_out_tab_a_placeholder() {
+        let mut lazy = view("job:tab-1", "default");
+        lazy.load_on_open = false;
+        let mut eager = view("job:tab-0", "default");
+        eager.load_on_open = true;
+        let views = [eager.clone(), lazy.clone()];
+        let out = HashSet::from([lazy.label.clone()]);
+        let (tabs, to_create) = opening_tabs(&views, &out, Some(&eager.label));
+        assert!(
+            tabs.is_detached(&lazy.label),
+            "a lazy popped-out tab reads as an ordinary row"
+        );
+        assert!(!tabs.is_created(&lazy.label));
+        assert_eq!(tabs.active(), Some(eager.label.as_str()));
+        let created: Vec<_> = to_create.iter().map(|v| v.label.as_str()).collect();
+        assert_eq!(created, [eager.label.as_str()]);
     }
 
     #[test]
