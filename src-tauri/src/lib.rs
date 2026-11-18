@@ -135,6 +135,41 @@ pub(crate) fn popped_out_of(
         .collect()
 }
 
+/// The tab bookkeeping a window opens with, and the views to create for it, in order.
+/// `load_on_open` tabs are created at launch and stay live (never hidden), so they keep syncing and
+/// can notify in the background; everything else is lazy. The `startup` tab — by default the first
+/// `load_on_open` tab, else none — is created and active. A tab in `detached_tabs` lives on its
+/// detached window, so it is never created here (it would collide on the app-global label) nor
+/// made active: it stays a popped-out placeholder until it redocks.
+pub(crate) fn opening_tabs(
+    views: &[curator_config::TabView],
+    detached_tabs: &HashSet<String>,
+    startup: Option<&str>,
+) -> (webviews::TabState, Vec<curator_config::TabView>) {
+    let mut tabs = webviews::TabState::default();
+    let mut to_create = Vec::new();
+    for v in views.iter().filter(|v| v.load_on_open) {
+        if detached_tabs.contains(&v.label) {
+            tabs.mark_detached(&v.label);
+            continue;
+        }
+        tabs.mark_created(&v.label);
+        to_create.push(v.clone());
+    }
+    if let Some(label) = startup {
+        if detached_tabs.contains(label) {
+            tabs.mark_detached(label);
+        } else if let Some(v) = views.iter().find(|v| v.label == label) {
+            if !tabs.is_created(label) {
+                tabs.mark_created(label);
+                to_create.push(v.clone());
+            }
+            tabs.set_active(label);
+        }
+    }
+    (tabs, to_create)
+}
+
 /// Carry a window's in-place rename from `old` to `new` into the popped-out tabs' origin titles.
 pub(crate) fn retitle_origins(
     detached: &mut HashMap<String, CuratorDetached>,
@@ -318,35 +353,10 @@ pub(crate) fn open_window(
     let hole = webviews::initial_hole(slot.decl.width, slot.decl.height);
 
     let views = win_cfg.tab_views(wid, global_session);
-    let mut tabs = webviews::TabState::default();
-
-    // Eager-create the `load_on_open` tabs: they load at launch and stay live (never hidden), so
-    // they keep syncing and can notify in the background. Everything else is lazy. A popped-out tab
-    // is NOT recreated here (it would collide on the app-global label).
-    for v in views.iter().filter(|v| v.load_on_open) {
-        if detached_tabs.contains(&v.label) {
-            tabs.mark_detached(&v.label);
-            continue;
-        }
+    let startup = win_cfg.startup_label(wid, global_session);
+    let (tabs, to_create) = opening_tabs(&views, &detached_tabs, startup.as_deref());
+    for v in &to_create {
         webviews::create_content_webview(&window, v, hole, win_cfg.colour.as_deref())?;
-        tabs.mark_created(&v.label);
-    }
-
-    // Active tab: whatever `startup_label` resolves to — by default the first load_on_open tab (so
-    // a window of background services opens showing one of them), else the blank placeholder. A
-    // detached tab can't be the active one (its content isn't on this window), so it's left as a
-    // placeholder and the window opens on the empty state until the user picks another tab.
-    let active = win_cfg.startup_label(wid, global_session);
-    if let Some(label) = &active {
-        if detached_tabs.contains(label) {
-            tabs.mark_detached(label);
-        } else if let Some(v) = views.iter().find(|v| &v.label == label) {
-            if !tabs.is_created(label) {
-                webviews::create_content_webview(&window, v, hole, win_cfg.colour.as_deref())?;
-                tabs.mark_created(label);
-            }
-            tabs.set_active(label);
-        }
     }
     webviews::apply_active(&window, tabs.active(), &views)?;
 
