@@ -771,68 +771,15 @@ fn reconcile_window_tabs(
     // the main thread, which may itself be waiting on this same lock (e.g. in on_title_changed)
     // — holding the lock across them would deadlock. So we compute the orphan/create lists,
     // active tab, dock total, and a fresh reload-timer generation under the lock, then act.
-    let (orphans, to_create, active, dock_total, reload_cancel, hole, colour) = {
+    let (plan, dock_total, reload_cancel, hole, colour) = {
         let mut windows = state.windows.lock().unwrap();
         let Some(rt) = windows.get_mut(window_id) else {
             return;
         };
-        let rebuild = session_changed(&rt.views(), &views);
-        let keep: HashSet<String> = views
-            .iter()
-            .map(|v| v.label.clone())
-            .filter(|l| !rebuild.contains(l))
-            .collect();
-        let prior_active = rt.tabs.active().map(str::to_string);
-        rt.cfg = win_cfg.clone();
-        rt.global_session = global_session.map(str::to_string);
+        let plan = plan_reconcile(rt, &views, win_cfg, global_session);
         // Read the current hole rect under the lock to pass to create below (re-locking inside
         // create_content_webview would self-deadlock the non-reentrant mutex).
         let hole = rt.hole;
-
-        // Orphans: created tabs no longer in the config (removed, or URL/label changed) or whose
-        // session changed. Forget all their state; the webviews are closed after the lock is
-        // dropped, and a session-changed tab is recreated below like any uncreated one.
-        let orphans = rt.tabs.orphans(&keep);
-        for label in &orphans {
-            rt.tabs.mark_unloaded(label);
-            rt.unread.remove(label);
-            rt.badge_authoritative.remove(label);
-            rt.notified.remove(label);
-        }
-
-        // Eager-create newly-added load_on_open tabs so they're live immediately; others stay
-        // lazy. Mark created here; build after the lock is dropped.
-        let mut to_create: Vec<curator_config::TabView> = Vec::new();
-        for v in &views {
-            // A popped-out tab is skipped: its webview lives on the detached window, so recreating
-            // it here would collide on the app-global label. It redocks via `redock`, not reconcile.
-            if v.load_on_open && !rt.tabs.is_created(&v.label) && !rt.tabs.is_detached(&v.label) {
-                rt.tabs.mark_created(&v.label);
-                to_create.push(v.clone());
-            }
-        }
-
-        // Resolve the active tab: keep the current one if it survived (mark_unloaded already
-        // cleared it if it was orphaned) or is only being rebuilt for a session change, else fall
-        // back to startup_label (by default the first load_on_open tab). Ensure it's created. A
-        // detached tab can't be active (its content is on the detached window), so it's never
-        // created or promoted here.
-        let active = rt
-            .tabs
-            .active()
-            .map(str::to_string)
-            .or_else(|| prior_active.filter(|a| rebuild.contains(a)))
-            .or_else(|| win_cfg.startup_label(window_id, global_session))
-            .filter(|a| !rt.tabs.is_detached(a));
-        if let Some(a) = &active {
-            if !rt.tabs.is_created(a) {
-                rt.tabs.mark_created(a);
-                if let Some(v) = views.iter().find(|v| &v.label == a) {
-                    to_create.push(v.clone());
-                }
-            }
-            rt.tabs.set_active(a);
-        }
 
         // Stop the old reload timers and start a fresh generation for the new tab set (this is
         // also what gives newly-added tabs their reload timers).
@@ -848,9 +795,7 @@ fn reconcile_window_tabs(
                 .collect::<Vec<_>>(),
         );
         (
-            orphans,
-            to_create,
-            active,
+            plan,
             dock_total,
             reload_cancel,
             hole,
@@ -859,21 +804,93 @@ fn reconcile_window_tabs(
     };
 
     // Webview side-effects, lock released.
-    for label in &orphans {
+    for label in &plan.orphans {
         if let Some(wv) = window.get_webview(label) {
             shell_core::web::content::close_content_webview(&wv);
         }
     }
-    for v in &to_create {
+    for v in &plan.to_create {
         let _ = webviews::create_content_webview(window, v, hole, colour.as_deref());
     }
     spawn_reload_timers(window, &views, reload_cancel);
     awareness::set_dock_badge(window.app_handle(), dock_total, None);
     // Re-apply the layout so the content area isn't left on a closed orphan.
-    let _ = webviews::apply_active(window, active.as_deref(), &views);
+    let _ = webviews::apply_active(window, plan.active.as_deref(), &views);
     // A tab made active here is one the user is now looking at: clear its dot.
-    if let Some(label) = active.as_deref() {
+    if let Some(label) = plan.active.as_deref() {
         awareness::mark_read(window.app_handle(), window_id, label);
+    }
+}
+
+/// What reconciling a kept window to a new config does to its tabs, decided under the `windows`
+/// lock by [`plan_reconcile`] and carried out after it drops.
+pub(crate) struct ReconcilePlan {
+    /// Loaded tabs whose webviews close: gone from the config (removed, or URL/label changed), or
+    /// rebuilt for a new session.
+    pub orphans: Vec<String>,
+    /// Webviews to build, in order: newly-added `load_on_open` tabs, then the active tab if cold.
+    pub to_create: Vec<curator_config::TabView>,
+    /// The tab shown afterwards; it is the one the user is now looking at, so its dot is cleared.
+    pub active: Option<String>,
+}
+
+/// Bring `rt`'s bookkeeping to the new `views` of `win_cfg` and say which webviews to close and
+/// build. An orphan's unread, Badging authority and notification dot go with it. A popped-out tab
+/// is never built here (its webview lives on the detached window; it redocks via [`redock`]) nor
+/// made active. The active tab is kept if it survived or is only rebuilt for a session change,
+/// else it falls back to `startup_label`.
+pub(crate) fn plan_reconcile(
+    rt: &mut WindowRuntime,
+    views: &[curator_config::TabView],
+    win_cfg: &curator_config::WindowConfig,
+    global_session: Option<&str>,
+) -> ReconcilePlan {
+    let rebuild = session_changed(&rt.views(), views);
+    let keep: HashSet<String> = views
+        .iter()
+        .map(|v| v.label.clone())
+        .filter(|l| !rebuild.contains(l))
+        .collect();
+    let prior_active = rt.tabs.active().map(str::to_string);
+    rt.cfg = win_cfg.clone();
+    rt.global_session = global_session.map(str::to_string);
+
+    let orphans = rt.tabs.orphans(&keep);
+    for label in &orphans {
+        rt.tabs.mark_unloaded(label);
+        rt.unread.remove(label);
+        rt.badge_authoritative.remove(label);
+        rt.notified.remove(label);
+    }
+
+    let mut to_create = Vec::new();
+    for v in views {
+        if v.load_on_open && !rt.tabs.is_created(&v.label) && !rt.tabs.is_detached(&v.label) {
+            rt.tabs.mark_created(&v.label);
+            to_create.push(v.clone());
+        }
+    }
+
+    let active = rt
+        .tabs
+        .active()
+        .map(str::to_string)
+        .or_else(|| prior_active.filter(|a| rebuild.contains(a)))
+        .or_else(|| win_cfg.startup_label(&rt.label, global_session))
+        .filter(|a| !rt.tabs.is_detached(a));
+    if let Some(a) = &active {
+        if !rt.tabs.is_created(a) {
+            rt.tabs.mark_created(a);
+            if let Some(v) = views.iter().find(|v| &v.label == a) {
+                to_create.push(v.clone());
+            }
+        }
+        rt.tabs.set_active(a);
+    }
+    ReconcilePlan {
+        orphans,
+        to_create,
+        active,
     }
 }
 
@@ -1360,6 +1377,130 @@ mod tests {
             unread: Default::default(),
             session: session.to_string(),
         }
+    }
+
+    /// Window "W": tab A (`load_on_open`, the startup tab) and lazy tab B, in those sessions.
+    fn reconcile_cfg(a_session: &str, b_session: &str) -> curator_config::WindowConfig {
+        let src = format!(
+            "[[window]]\ntitle = \"W\"\n\
+             [[window.tab]]\ntitle = \"A\"\nurl = \"https://a.test/\"\nload_on_open = true\nsession = \"{a_session}\"\n\
+             [[window.tab]]\ntitle = \"B\"\nurl = \"https://b.test/\"\nsession = \"{b_session}\"\n"
+        );
+        curator_config::parse_and_validate(&src)
+            .unwrap()
+            .0
+            .windows
+            .remove(0)
+    }
+
+    fn runtime(cfg: curator_config::WindowConfig) -> WindowRuntime {
+        WindowRuntime {
+            label: "W".into(),
+            cfg,
+            global_session: None,
+            tabs: webviews::TabState::default(),
+            unread: HashMap::new(),
+            badge_authoritative: HashSet::new(),
+            notified: HashSet::new(),
+            reload_cancel: Arc::new(ReloadCancel::new()),
+            hole: webviews::initial_hole(800.0, 600.0),
+        }
+    }
+
+    fn labels(views: &[curator_config::TabView]) -> Vec<&str> {
+        views.iter().map(|v| v.label.as_str()).collect()
+    }
+
+    #[test]
+    fn a_session_edit_rebuilds_the_active_tab_and_keeps_it_active() {
+        // B is lazy and not the startup tab, so only the session-rebuild rule keeps it shown.
+        let mut rt = runtime(reconcile_cfg("default", "default"));
+        let [a, b] = [rt.views()[0].label.clone(), rt.views()[1].label.clone()];
+        rt.tabs.mark_created(&a);
+        rt.tabs.mark_created(&b);
+        rt.tabs.set_active(&b);
+        rt.unread.insert(b.clone(), awareness::Unread::Count(3));
+        rt.notified.insert(b.clone());
+
+        let new = reconcile_cfg("default", "work");
+        let views = new.tab_views("W", None);
+        let plan = plan_reconcile(&mut rt, &views, &new, None);
+
+        assert_eq!(
+            plan.orphans,
+            [b.clone()],
+            "the old data store's webview closes"
+        );
+        assert_eq!(labels(&plan.to_create), [b.as_str()], "and is rebuilt once");
+        assert_eq!(
+            plan.active.as_deref(),
+            Some(b.as_str()),
+            "still the shown tab, so its dot is cleared"
+        );
+        assert_eq!(rt.tabs.active(), Some(b.as_str()));
+        assert!(rt.tabs.is_created(&b));
+        assert!(!rt.unread.contains_key(&b) && !rt.notified.contains(&b));
+        assert_eq!(
+            rt.views()[1].session,
+            "work",
+            "the runtime holds the new config"
+        );
+    }
+
+    #[test]
+    fn an_unchanged_config_closes_and_builds_nothing() {
+        let mut rt = runtime(reconcile_cfg("default", "default"));
+        let [a, b] = [rt.views()[0].label.clone(), rt.views()[1].label.clone()];
+        rt.tabs.mark_created(&a);
+        rt.tabs.mark_created(&b);
+        rt.tabs.set_active(&b);
+        let same = reconcile_cfg("default", "default");
+        let plan = plan_reconcile(&mut rt, &same.tab_views("W", None), &same, None);
+        assert!(plan.orphans.is_empty() && plan.to_create.is_empty());
+        assert_eq!(
+            plan.active.as_deref(),
+            Some(b.as_str()),
+            "the lazy tab stays shown"
+        );
+    }
+
+    #[test]
+    fn a_popped_out_tab_is_never_built_or_made_active() {
+        for session in ["default", "work"] {
+            let mut rt = runtime(reconcile_cfg("default", "default"));
+            let a = rt.views()[0].label.clone();
+            rt.tabs.mark_detached(&a);
+            let new = reconcile_cfg(session, "default");
+            let plan = plan_reconcile(&mut rt, &new.tab_views("W", None), &new, None);
+            assert!(plan.orphans.is_empty(), "{session}");
+            assert!(plan.to_create.is_empty(), "{session}: built on the origin");
+            assert_eq!(plan.active, None, "{session}: the startup tab is out");
+            assert!(rt.tabs.is_detached(&a) && !rt.tabs.is_created(&a));
+        }
+    }
+
+    #[test]
+    fn a_removed_active_tab_falls_back_to_the_startup_tab() {
+        let mut rt = runtime(reconcile_cfg("default", "default"));
+        let b = rt.views()[1].label.clone();
+        rt.tabs.mark_created(&b);
+        rt.tabs.set_active(&b);
+        rt.unread.insert(b.clone(), awareness::Unread::Count(1));
+        let src = "[[window]]\ntitle = \"W\"\n[[window.tab]]\ntitle = \"A\"\nurl = \"https://a.test/\"\nload_on_open = true\n";
+        let new = curator_config::parse_and_validate(src)
+            .unwrap()
+            .0
+            .windows
+            .remove(0);
+        let views = new.tab_views("W", None);
+        let plan = plan_reconcile(&mut rt, &views, &new, None);
+        assert_eq!(plan.orphans, [b.clone()]);
+        assert!(
+            !rt.unread.contains_key(&b),
+            "its count would linger on the dock"
+        );
+        assert_eq!(labels(&plan.to_create), [views[0].label.as_str()]);
+        assert_eq!(plan.active.as_deref(), Some(views[0].label.as_str()));
     }
 
     #[test]
