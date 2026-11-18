@@ -1428,7 +1428,7 @@ mod tests {
 
         assert_eq!(
             plan.orphans,
-            [b.clone()],
+            [b.as_str()],
             "the old data store's webview closes"
         );
         assert_eq!(labels(&plan.to_create), [b.as_str()], "and is rebuilt once");
@@ -1494,7 +1494,7 @@ mod tests {
             .remove(0);
         let views = new.tab_views("W", None);
         let plan = plan_reconcile(&mut rt, &views, &new, None);
-        assert_eq!(plan.orphans, [b.clone()]);
+        assert_eq!(plan.orphans, [b.as_str()]);
         assert!(
             !rt.unread.contains_key(&b),
             "its count would linger on the dock"
