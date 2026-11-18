@@ -1416,7 +1416,8 @@ mod tests {
             .remove(0)
     }
 
-    fn runtime(cfg: curator_config::WindowConfig) -> WindowRuntime {
+    /// An open window "W" running `cfg`, with no tab loaded.
+    pub(crate) fn runtime(cfg: curator_config::WindowConfig) -> WindowRuntime {
         WindowRuntime {
             label: "W".into(),
             cfg,

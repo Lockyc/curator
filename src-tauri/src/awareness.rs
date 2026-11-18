@@ -165,19 +165,49 @@ fn apply_unread(app: &tauri::AppHandle, window_id: &str, label: String, unread: 
         let Some(rt) = windows.get_mut(window_id) else {
             return;
         };
-        // Ignore a late event for a tab that's been unloaded or orphaned (its webview is on
-        // its way out) — otherwise a stale unread could re-appear and linger on the dock badge.
-        // A popped-out tab still has a live webview, on its detached window.
-        if !rt.tabs.is_created(&label) && !rt.tabs.is_detached(&label) {
+        let Some(shown) = record_unread(rt, &label, unread) else {
             return;
-        }
-        // The one place the tab's `unread` mode narrows a service-reported state — both the title
-        // and Badging sources land here, so neither can drift from the other.
-        let unread = admitted(rt.unread_mode(&label), unread);
-        rt.unread.insert(label.clone(), unread);
-        displayed(unread, rt.notified.contains(&label))
+        };
+        shown
     };
     emit_badge(app, &state, window_id, label, shown);
+}
+
+/// Record a service-reported `unread` for `label` in `rt` and return what its row now shows.
+/// `None` for a late event on a tab that's been unloaded or orphaned (its webview is on its way
+/// out), which would otherwise bring a stale unread back onto the dock badge. A popped-out tab
+/// still has a live webview, on its detached window.
+pub(crate) fn record_unread(
+    rt: &mut crate::WindowRuntime,
+    label: &str,
+    unread: Unread,
+) -> Option<Unread> {
+    if !rt.tabs.is_created(label) && !rt.tabs.is_detached(label) {
+        return None;
+    }
+    // The one place the tab's `unread` mode narrows a service-reported state — both the title
+    // and Badging sources land here, so neither can drift from the other.
+    let unread = admitted(rt.unread_mode(label), unread);
+    rt.unread.insert(label.to_string(), unread);
+    Some(displayed(unread, rt.notified.contains(label)))
+}
+
+/// Raise the notification dot on `label` in `rt` and return what its row now shows. `None` when
+/// skipped: the tab has no live webview, its service is Badging-authoritative, it is the tab the
+/// user is looking at, or its mode is `off`.
+pub(crate) fn raise_dot(rt: &mut crate::WindowRuntime, label: &str) -> Option<Unread> {
+    if !(rt.tabs.is_created(label) || rt.tabs.is_detached(label))
+        || rt.badge_authoritative.contains(label)
+        || rt.tabs.active() == Some(label)
+        || !rt.unread_mode(label).allows_any()
+    {
+        return None;
+    }
+    rt.notified.insert(label.to_string());
+    Some(displayed(
+        rt.unread.get(label).copied().unwrap_or(Unread::None),
+        true,
+    ))
 }
 
 /// Push one tab's badge state out: the per-window sidebar pill plus the single aggregate dock
@@ -303,18 +333,13 @@ pub fn on_notification(app: &tauri::AppHandle, window_label: &str, label: &str) 
     let (window_id, label) = (window_id.as_str(), label.as_str());
     let shown = {
         let mut windows = state.windows.lock().unwrap();
-        let Some(rt) = windows.get_mut(window_id) else {
+        let Some(shown) = windows
+            .get_mut(window_id)
+            .and_then(|rt| raise_dot(rt, label))
+        else {
             return;
         };
-        if !(rt.tabs.is_created(label) || rt.tabs.is_detached(label))
-            || rt.badge_authoritative.contains(label)
-            || rt.tabs.active() == Some(label)
-            || !rt.unread_mode(label).allows_any()
-        {
-            return;
-        }
-        rt.notified.insert(label.to_string());
-        displayed(rt.unread.get(label).copied().unwrap_or(Unread::None), true)
+        shown
     };
     emit_badge(app, &state, window_id, label.to_string(), shown);
 }
@@ -343,6 +368,85 @@ pub fn mark_read(app: &tauri::AppHandle, window_id: &str, label: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Window "W" with tabs "all", "count" and "off", each in the `unread` mode it is named for.
+    fn modes_runtime() -> (crate::WindowRuntime, [String; 3]) {
+        let src = "[[window]]\ntitle = \"W\"\n\
+            [[window.tab]]\ntitle = \"all\"\nurl = \"https://all.test/\"\n\
+            [[window.tab]]\ntitle = \"count\"\nurl = \"https://count.test/\"\nunread = \"count\"\n\
+            [[window.tab]]\ntitle = \"off\"\nurl = \"https://off.test/\"\nunread = \"off\"\n";
+        let cfg = curator_config::parse_and_validate(src)
+            .unwrap()
+            .0
+            .windows
+            .remove(0);
+        let rt = crate::tests::runtime(cfg);
+        let v = rt.views();
+        let labels = [v[0].label.clone(), v[1].label.clone(), v[2].label.clone()];
+        (rt, labels)
+    }
+
+    #[test]
+    fn unread_is_recorded_only_for_a_live_tab_and_through_its_mode() {
+        let (mut rt, [all, count, _]) = modes_runtime();
+        assert_eq!(
+            record_unread(&mut rt, &all, Unread::Count(2)),
+            None,
+            "a late event on an unloaded tab"
+        );
+        assert!(rt.unread.is_empty());
+
+        rt.tabs.mark_created(&all);
+        assert_eq!(
+            record_unread(&mut rt, &all, Unread::Count(2)),
+            Some(Unread::Count(2))
+        );
+        rt.tabs.mark_detached(&count);
+        assert_eq!(
+            record_unread(&mut rt, &count, Unread::Activity),
+            Some(Unread::None),
+            "a popped-out tab still reports, narrowed by its mode"
+        );
+        assert_eq!(rt.unread.get(&count), Some(&Unread::None));
+
+        rt.notified.insert(count.clone());
+        assert_eq!(
+            record_unread(&mut rt, &count, Unread::None),
+            Some(Unread::Activity),
+            "a pending dot still shows"
+        );
+    }
+
+    #[test]
+    fn the_notification_dot_skips_exactly_the_documented_tabs() {
+        let (mut rt, [all, count, off]) = modes_runtime();
+        assert_eq!(raise_dot(&mut rt, &all), None, "not loaded");
+        for l in [&all, &count, &off] {
+            rt.tabs.mark_created(l);
+        }
+        rt.tabs.set_active(&all);
+        assert_eq!(raise_dot(&mut rt, &all), None, "the tab in view");
+        assert_eq!(raise_dot(&mut rt, &off), None, "unread = off");
+        rt.badge_authoritative.insert(count.clone());
+        assert_eq!(raise_dot(&mut rt, &count), None, "its own count wins");
+        assert!(rt.notified.is_empty());
+
+        rt.badge_authoritative.clear();
+        rt.unread.insert(count.clone(), Unread::Count(4));
+        assert_eq!(
+            raise_dot(&mut rt, &count),
+            Some(Unread::Count(4)),
+            "count mode keeps the dot, and a count outranks it"
+        );
+        assert!(rt.notified.contains(&count));
+
+        rt.tabs.mark_detached(&all);
+        assert_eq!(
+            raise_dot(&mut rt, &all),
+            Some(Unread::Activity),
+            "a popped-out tab is never the one in view"
+        );
+    }
 
     #[test]
     fn a_rehomed_pop_out_reports_under_its_origin_and_rehomed_label() {
