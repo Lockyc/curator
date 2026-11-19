@@ -13,7 +13,7 @@ open all day — where nothing else can bury them. You list those tabs in a conf
 keeps each one in a sidebar, signed in, and sends every other link to your normal browser, so the
 set never fills with clutter.
 
-![curator window showing grouped keeper tabs in the sidebar](docs/screenshot.png)
+![curator window showing grouped keeper tabs in the sidebar](docs/screenshots/sidebar.png)
 
 ## Why
 
@@ -176,7 +176,6 @@ Needs Rust and the Tauri CLI (`cargo install tauri-cli --version ^2`).
 
 ```sh
 git clone https://github.com/lockyc/curator && cd curator
-git config core.hooksPath .githooks   # once per clone: arms the pre-commit / pre-push hooks
 just run      # launch against examples/config.toml (never touches your real config)
 just test     # Rust tests
 just gate     # the full pre-merge gate
