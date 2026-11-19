@@ -11,17 +11,10 @@
 A home for the browser tabs you can't afford to lose — the webmail, chat and dashboards you keep
 open all day — where nothing else can bury them. You list those tabs in a config file; curator
 keeps each one in a sidebar, signed in, and sends every other link to your normal browser, so the
-set never fills with clutter.
+set never fills with clutter. Firefox's pinned tabs come closest, but the pinned window itself gets
+lost among the others.
 
 ![curator window showing grouped keeper tabs in the sidebar](docs/screenshots/sidebar.png)
-
-## Why
-
-Important tabs (mail, calendar, dashboards) get buried in a sea of browser windows. Firefox
-pinned tabs are the closest workaround, but the pinned window itself gets lost and keeping it
-clean is constant manual work. curator gives keeper tabs a distinct, stable home that lives
-outside the window pile and never accumulates cruft: curation is file-driven, everything else is
-ephemeral.
 
 ## Install
 
