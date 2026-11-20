@@ -531,12 +531,16 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
                     rt.views()
                 })
             };
-            let _ = webviews::create_content_webview(
+            if webviews::create_content_webview(
                 &origin_window,
                 &view,
                 origin_hole,
                 colour.as_deref(),
-            );
+            )
+            .is_err()
+            {
+                state.unmark_failed_create(&origin_wid, &label);
+            }
             if let Some(views) = views {
                 let _ = webviews::apply_active(&origin_window, Some(&label), &views);
             }

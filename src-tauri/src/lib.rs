@@ -306,6 +306,15 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Undo `mark_created` for a tab whose webview could not be built (the lock is taken here,
+    /// after the webview op), so it reads as unloaded and `select_tab` builds it next time
+    /// rather than showing a blank content area for a tab marked loaded.
+    pub(crate) fn unmark_failed_create(&self, window_id: &str, label: &str) {
+        if let Some(rt) = self.windows.lock().unwrap().get_mut(window_id) {
+            rt.tabs.mark_unloaded(label);
+        }
+    }
+
     /// Every window's unread states flattened — input to the single aggregate dock badge.
     pub fn all_unread(&self) -> Vec<awareness::Unread> {
         self.windows
@@ -723,7 +732,9 @@ pub(crate) fn redock(app: &tauri::AppHandle, detached_label: &str) {
     };
     match plan {
         Some((view, hole, views, active, colour)) => {
-            let _ = webviews::create_content_webview(&window, &view, hole, colour.as_deref());
+            if webviews::create_content_webview(&window, &view, hole, colour.as_deref()).is_err() {
+                state.unmark_failed_create(&origin_wid, &tab_label);
+            }
             let _ = webviews::apply_active(&window, active.as_deref(), &views);
             // It returns as the active tab, so a dot it collected while out is now seen.
             awareness::mark_read(app, &origin_wid, &tab_label);
@@ -833,7 +844,9 @@ fn reconcile_window_tabs(
         }
     }
     for v in &plan.to_create {
-        let _ = webviews::create_content_webview(window, v, hole, colour.as_deref());
+        if webviews::create_content_webview(window, v, hole, colour.as_deref()).is_err() {
+            state.unmark_failed_create(window_id, &v.label);
+        }
     }
     spawn_reload_timers(window, &views, reload_cancel);
     awareness::set_dock_badge(window.app_handle(), dock_total, None);
