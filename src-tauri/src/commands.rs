@@ -52,8 +52,8 @@ fn label_is_chrome(label: &str, window_label: &str) -> bool {
 /// remote-origin invoke is denied by origin regardless of label (verified vs pinned tauri; see
 /// shell-core's command-isolation security doc for the single-sourced model). The label check passes
 /// every main-webview surface (chrome, home, detach) and rejects only child content webviews — the
-/// callers origin dispatch already rejects — so it screens no local surface. Whether to keep,
-/// narrow or drop it is a maintainer call (`docs/FOLLOWUPS.md`).
+/// callers origin dispatch already rejects while they are on a remote origin. A content webview
+/// that reaches the app's own origin is local to origin dispatch; this check is what rejects it.
 fn require_chrome(webview: &Webview) -> Result<(), String> {
     if is_chrome_caller(webview) {
         Ok(())

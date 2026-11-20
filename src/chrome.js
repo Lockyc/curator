@@ -146,8 +146,8 @@ async function mountChrome() {
       onResize(width) {
         // The chrome is the window's full-size main webview: the sidebar's visible width is CSS
         // (set here); the flex #content-hole follows, and reportRect tells Rust where to put the
-        // content webviews. Rust no longer computes or clamps a width — chrome-core is the sole
-        // clamp (bounds below), so there's nothing to keep in sync across the JS/Rust boundary.
+        // content webviews. Rust computes no width — chrome-core is the sole clamp (bounds
+        // below), so there's nothing to keep in sync across the JS/Rust boundary.
         setSidebarWidth(width);
         reportRect();
       },
@@ -172,7 +172,7 @@ async function mountChrome() {
       minWidth: MIN_W,
       maxWidth: MAX_W,
       // The chrome is the full-window main webview, so chrome-core's `window.innerWidth` IS the
-      // window width and this is the ≤40% cap. chrome-core is now the *sole* clamp — Rust positions
+      // window width and this is the ≤40% cap. chrome-core is the *sole* clamp — Rust positions
       // the content from the reported hole rect, so there's no second (Rust) cap to keep aligned.
       maxFraction: MAX_FRACTION,
       // chrome-core's self-updater gate: run the launch + 6h checks when curator's config allows.
@@ -186,7 +186,7 @@ async function mountChrome() {
   // First-run width: chrome-core restores a saved width itself (firing onResize → CSS + reportRect);
   // if none is saved, apply the density-aware default. Setting the sidebar CSS width reflows the flex
   // #content-hole, so the ResizeObserver below fires reportRect and Rust realigns the content — no
-  // explicit width has to be pushed to Rust anymore.
+  // explicit width is pushed to Rust.
   const saved = parseFloat(localStorage.getItem("curator:sidebar-width:" + title));
   if (!(saved > 0)) {
     setSidebarWidth(defaultWidth);

@@ -32,7 +32,7 @@ toml = "0.8"
 url = "2"
 dirs = "5"
 # updater/process are kept explicit so their capability permissions resolve, but plugin
-# *registration* now flows through shell_core::register_plugins (runtime feature), not the builder.
+# *registration* goes through shell_core::register_plugins (runtime feature), not the builder.
 # Window geometry persistence lives in shell-core's own `geometry` module (no plugin crate of its
 # own to list here).
 tauri-plugin-updater = "2"
@@ -54,5 +54,6 @@ proptest = "=1.12.0"
 proptest-state-machine = "=0.9.0"
 
 # The chrome-core / config-core [patch] local-dev overrides live in the workspace-root Cargo.toml
-# (../Cargo.toml), scoped #PATCH:chrome# / #PATCH:config# — managed by `just chrome-dev`/`chrome-pin`
-# + `config-dev`/`config-pin`. A [patch] must sit in the workspace root, not a member manifest.
+# (../Cargo.toml), scoped #PATCH:chrome# / #PATCH:config# / #PATCH:shell# — managed by `just
+# chrome-dev`/`chrome-pin`, `config-dev`/`config-pin` and `shell-dev`/`shell-pin`. A [patch] must
+# sit in the workspace root, not a member manifest.

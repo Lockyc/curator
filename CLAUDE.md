@@ -36,8 +36,7 @@ shared **`fmt_cli`** (re-exported via `curator_config`) — the same implementat
 ## Config schema
 
 A window's tabs may be **loose** (`[[window.tab]]`) or grouped (`[[window.group]]` →
-`[[window.group.tab]]`); a window can mix both or use only loose tabs (groups are no longer
-required). `tab_views` flattens to one ordered list — loose tabs first as a headerless section
+`[[window.group.tab]]`); a window can mix both or use only loose tabs (groups are optional). `tab_views` flattens to one ordered list — loose tabs first as a headerless section
 (`TabView.group = None`), then each group in file order (`Some(name)`) — and the chrome renders a
 section header only for `Some`. Per-tab fields: `title`, `url` (both required, non-empty),
 `load_on_open` (bool, default false), `reload_every` (minutes, must be > 0 if set), `unread`
@@ -183,8 +182,8 @@ remote (`Origin::Remote`) invoke before the command body runs — verified again
 reasoning. So `require_chrome` is **redundant belt-and-braces against remote pages**, and it screens no
 local surface either: every main webview passes it (chrome, the home surface, `detach.html` —
 `set_hole_rect` relies on that), so it rejects only child content webviews, which origin dispatch
-already blocks. It is retained defense-in-depth for now; whether to narrow or drop it is a security-sensitive maintainer call (`docs/FOLLOWUPS.md`). While
-it exists, the guard is `label == webview.window().label()` (`label_is_chrome`; the same check
+already blocks — unless a content webview reaches the app's own origin, which origin dispatch
+treats as local; the label check is what rejects that one, so it stays. The guard is `label == webview.window().label()` (`label_is_chrome`; the same check
 `layout_webviews` uses to skip the chrome), and a new `#[tauri::command]` taking a `Webview` should
 keep calling it — but it is a second layer, not the sole defense the origin dispatch already provides.
 
@@ -404,7 +403,9 @@ webview label — so a re-popped tab reopens at the size and position it was las
 (`WindowSet::rename`); a rename by hand-editing the config restores fresh default bounds. Sidebar
 width is separate (per-title `localStorage`, above).
 
-**Footgun — the `AppState.windows` mutex is the only lock, and commands must stay synchronous.**
+**Footgun — `AppState.windows` is the lock held across webview ops, no other `AppState` mutex
+may be held while taking it (each is taken only in a statement-scoped temporary), and commands
+must stay synchronous.**
 Several `#[tauri::command]`s (`select_tab`, `reset_window_tabs`, …) hold the `windows` lock across
 webview ops (`add_child`/show/hide/raise/navigate). That's deadlock-free *only* because sync Tauri
 commands run on the main thread, so those ops execute inline and the watcher thread (which always
@@ -443,8 +444,7 @@ Every release gets a matching GitHub release — don't just push `main`. `main` 
 release and stays a clean ancestor of `dev`; if a doc/chore commit landed straight on `main`,
 back-merge it first (`git merge origin/main` on `dev`) so `main` fast-forwards. To cut one:
 
-1. On `dev`, bump the version in `src-tauri/Cargo.toml` (the single source of version truth —
-   `package.json` no longer exists), refresh `Cargo.lock`, commit `chore(release): curator <v>`,
+1. On `dev`, bump the version in `src-tauri/Cargo.toml` (the single source of version truth), refresh `Cargo.lock`, commit `chore(release): curator <v>`,
    and push `dev`.
 2. **`just release [notes=<file>]`** (= `gate` + `scripts/release.sh`) — **one command**: gate,
    build + notarize `curator.app`, `ditto`-zip it to `curator-<v>-macos.zip` and produce the updater
@@ -520,9 +520,6 @@ nothing installs silently. The update bar's **×** dismisses it for the session 
   `darwin-x86_64` pointing at the one tarball — a release cut on either kind of Mac serves every
   user. shell-core's CLAUDE.md carries the keep-both-keys footgun: the updater matches on the
   running install's own arch, so dropping a key makes auto-update go silently quiet for it.
-- **First-release bootstrap:** the release that first ships the updater must be installed the old way
-  once (`install.sh` / download the `.zip`); every release after that updates in-app. Call this out
-  in that release's notes.
 
 ## Installer & the public repo
 

@@ -265,7 +265,7 @@ const CONFIG_DIR: &str = "curator";
 
 /// Config path to load at launch: `$CURATOR_CONFIG` if set and non-empty, else
 /// [`default_config_path`]. Shared with warden and lector via config-core — including the
-/// set-but-empty fall-through, which this app previously got wrong.
+/// set-but-empty fall-through.
 pub fn resolve_config_path() -> std::path::PathBuf {
     config_core::resolve_config_path(CONFIG_ENV, CONFIG_DIR)
 }
@@ -301,8 +301,8 @@ pub struct TabView {
 /// inserting/removing/reordering tabs doesn't remap an existing webview. Namespaced with the
 /// window id by the caller.
 ///
-/// `fnv1a_64`, never `DefaultHasher` — see [`crate::hash`]'s module docs. This label is no longer
-/// runtime-only: it *is* a popped-out tab's detach token, and shell-core's geometry module keys
+/// `fnv1a_64`, never `DefaultHasher` — see [`crate::hash`]'s module docs. This label is also
+/// a popped-out tab's detach token, and shell-core's geometry module keys
 /// that window's remembered size and position on it, so a `rustc` bump that reshuffled hashing
 /// would silently forget every pop-out's geometry and orphan its entry.
 fn url_label(url: &str) -> String {

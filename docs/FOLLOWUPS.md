@@ -104,9 +104,3 @@ resolves it where it resolves the session chain — the resolution point is alre
 this is a schema + one-cascade change, not new machinery. Worth doing once a real config wants
 the same mode on a whole window; until then the per-tab key is the honest surface.
 
-## Narrow or drop the `require_chrome` label gate
-
-`require_chrome` (`commands.rs`) rejects only child content webviews, which origin dispatch already
-blocks, and every main webview passes it — so it is redundant against remote pages and screens no
-local surface. It is kept as belt-and-braces until decided. **Unlock:** a maintainer security call
-on narrowing it or removing it.
