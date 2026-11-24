@@ -172,6 +172,22 @@ pub(crate) fn opening_tabs(
     (tabs, to_create)
 }
 
+/// Build an opening window's `to_create` views with `create`, each on its own: a view that fails
+/// to build is marked unloaded in `tabs` (and stops being active), so the window still opens with
+/// that tab cold and `select_tab` retries it.
+pub(crate) fn create_opening_tabs(
+    tabs: &mut webviews::TabState,
+    to_create: &[curator_config::TabView],
+    mut create: impl FnMut(&curator_config::TabView) -> tauri::Result<()>,
+) {
+    for v in to_create {
+        if let Err(e) = create(v) {
+            eprintln!("curator: tab {} failed to open: {e}", v.label);
+            tabs.mark_unloaded(&v.label);
+        }
+    }
+}
+
 /// Carry a window's in-place rename from `old` to `new` into the popped-out tabs' origin titles.
 pub(crate) fn retitle_origins(
     detached: &mut HashMap<String, CuratorDetached>,
@@ -358,18 +374,20 @@ pub(crate) fn open_window(
         slot.decl.height,
     )?;
     let window = webview_window.as_ref().window();
-    window.set_theme(theme_for(state.dark_mode.load(Ordering::Relaxed)))?;
+    // Nothing after `build_window` fails the open: an Err here would leave the built window on
+    // screen with no runtime and its label taken.
+    let _ = window.set_theme(theme_for(state.dark_mode.load(Ordering::Relaxed)));
     // Best-guess hole until the chrome mounts and reports its `#content-hole` via `set_hole_rect`;
     // launch-time `load_on_open` tabs are placed here for the frame or two before that first report.
     let hole = webviews::initial_hole(slot.decl.width, slot.decl.height);
 
     let views = win_cfg.tab_views(wid, global_session);
     let startup = win_cfg.startup_label(wid, global_session);
-    let (tabs, to_create) = opening_tabs(&views, &detached_tabs, startup.as_deref());
-    for v in &to_create {
-        webviews::create_content_webview(&window, v, hole, win_cfg.colour.as_deref())?;
-    }
-    webviews::apply_active(&window, tabs.active(), &views)?;
+    let (mut tabs, to_create) = opening_tabs(&views, &detached_tabs, startup.as_deref());
+    create_opening_tabs(&mut tabs, &to_create, |v| {
+        webviews::create_content_webview(&window, v, hole, win_cfg.colour.as_deref())
+    });
+    let _ = webviews::apply_active(&window, tabs.active(), &views);
 
     // Periodic reload timers for tabs with `reload_every` (minutes). Only acts on
     // already-created webviews, so a never-opened lazy tab is harmlessly skipped. The cancel
@@ -1358,6 +1376,29 @@ mod tests {
         assert_eq!(tabs.active(), Some(eager.label.as_str()));
         let created: Vec<_> = to_create.iter().map(|v| v.label.as_str()).collect();
         assert_eq!(created, [eager.label.as_str()]);
+    }
+
+    #[test]
+    fn an_opening_tab_that_fails_to_build_is_left_cold_and_the_rest_still_build() {
+        let mut a = view("job:tab-0", "default");
+        a.load_on_open = true;
+        let mut b = view("job:tab-1", "default");
+        b.load_on_open = true;
+        let views = [a.clone(), b.clone()];
+        let (mut tabs, to_create) = opening_tabs(&views, &HashSet::new(), Some(&a.label));
+        let mut tried = Vec::new();
+        create_opening_tabs(&mut tabs, &to_create, |v| {
+            tried.push(v.label.clone());
+            if v.label == a.label {
+                Err(tauri::Error::WindowNotFound)
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(tried, [a.label.clone(), b.label.clone()]);
+        assert!(!tabs.is_created(&a.label), "a failed tab reads as unloaded");
+        assert_eq!(tabs.active(), None, "a failed startup tab is not active");
+        assert!(tabs.is_created(&b.label));
     }
 
     #[test]
