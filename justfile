@@ -39,7 +39,7 @@ fmt:
 # Lint with clippy (warnings as errors)
 [group("check")]
 clippy:
-    cargo clippy --workspace -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
 
 # Occasional, not in gate: it rebuilds per mutant. Triage what survives into example tests; never aim
 # for zero missed. Args replace the default file set (`-f` globs add up, so they can't narrow it):
@@ -62,7 +62,7 @@ mutants-diff base="origin/dev":
 [group("check")]
 gate:
     cargo fmt --all --check
-    cargo clippy --workspace -- -D warnings
+    @{{ just_executable() }} clippy
     @{{ just_executable() }} _core-patch guard # after clippy, whose build.rs generates core-patch.sh on a fresh clone
     cargo test --workspace
     cargo run -p curator -- fmt --check "{{justfile_directory()}}/examples/config.toml"
