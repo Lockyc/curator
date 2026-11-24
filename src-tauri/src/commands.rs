@@ -272,18 +272,44 @@ pub fn downloads_state(webview: Webview) -> Result<shell_core::downloads::Downlo
     Ok(shell_core::downloads::state())
 }
 
-/// Reload every already-created content webview in `wid`'s window back to its canonical URL.
+/// Reload every already-created content webview in `wid`'s window back to its canonical URL. A tab
+/// that fails doesn't stop the rest; the failures come back together.
 fn reset_window_tabs(app: &AppHandle, wid: &str) -> Result<(), String> {
     let state = app.state::<AppState>();
     let window = app.get_window(wid).ok_or("no such window")?;
     let windows = state.windows.lock().unwrap();
     let rt = windows.get(wid).ok_or("no such window")?;
-    for v in &rt.views() {
-        if rt.tabs.is_created(&v.label) {
-            webviews::reload_canonical(&window, &v.label, &v.url).map_err(|e| e.to_string())?;
-        }
+    let failures: Vec<String> = rt
+        .views()
+        .iter()
+        .filter(|v| rt.tabs.is_created(&v.label))
+        .filter_map(|v| {
+            webviews::reload_canonical(&window, &v.label, &v.url)
+                .err()
+                .map(|e| format!("{}: {e}", v.label))
+        })
+        .collect();
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
     }
-    Ok(())
+}
+
+/// The window a whole-window Tab-menu command acts on, given the focused window's label: a
+/// popped-out window's origin (`origin_of`, `None` when its origin left the config), none for the
+/// home surface, else the focused window itself.
+pub(crate) fn tab_menu_target(
+    focused: &str,
+    origin_of: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    if focused == shell_core::home::HOME_LABEL {
+        None
+    } else if shell_core::detach::detach_token(focused).is_some() {
+        origin_of(focused)
+    } else {
+        Some(focused.to_string())
+    }
 }
 
 /// Refresh a single tab's current page in place (no-op if it hasn't been opened yet).
@@ -670,9 +696,14 @@ pub fn open_active_devtools(app: &AppHandle) {
     with_focused_active_webview(app, |wv| wv.open_devtools());
 }
 
-/// Reset the focused window's tabs (menu "Reset All Tabs"). No-op if no window is focused.
+/// Reset the focused window's tabs (menu "Reset All Tabs"); from a popped-out window, its origin's
+/// ([`tab_menu_target`]). No-op if no window with tabs is focused.
 pub fn reset_all_tabs(app: &AppHandle) -> Result<(), String> {
-    let Some(wid) = focused_window_id(app) else {
+    let Some(focused) = focused_window_id(app) else {
+        return Ok(());
+    };
+    let origin_of = |l: &str| crate::resolve_origin(app, l).map(|(wid, _)| wid);
+    let Some(wid) = tab_menu_target(&focused, origin_of) else {
         return Ok(());
     };
     reset_window_tabs(app, &wid)
@@ -745,8 +776,18 @@ pub fn window_menu(x: f64, y: f64, webview: Webview) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{label_is_chrome, toggle_tab_digit_keys, TabItem, DEFAULT_CONFIG};
+    use super::{label_is_chrome, tab_menu_target, toggle_tab_digit_keys, TabItem, DEFAULT_CONFIG};
     use curator_config::{TabDigitKeys, TabView};
+
+    #[test]
+    fn a_tab_menu_command_from_a_popped_out_window_acts_on_its_origin() {
+        let popped = shell_core::detach::detached_label("work:tab-1");
+        let origin = |l: &str| (l == popped).then(|| "work".to_string());
+        assert_eq!(tab_menu_target(&popped, origin), Some("work".into()));
+        assert_eq!(tab_menu_target(&popped, |_| None), None);
+        assert_eq!(tab_menu_target("work", |_| None), Some("work".into()));
+        assert_eq!(tab_menu_target(shell_core::home::HOME_LABEL, origin), None);
+    }
 
     #[test]
     fn toggling_the_digit_mode_seeds_a_missing_config_first() {

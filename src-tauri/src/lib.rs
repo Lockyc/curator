@@ -1203,7 +1203,9 @@ pub fn run() {
                         return;
                     }
                     "reset_all" => {
-                        let _ = commands::reset_all_tabs(app);
+                        if let Err(e) = commands::reset_all_tabs(app) {
+                            eprintln!("curator: Reset All Tabs failed: {e}");
+                        }
                         return;
                     }
                     "open_devtools" => {
