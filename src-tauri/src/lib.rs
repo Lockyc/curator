@@ -99,6 +99,13 @@ impl CuratorDetached {
     }
 }
 
+/// Whether two window titles name the same window: shell-core's identity rule (trimmed title, as
+/// in `plan::reconcile` and [`entry_for_title`]). Every title match in curator goes through this,
+/// so a popped-out tab finds the same origin here that `resolve_origin` finds.
+pub(crate) fn same_window_title(a: &str, b: &str) -> bool {
+    a.trim() == b.trim()
+}
+
 /// After a window closed, against the set's `entries`: drop the bookkeeping of every tab whose
 /// origin left the config, returning their detached-window labels to destroy, and rehome the rest
 /// onto the label their origin resolves to now, so none keeps a label the closed window freed.
@@ -129,7 +136,7 @@ pub(crate) fn popped_out_of(
 ) -> HashSet<String> {
     detached
         .values_mut()
-        .filter(|d| d.origin_title.trim() == title.trim())
+        .filter(|d| same_window_title(&d.origin_title, title))
         .map(|d| {
             d.rehome(wid);
             d.tab_label.clone()
@@ -196,7 +203,7 @@ pub(crate) fn retitle_origins(
 ) {
     for d in detached
         .values_mut()
-        .filter(|d| d.origin_title.trim() == old.trim())
+        .filter(|d| same_window_title(&d.origin_title, old))
     {
         d.origin_title = new.trim().to_string();
     }
@@ -357,7 +364,7 @@ pub(crate) fn open_window(
         let w = cfg
             .windows
             .iter()
-            .find(|w| w.title.trim() == slot.decl.title.trim())
+            .find(|w| same_window_title(&w.title, &slot.decl.title))
             .cloned()
             .ok_or(tauri::Error::WindowNotFound)?;
         (w, cfg.session.clone())
@@ -619,7 +626,7 @@ pub(crate) fn reload_windows(app: &tauri::AppHandle, new_cfg: &curator_config::C
         }
         let Some(win_cfg) = windows
             .iter()
-            .find(|w| w.title.trim() == entry.title.trim())
+            .find(|w| same_window_title(&w.title, &entry.title))
         else {
             continue;
         };

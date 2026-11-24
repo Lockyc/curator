@@ -230,7 +230,7 @@ impl StateMachineTest for PopOutModel {
             }
             Op::Rename { win, title } => {
                 let new = TITLES[title];
-                let taken = sys.entries.iter().any(|e| e.title.trim() == new);
+                let taken = entry_for_title(&sys.entries, new).is_some();
                 if let Some(i) = pick(win).filter(|&i| sys.entries[i].open && !taken) {
                     // Edit Window keeps the live label; window_retitled carries the title over.
                     let old = std::mem::replace(&mut sys.entries[i].title, new.into());
@@ -266,7 +266,7 @@ impl StateMachineTest for PopOutModel {
                 }
             }
             Op::NewWindow { title, label } => {
-                let taken = sys.entries.iter().any(|e| e.title.trim() == TITLES[title]);
+                let taken = entry_for_title(&sys.entries, TITLES[title]).is_some();
                 if !taken && sys.label_free(LABELS[label], None) {
                     sys.entries.push(WindowEntry {
                         id: LABELS[label].into(),
