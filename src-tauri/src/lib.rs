@@ -857,7 +857,7 @@ fn reconcile_window_tabs(
 
     // Webview side-effects, lock released.
     for label in &plan.orphans {
-        if let Some(wv) = window.get_webview(label) {
+        if let Some(wv) = webviews::own_webview(window, label) {
             shell_core::web::content::close_content_webview(&wv);
         }
     }

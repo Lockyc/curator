@@ -239,7 +239,7 @@ pub fn reload_canonical(window: &Window, label: &str, canonical_url: &str) -> ta
 /// `label`'s webview, only if it lives in `window`. `Window::get_webview` is `Manager::get_webview`,
 /// which looks the label up across the whole app — and a popped-out tab keeps its label on its
 /// detached window, so an unscoped lookup from the origin window would act on the popped-out copy.
-fn own_webview(window: &Window, label: &str) -> Option<tauri::Webview> {
+pub(crate) fn own_webview(window: &Window, label: &str) -> Option<tauri::Webview> {
     window
         .get_webview(label)
         .filter(|wv| wv.window().label() == window.label())

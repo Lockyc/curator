@@ -291,7 +291,7 @@ fn reset_window_tabs(app: &AppHandle, wid: &str) -> Result<(), String> {
 pub fn reload_tab(label: String, webview: Webview) -> Result<(), String> {
     require_chrome(&webview)?;
     let (window, _) = calling_window(&webview)?;
-    if let Some(wv) = window.get_webview(&label) {
+    if let Some(wv) = webviews::own_webview(&window, &label) {
         wv.eval("location.reload()").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -313,6 +313,9 @@ pub fn home_tab(label: String, webview: Webview, state: State<AppState>) -> Resu
             .ok_or("unknown tab")?
             .url
     };
+    if webviews::own_webview(&window, &label).is_none() {
+        return Ok(());
+    }
     webviews::reload_canonical(&window, &label, &url).map_err(|e| e.to_string())
 }
 
@@ -322,7 +325,7 @@ pub fn home_tab(label: String, webview: Webview, state: State<AppState>) -> Resu
 pub fn nav_back(label: String, webview: Webview) -> Result<(), String> {
     require_chrome(&webview)?;
     let (window, _) = calling_window(&webview)?;
-    if let Some(wv) = window.get_webview(&label) {
+    if let Some(wv) = webviews::own_webview(&window, &label) {
         wv.eval("history.back()").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -334,7 +337,7 @@ pub fn nav_back(label: String, webview: Webview) -> Result<(), String> {
 pub fn nav_forward(label: String, webview: Webview) -> Result<(), String> {
     require_chrome(&webview)?;
     let (window, _) = calling_window(&webview)?;
-    if let Some(wv) = window.get_webview(&label) {
+    if let Some(wv) = webviews::own_webview(&window, &label) {
         wv.eval("history.forward()").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -393,7 +396,7 @@ fn detached_window_for(state: &AppState, origin_wid: &str, label: &str) -> Optio
 pub fn unload_tab(label: String, webview: Webview, state: State<AppState>) -> Result<(), String> {
     require_chrome(&webview)?;
     let (window, wid) = calling_window(&webview)?;
-    if let Some(wv) = window.get_webview(&label) {
+    if let Some(wv) = webviews::own_webview(&window, &label) {
         shell_core::web::content::close_content_webview(&wv);
     }
     // Mark unloaded. If this was the active tab, promote the nearest created neighbour to active
@@ -475,7 +478,7 @@ pub fn pop_out_tab(label: String, webview: Webview, state: State<AppState>) -> R
     // Phase 2 — lock released: close the origin's content webview (its app-global label must be free
     // before the same tab is recreated on the detached window), drop its unread contribution, and
     // relayout the origin around the promoted neighbour if the popped tab was the active one.
-    if let Some(wv) = origin_window.get_webview(&label) {
+    if let Some(wv) = webviews::own_webview(&origin_window, &label) {
         shell_core::web::content::close_content_webview(&wv);
     }
     crate::awareness::forget_tab(&app, &origin_wid, &label);
@@ -637,7 +640,7 @@ pub(crate) fn focused_active_webview(app: &AppHandle) -> Option<Webview> {
             .get(&wid)
             .and_then(|rt| rt.tabs.active().map(str::to_string))
     }?;
-    app.get_window(&wid)?.get_webview(&label)
+    webviews::own_webview(&app.get_window(&wid)?, &label)
 }
 
 /// Run `f` against the focused window's active content webview, if there is one.
