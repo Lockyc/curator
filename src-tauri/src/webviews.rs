@@ -70,11 +70,11 @@ impl TabState {
 
 use crate::sentinels;
 use curator_config::TabView;
+use shell_core::spaces::ShellWindow as _;
 use shell_core::web::{
     self,
     content::{ContentHooks, ContentSpec},
 };
-use shell_core::spaces::ShellWindow as _;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, TitleBarStyle, WebviewUrl, Window};
 
