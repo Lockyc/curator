@@ -74,6 +74,7 @@ use shell_core::web::{
     self,
     content::{ContentHooks, ContentSpec},
 };
+use shell_core::spaces::ShellWindow as _;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, TitleBarStyle, WebviewUrl, Window};
 
@@ -121,7 +122,7 @@ pub fn build_window(
             .inner_size(win_w, win_h)
             .hidden_title(true)
             .title_bar_style(TitleBarStyle::Overlay)
-            .focused(shell_core::focus::focused())
+            .shell_window()
             .build()?;
 
     // Saved bounds (size/position, in AppKit points) are restored by shell-core's geometry plugin's
